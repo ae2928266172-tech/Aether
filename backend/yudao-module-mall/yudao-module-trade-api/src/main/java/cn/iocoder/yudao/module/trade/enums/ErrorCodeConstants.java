@@ -27,6 +27,8 @@ public interface ErrorCodeConstants {
     ErrorCode ORDER_DELIVERY_FAIL_COMBINATION_RECORD_STATUS_NOT_SUCCESS = new ErrorCode(1_011_000_022, "交易订单发货失败，拼团未成功");
     ErrorCode ORDER_DELIVERY_FAIL_BARGAIN_RECORD_STATUS_NOT_SUCCESS = new ErrorCode(1_011_000_023, "交易订单发货失败，砍价未成功");
     ErrorCode ORDER_DELIVERY_FAIL_DELIVERY_TYPE_NOT_EXPRESS = new ErrorCode(1_011_000_024, "交易订单发货失败，发货类型不是快递");
+    ErrorCode ORDER_CREATE_FAIL_WARD_BED_NO_EMPTY = new ErrorCode(1_011_000_060, "病房配送必须填写床号");
+    ErrorCode ORDER_DELIVERY_TYPE_NOT_WARD = new ErrorCode(1_011_000_061, "操作失败，订单不是病房配送");
     ErrorCode ORDER_CANCEL_FAIL_STATUS_NOT_UNPAID = new ErrorCode(1_011_000_025, "交易订单取消失败，订单不是【待支付】状态");
     ErrorCode ORDER_UPDATE_PRICE_FAIL_PAID = new ErrorCode(1_011_000_026, "支付订单调价失败，原因：支付订单已付款,不能调价");
     ErrorCode ORDER_UPDATE_PRICE_FAIL_ALREADY = new ErrorCode(1_011_000_027, "支付订单调价失败，原因：已经修改过价格");
@@ -91,6 +93,15 @@ public interface ErrorCodeConstants {
     // ==========  物流 PICK_UP 模块 1-011-006-000 ==========
     ErrorCode PICK_UP_STORE_NOT_EXISTS = new ErrorCode(1_011_006_000, "自提门店不存在");
     ErrorCode PICK_UP_STORE_STAFF_NOT_EXISTS = new ErrorCode(1_011_006_000, "自提门店店员不存在");
+
+    // ========== 病区 1-011-020-000 ==========
+    ErrorCode DELIVERY_WARD_NOT_EXISTS = new ErrorCode(1_011_020_000, "病区不存在");
+    ErrorCode DELIVERY_WARD_DISABLED = new ErrorCode(1_011_020_001, "病区已停用");
+
+    // ========== 规格库存物料 1-011-021-000 ==========
+    ErrorCode SKU_MATERIAL_SKU_NOT_EXISTS = new ErrorCode(1_011_021_000, "商品规格不存在");
+    ErrorCode SKU_MATERIAL_PRODUCT_NOT_EXISTS = new ErrorCode(1_011_021_001, "库存物料（ERP 产品）不存在");
+    ErrorCode SKU_MATERIAL_DEFAULT_WAREHOUSE_NOT_EXISTS = new ErrorCode(1_011_021_002, "未设置默认仓库，无法扣减共享库存，请到【ERP 进销存 - 仓库信息】设置默认仓库");
 
     // ========== 分销用户 模块 1-011-007-000 ==========
     ErrorCode BROKERAGE_USER_NOT_EXISTS = new ErrorCode(1_011_007_000, "分销用户不存在");

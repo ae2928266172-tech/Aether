@@ -26,6 +26,26 @@ const DeliveryApi = {
       },
     });
   },
+  // 获得病区（扫病区二维码进入时）
+  getDeliveryWard: (id) => {
+    return request({
+      url: `/trade/delivery/ward/get`,
+      method: 'GET',
+      params: {
+        id,
+      },
+      custom: {
+        showLoading: false,
+      },
+    });
+  },
+  // 获得启用的病区列表（没有扫码时手动选择）
+  getDeliveryWardList: () => {
+    return request({
+      url: `/trade/delivery/ward/list`,
+      method: 'GET',
+    });
+  },
 };
 
 export default DeliveryApi;

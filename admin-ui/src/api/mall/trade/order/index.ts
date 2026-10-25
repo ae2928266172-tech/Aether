@@ -31,6 +31,9 @@ export interface OrderVO {
   deliveryType?: number | null // 发货方式
   pickUpStoreId?: number // 自提门店编号
   pickUpVerifyCode?: string // 自提核销码
+  wardId?: number // 病区编号（病房配送）
+  wardName?: string // 病区名称（病房配送）
+  bedNo?: string // 床号（病房配送）
   deliveryTemplateId?: number | null // 配送模板编号
   logisticsId?: number | null // 发货物流公司编号
   logisticsNo?: string // 发货物流单号
@@ -166,6 +169,16 @@ export const updateOrderPrice = async (data: any) => {
 // 修改订单地址
 export const updateOrderAddress = async (data: any) => {
   return await request.put({ url: `/trade/order/update-address`, data })
+}
+
+// 病房配送：开始配送
+export const deliveryWardOrder = async (id: number) => {
+  return await request.put({ url: `/trade/order/ward-delivery?id=${id}` })
+}
+
+// 病房配送：确认送达
+export const receiveWardOrder = async (id: number) => {
+  return await request.put({ url: `/trade/order/ward-receive?id=${id}` })
 }
 
 // 订单核销

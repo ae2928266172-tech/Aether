@@ -124,6 +124,12 @@ export function formatOrderStatus(order) {
   if (order.status === 10 && order.deliveryType === 2) {
     return '待核销';
   }
+  if (order.status === 10 && order.deliveryType === 3) {
+    return '待配送';
+  }
+  if (order.status === 20 && order.deliveryType === 3) {
+    return '配送中';
+  }
   if (order.status === 20) {
     return '待收货';
   }
@@ -144,6 +150,12 @@ export function formatOrderStatus(order) {
 export function formatOrderStatusDescription(order) {
   if (order.status === 0) {
     return `请在 ${formatDate(order.payExpireTime)} 前完成支付`;
+  }
+  if (order.status === 10 && order.deliveryType === 3) {
+    return `将送到 ${order.wardName} ${order.bedNo} 床，请耐心等待`;
+  }
+  if (order.status === 20 && order.deliveryType === 3) {
+    return `正在送往 ${order.wardName} ${order.bedNo} 床`;
   }
   if (order.status === 10) {
     return '商家未发货，请耐心等待';

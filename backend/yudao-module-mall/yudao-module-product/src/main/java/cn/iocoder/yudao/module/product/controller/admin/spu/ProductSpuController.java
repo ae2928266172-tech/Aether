@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.framework.excel.core.util.ExcelUtils;
+import cn.iocoder.yudao.framework.security.core.service.SecurityFrameworkService;
 import cn.iocoder.yudao.module.product.controller.admin.spu.vo.*;
 import cn.iocoder.yudao.module.product.convert.spu.ProductSpuConvert;
 import cn.iocoder.yudao.module.product.dal.dataobject.sku.ProductSkuDO;
@@ -38,10 +39,18 @@ import static cn.iocoder.yudao.framework.common.pojo.PageParam.PAGE_SIZE_NONE;
 @Validated
 public class ProductSpuController {
 
+    /**
+     * 查看商品库存的权限标识
+     */
+    private static final String STOCK_PERMISSION = "product:spu:stock";
+
     @Resource
     private ProductSpuService productSpuService;
     @Resource
     private ProductSkuService productSkuService;
+
+    @Resource
+    private SecurityFrameworkService securityFrameworkService;
 
     @PostMapping("/create")
     @Operation(summary = "创建商品 SPU")
@@ -87,7 +96,9 @@ public class ProductSpuController {
         }
         // 查询商品 SKU
         List<ProductSkuDO> skus = productSkuService.getSkuListBySpuId(spu.getId());
-        return success(ProductSpuConvert.INSTANCE.convert(spu, skus));
+        ProductSpuRespVO respVO = ProductSpuConvert.INSTANCE.convert(spu, skus);
+        hideStockIfNoPermission(List.of(respVO));
+        return success(respVO);
     }
 
     @GetMapping("/list-all-simple")
@@ -97,7 +108,11 @@ public class ProductSpuController {
         List<ProductSpuDO> list = productSpuService.getSpuListByStatus(ProductSpuStatusEnum.ENABLE.getStatus());
         // 降序排序后，返回给前端
         list.sort(Comparator.comparing(ProductSpuDO::getSort).reversed());
-        return success(BeanUtils.toBean(list, ProductSpuSimpleRespVO.class));
+        List<ProductSpuSimpleRespVO> respList = BeanUtils.toBean(list, ProductSpuSimpleRespVO.class);
+        if (!hasStockPermission()) {
+            respList.forEach(spu -> spu.setStock(null));
+        }
+        return success(respList);
     }
 
     @GetMapping("/list")
@@ -105,8 +120,10 @@ public class ProductSpuController {
     @Parameter(name = "spuIds", description = "spu 编号列表", required = true, example = "[1,2,3]")
     @PreAuthorize("@ss.hasPermission('product:spu:query')")
     public CommonResult<List<ProductSpuRespVO>> getSpuList(@RequestParam("spuIds") Collection<Long> spuIds) {
-        return success(ProductSpuConvert.INSTANCE.convertForSpuDetailRespListVO(
-                productSpuService.getSpuList(spuIds), productSkuService.getSkuListBySpuId(spuIds)));
+        List<ProductSpuRespVO> respList = ProductSpuConvert.INSTANCE.convertForSpuDetailRespListVO(
+                productSpuService.getSpuList(spuIds), productSkuService.getSkuListBySpuId(spuIds));
+        hideStockIfNoPermission(respList);
+        return success(respList);
     }
 
     @GetMapping("/page")
@@ -114,7 +131,9 @@ public class ProductSpuController {
     @PreAuthorize("@ss.hasPermission('product:spu:query')")
     public CommonResult<PageResult<ProductSpuRespVO>> getSpuPage(@Valid ProductSpuPageReqVO pageVO) {
         PageResult<ProductSpuDO> pageResult = productSpuService.getSpuPage(pageVO);
-        return success(BeanUtils.toBean(pageResult, ProductSpuRespVO.class));
+        PageResult<ProductSpuRespVO> respPage = BeanUtils.toBean(pageResult, ProductSpuRespVO.class);
+        hideStockIfNoPermission(respPage.getList());
+        return success(respPage);
     }
 
     @GetMapping("/get-count")
@@ -133,8 +152,28 @@ public class ProductSpuController {
         reqVO.setPageSize(PAGE_SIZE_NONE);
         List<ProductSpuDO> list = productSpuService.getSpuPage(reqVO).getList();
         // 导出 Excel
-        ExcelUtils.write(response, "商品列表.xls", "数据", ProductSpuRespVO.class,
-                BeanUtils.toBean(list, ProductSpuRespVO.class));
+        List<ProductSpuRespVO> respList = BeanUtils.toBean(list, ProductSpuRespVO.class);
+        hideStockIfNoPermission(respList);
+        ExcelUtils.write(response, "商品列表.xls", "数据", ProductSpuRespVO.class, respList);
+    }
+
+    /**
+     * 是否有查看库存的权限。门店店员等角色不分配该权限，看不到库存
+     */
+    private boolean hasStockPermission() {
+        return securityFrameworkService.hasPermission(STOCK_PERMISSION);
+    }
+
+    private void hideStockIfNoPermission(List<ProductSpuRespVO> list) {
+        if (hasStockPermission()) {
+            return;
+        }
+        list.forEach(spu -> {
+            spu.setStock(null);
+            if (spu.getSkus() != null) {
+                spu.getSkus().forEach(sku -> sku.setStock(null));
+            }
+        });
     }
 
 }

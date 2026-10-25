@@ -43,6 +43,7 @@ import cn.iocoder.yudao.module.trade.convert.order.TradeOrderConvert;
 import cn.iocoder.yudao.module.trade.dal.dataobject.cart.CartDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.delivery.DeliveryExpressDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.delivery.DeliveryPickUpStoreDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.delivery.DeliveryWardDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.order.TradeOrderDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.order.TradeOrderItemDO;
 import cn.iocoder.yudao.module.trade.dal.mysql.order.TradeOrderItemMapper;
@@ -56,6 +57,7 @@ import cn.iocoder.yudao.module.trade.framework.order.core.utils.TradeOrderLogUti
 import cn.iocoder.yudao.module.trade.service.cart.CartService;
 import cn.iocoder.yudao.module.trade.service.delivery.DeliveryExpressService;
 import cn.iocoder.yudao.module.trade.service.delivery.DeliveryPickUpStoreService;
+import cn.iocoder.yudao.module.trade.service.delivery.DeliveryWardService;
 import cn.iocoder.yudao.module.trade.service.message.TradeMessageService;
 import cn.iocoder.yudao.module.trade.service.message.bo.TradeOrderMessageWhenDeliveryOrderReqBO;
 import cn.iocoder.yudao.module.trade.service.order.handler.TradeOrderHandler;
@@ -112,6 +114,8 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
     private TradePriceService tradePriceService;
     @Resource
     private DeliveryExpressService deliveryExpressService;
+    @Resource
+    private DeliveryWardService deliveryWardService;
     @Resource
     private TradeMessageService tradeMessageService;
     @Resource
@@ -230,6 +234,16 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
         } else if (Objects.equals(createReqVO.getDeliveryType(), DeliveryTypeEnum.PICK_UP.getType())) {
             order.setReceiverName(createReqVO.getReceiverName()).setReceiverMobile(createReqVO.getReceiverMobile());
             order.setPickUpVerifyCode(RandomUtil.randomNumbers(8)); // 随机一个核销码，长度为 8 位
+        } else if (Objects.equals(createReqVO.getDeliveryType(), DeliveryTypeEnum.WARD.getType())) {
+            // 病房配送：病区来自扫码，床号必须由病人填写
+            if (StrUtil.isBlank(createReqVO.getBedNo())) {
+                throw exception(ORDER_CREATE_FAIL_WARD_BED_NO_EMPTY);
+            }
+            DeliveryWardDO ward = deliveryWardService.validateWardEnabled(createReqVO.getWardId());
+            String bedNo = StrUtil.trim(createReqVO.getBedNo());
+            order.setWardId(ward.getId()).setWardName(ward.getName()).setBedNo(bedNo);
+            order.setReceiverName(createReqVO.getReceiverName()).setReceiverMobile(createReqVO.getReceiverMobile())
+                    .setReceiverDetailAddress(StrUtil.format("{} {} 床", ward.getName(), bedNo));
         }
         return order;
     }
@@ -501,6 +515,51 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
             }
         }
         return count;
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    @TradeOrderLog(operateType = TradeOrderOperateTypeEnum.ADMIN_WARD_DELIVERY)
+    public void deliveryWardOrder(Long id) {
+        // 1. 校验并获得交易订单（可发货），且必须是病房配送
+        TradeOrderDO order = validateOrderDeliverable(id);
+        if (ObjectUtil.notEqual(order.getDeliveryType(), DeliveryTypeEnum.WARD.getType())) {
+            throw exception(ORDER_DELIVERY_TYPE_NOT_WARD);
+        }
+
+        // 2. 更新订单为配送中（已发货）
+        TradeOrderDO updateOrderObj = new TradeOrderDO().setLogisticsId(TradeOrderDO.LOGISTICS_ID_NULL).setLogisticsNo("")
+                .setStatus(TradeOrderStatusEnum.DELIVERED.getStatus()).setDeliveryTime(LocalDateTime.now());
+        int updateCount = tradeOrderMapper.updateByIdAndStatus(order.getId(), order.getStatus(), updateOrderObj);
+        if (updateCount == 0) {
+            throw exception(ORDER_DELIVERY_FAIL_STATUS_NOT_UNDELIVERED);
+        }
+
+        // 3. 记录订单日志
+        TradeOrderLogUtils.setOrderInfo(order.getId(), order.getStatus(), TradeOrderStatusEnum.DELIVERED.getStatus(),
+                MapUtil.<String, Object>builder().put("wardName", StrUtil.nullToEmpty(order.getWardName()))
+                        .put("bedNo", StrUtil.nullToEmpty(order.getBedNo())).build());
+
+        // 4. 发送站内信，并处理订单发货后逻辑
+        tradeMessageService.sendMessageWhenDeliveryOrder(new TradeOrderMessageWhenDeliveryOrderReqBO()
+                .setOrderId(order.getId()).setUserId(order.getUserId()).setMessage(null));
+        order.setLogisticsId(updateOrderObj.getLogisticsId()).setLogisticsNo(updateOrderObj.getLogisticsNo())
+                .setStatus(updateOrderObj.getStatus()).setDeliveryTime(updateOrderObj.getDeliveryTime());
+        tradeOrderHandlers.forEach(handler -> handler.afterDeliveryOrder(order));
+    }
+
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    @TradeOrderLog(operateType = TradeOrderOperateTypeEnum.ADMIN_WARD_RECEIVE)
+    public void receiveWardOrderByAdmin(Long id) {
+        TradeOrderDO order = validateOrderExists(id);
+        if (ObjectUtil.notEqual(order.getDeliveryType(), DeliveryTypeEnum.WARD.getType())) {
+            throw exception(ORDER_DELIVERY_TYPE_NOT_WARD);
+        }
+        if (!TradeOrderStatusEnum.isDelivered(order.getStatus())) {
+            throw exception(ORDER_RECEIVE_FAIL_STATUS_NOT_DELIVERED);
+        }
+        receiveOrder0(order);
     }
 
     /**

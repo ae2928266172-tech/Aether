@@ -96,6 +96,15 @@ public class TradeOrderBaseVO {
     @Schema(description = "自提核销码", example = "10")
     private Long pickUpVerifyCode;
 
+    @Schema(description = "病区编号", example = "1")
+    private Long wardId;
+
+    @Schema(description = "病区名称", example = "内科一病区")
+    private String wardName;
+
+    @Schema(description = "床号", example = "12")
+    private String bedNo;
+
     @Schema(description = "配送模板编号", example = "1024")
     private Long deliveryTemplateId;
 

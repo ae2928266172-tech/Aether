@@ -41,6 +41,8 @@ public interface TradeOrderMapper extends BaseMapperX<TradeOrderDO> {
                 .eqIfPresent(TradeOrderDO::getLogisticsId, reqVO.getLogisticsId())
                 .inIfPresent(TradeOrderDO::getPickUpStoreId, reqVO.getPickUpStoreIds())
                 .likeIfPresent(TradeOrderDO::getPickUpVerifyCode, reqVO.getPickUpVerifyCode())
+                .eqIfPresent(TradeOrderDO::getWardId, reqVO.getWardId())
+                .eqIfPresent(TradeOrderDO::getBedNo, reqVO.getBedNo())
                 .betweenIfPresent(TradeOrderDO::getCreateTime, reqVO.getCreateTime())
                 .orderByDesc(TradeOrderDO::getId));
     }
@@ -62,6 +64,8 @@ public interface TradeOrderMapper extends BaseMapperX<TradeOrderDO> {
                 .eqIfPresent(TradeOrderDO::getLogisticsId, reqVO.getLogisticsId())
                 .inIfPresent(TradeOrderDO::getPickUpStoreId, reqVO.getPickUpStoreIds())
                 .likeIfPresent(TradeOrderDO::getPickUpVerifyCode, reqVO.getPickUpVerifyCode())
+                .eqIfPresent(TradeOrderDO::getWardId, reqVO.getWardId())
+                .eqIfPresent(TradeOrderDO::getBedNo, reqVO.getBedNo())
                 .betweenIfPresent(TradeOrderDO::getCreateTime, reqVO.getCreateTime())
                 .groupBy(TradeOrderDO::getRefundStatus)); // 按售后状态分组
     }

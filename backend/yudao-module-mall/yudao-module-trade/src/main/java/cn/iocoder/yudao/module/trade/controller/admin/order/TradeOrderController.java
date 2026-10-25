@@ -139,6 +139,24 @@ public class TradeOrderController {
         return success(true);
     }
 
+    @PutMapping("/ward-delivery")
+    @Operation(summary = "病房配送：开始配送")
+    @Parameter(name = "id", description = "交易订单编号")
+    @PreAuthorize("@ss.hasPermission('trade:order:ward-delivery')")
+    public CommonResult<Boolean> deliveryWardOrder(@RequestParam("id") Long id) {
+        tradeOrderUpdateService.deliveryWardOrder(id);
+        return success(true);
+    }
+
+    @PutMapping("/ward-receive")
+    @Operation(summary = "病房配送：确认送达")
+    @Parameter(name = "id", description = "交易订单编号")
+    @PreAuthorize("@ss.hasPermission('trade:order:ward-delivery')")
+    public CommonResult<Boolean> receiveWardOrder(@RequestParam("id") Long id) {
+        tradeOrderUpdateService.receiveWardOrderByAdmin(id);
+        return success(true);
+    }
+
     @PutMapping("/pick-up-by-id")
     @Operation(summary = "订单核销")
     @Parameter(name = "id", description = "交易订单编号")

@@ -6,7 +6,9 @@ import cn.iocoder.yudao.module.erp.controller.admin.stock.vo.record.ErpStockReco
 import cn.iocoder.yudao.module.erp.dal.dataobject.stock.ErpStockRecordDO;
 import cn.iocoder.yudao.module.erp.dal.mysql.stock.ErpStockRecordMapper;
 import cn.iocoder.yudao.module.erp.service.stock.bo.ErpStockRecordCreateReqBO;
+import cn.iocoder.yudao.module.erp.service.stock.event.ErpStockChangeEvent;
 import jakarta.annotation.Resource;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.validation.annotation.Validated;
@@ -28,6 +30,9 @@ public class ErpStockRecordServiceImpl implements ErpStockRecordService {
     @Resource
     private ErpStockService stockService;
 
+    @Resource
+    private ApplicationEventPublisher eventPublisher;
+
     @Override
     public ErpStockRecordDO getStockRecord(Long id) {
         return stockRecordMapper.selectById(id);
@@ -48,6 +53,8 @@ public class ErpStockRecordServiceImpl implements ErpStockRecordService {
         ErpStockRecordDO stockRecord = BeanUtils.toBean(createReqBO, ErpStockRecordDO.class)
                 .setTotalCount(totalCount);
         stockRecordMapper.insert(stockRecord);
+        // 3. 通知库存变化，例如说：商城按共享库存物料重新计算规格库存
+        eventPublisher.publishEvent(new ErpStockChangeEvent(this, createReqBO.getProductId(), createReqBO.getWarehouseId()));
     }
 
 }

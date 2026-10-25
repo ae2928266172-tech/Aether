@@ -247,6 +247,22 @@ public class TradeOrderDO extends BaseDO {
      */
     private String pickUpVerifyCode;
 
+    /**
+     * 病区编号
+     *
+     * 配送方式为 {@link cn.iocoder.yudao.module.trade.enums.delivery.DeliveryTypeEnum#WARD} 时有值，
+     * 关联 {@link cn.iocoder.yudao.module.trade.dal.dataobject.delivery.DeliveryWardDO#getId()}
+     */
+    private Long wardId;
+    /**
+     * 病区名称（下单时的快照）
+     */
+    private String wardName;
+    /**
+     * 床号，病房配送时必填
+     */
+    private String bedNo;
+
     // ========== 售后基本信息 ==========
     /**
      * 售后状态

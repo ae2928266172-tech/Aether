@@ -78,7 +78,7 @@
   <ContentWrap>
     <el-tabs v-model="queryParams.tabType" @tab-click="handleTabClick">
       <el-tab-pane
-        v-for="item in tabsData"
+        v-for="item in visibleTabsData"
         :key="item.type"
         :label="item.name + '(' + item.count + ')'"
         :name="item.type"
@@ -152,7 +152,13 @@
         <template #default="{ row }"> ¥ {{ fenToYuan(row.price) }}</template>
       </el-table-column>
       <el-table-column align="center" label="销量" min-width="90" prop="salesCount" />
-      <el-table-column align="center" label="库存" min-width="90" prop="stock" />
+      <el-table-column
+        v-if="hasStockPermi"
+        align="center"
+        label="库存"
+        min-width="90"
+        prop="stock"
+      />
       <el-table-column align="center" label="排序" min-width="70" prop="sort" />
       <el-table-column align="center" label="销售状态" min-width="80">
         <template #default="{ row }">
@@ -189,6 +195,14 @@
             @click="openForm(row.id)"
           >
             修改
+          </el-button>
+          <el-button
+            v-hasPermi="['trade:sku-material:query']"
+            link
+            type="primary"
+            @click="openSkuMaterial(row)"
+          >
+            库存物料
           </el-button>
           <template v-if="queryParams.tabType === 4">
             <el-button
@@ -229,6 +243,9 @@
       @pagination="getList"
     />
   </ContentWrap>
+
+  <!-- 共享库存物料配置 -->
+  <SkuMaterialForm ref="skuMaterialFormRef" @success="getList" />
 </template>
 <script lang="ts" setup>
 import { parseId } from '@/utils/id'
@@ -238,6 +255,8 @@ import { createImageViewer } from '@/components/ImageViewer'
 import { dateFormatter } from '@/utils/formatTime'
 import { defaultProps, handleTree, treeToString } from '@/utils/tree'
 import { ProductSpuStatusEnum } from '@/utils/constants'
+import { checkPermi } from '@/utils/permission'
+import SkuMaterialForm from './SkuMaterialForm.vue'
 import { fenToYuan } from '@/utils'
 import download from '@/utils/download'
 import * as ProductSpuApi from '@/api/mall/product/spu'
@@ -282,6 +301,18 @@ const tabsData = ref([
     count: 0
   }
 ])
+
+const hasStockPermi = checkPermi(['product:spu:stock']) // 是否可以查看库存（门店店员不可以）
+// 没有查看库存权限时，隐藏【警戒库存】tab
+const visibleTabsData = computed(() =>
+  hasStockPermi ? tabsData.value : tabsData.value.filter((item) => item.type !== 3)
+)
+
+/** 共享库存物料配置 */
+const skuMaterialFormRef = ref()
+const openSkuMaterial = (row: ProductSpuApi.Spu) => {
+  skuMaterialFormRef.value.open(row)
+}
 
 const queryParams = ref({
   pageNo: 1,

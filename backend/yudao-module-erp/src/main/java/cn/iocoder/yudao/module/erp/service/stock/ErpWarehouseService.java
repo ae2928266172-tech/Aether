@@ -58,6 +58,13 @@ public interface ErpWarehouseService {
     ErpWarehouseDO getWarehouse(Long id);
 
     /**
+     * 获得默认仓库
+     *
+     * @return 默认仓库，不存在时返回 null
+     */
+    ErpWarehouseDO getDefaultWarehouse();
+
+    /**
      * 校验仓库列表的有效性
      *
      * @param ids 编号数组

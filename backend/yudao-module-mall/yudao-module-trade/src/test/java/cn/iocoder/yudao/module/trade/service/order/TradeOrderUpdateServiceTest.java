@@ -33,6 +33,7 @@ import cn.iocoder.yudao.module.trade.framework.order.core.aop.TradeOrderLogAspec
 import cn.iocoder.yudao.module.trade.service.cart.CartService;
 import cn.iocoder.yudao.module.trade.service.delivery.DeliveryExpressService;
 import cn.iocoder.yudao.module.trade.service.delivery.DeliveryPickUpStoreService;
+import cn.iocoder.yudao.module.trade.service.delivery.DeliveryWardService;
 import cn.iocoder.yudao.module.trade.service.message.TradeMessageService;
 import cn.iocoder.yudao.module.trade.service.order.handler.TradeOrderHandler;
 import cn.iocoder.yudao.module.trade.service.price.TradePriceService;
@@ -101,6 +102,8 @@ public class TradeOrderUpdateServiceTest extends BaseDbUnitTest {
     private TradeMessageService tradeMessageService;
     @MockitoBean
     private DeliveryPickUpStoreService pickUpStoreService;
+    @MockitoBean
+    private DeliveryWardService deliveryWardService;
     @MockitoBean
     private PayOrderApi payOrderApi;
     @MockitoBean

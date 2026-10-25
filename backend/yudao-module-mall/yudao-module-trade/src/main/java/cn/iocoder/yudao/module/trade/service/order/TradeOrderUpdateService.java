@@ -68,6 +68,20 @@ public interface TradeOrderUpdateService {
     void deliveryOrder(TradeOrderDeliveryReqVO deliveryReqVO);
 
     /**
+     * 【管理员】病房配送：开始配送，订单变为【配送中】（已发货）
+     *
+     * @param id 交易订单编号
+     */
+    void deliveryWardOrder(Long id);
+
+    /**
+     * 【管理员】病房配送：确认已送达病房，订单变为【已完成】
+     *
+     * @param id 交易订单编号
+     */
+    void receiveWardOrderByAdmin(Long id);
+
+    /**
      * 【会员】收货交易订单
      *
      * @param userId 用户编号

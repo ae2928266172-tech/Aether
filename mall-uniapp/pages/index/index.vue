@@ -25,6 +25,8 @@
   import { onLoad, onShow, onPageScroll, onPullDownRefresh } from '@dcloudio/uni-app';
   import sheep from '@/sheep';
   import $share from '@/sheep/platform/share';
+  import DeliveryApi from '@/sheep/api/trade/delivery';
+  import { removeWard, setWard } from '@/sheep/helper/ward';
   // 隐藏原生tabBar
   uni.hideTabBar({
     fail: () => {},
@@ -62,6 +64,22 @@
       options[sceneParams[0]] = sceneParams[1];
     }
     // #endif
+
+    // 扫病区二维码进入：记住病区，下单时自动选择【病房配送】
+    if (options.wardId) {
+      DeliveryApi.getDeliveryWard(options.wardId).then(({ code, data }) => {
+        if (code !== 0) {
+          return;
+        }
+        if (!data) {
+          removeWard();
+          sheep.$helper.toast('该病区暂不支持下单');
+          return;
+        }
+        setWard(data);
+        sheep.$helper.toast(`欢迎！已进入${data.name}`);
+      });
+    }
 
     // 预览模板
     if (options.templateId) {

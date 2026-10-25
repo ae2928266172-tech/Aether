@@ -1,7 +1,67 @@
 <template>
   <s-layout title="确认订单">
+    <!-- 病房配送：病区来自扫码（也可手动选择），床号必须填写 -->
+    <view
+      v-if="addressState.deliveryType === DeliveryTypeEnum.WARD.type"
+      class="ward-card-box bg-white ss-r-10 ss-m-b-14"
+    >
+      <view class="ward-card-title">送到病房</view>
+      <picker
+        :range="wardList"
+        range-key="name"
+        :disabled="wardList.length === 0"
+        @change="onWardChange"
+      >
+        <view class="order-item ss-flex ss-col-center ss-row-between">
+          <view class="item-title">病区</view>
+          <view class="ss-flex ss-col-center">
+            <text class="item-value" v-if="addressState.wardInfo.id">
+              {{ addressState.wardInfo.name }}
+            </text>
+            <text class="item-value text-red" v-else>请选择病区</text>
+            <text class="_icon-forward ss-m-l-10" v-if="wardList.length > 0" />
+          </view>
+        </view>
+      </picker>
+      <view class="order-item ss-flex ss-col-center ss-row-between">
+        <view class="item-title"><text class="text-red">*</text>床号</view>
+        <view class="ss-flex ss-col-center">
+          <uni-easyinput
+            maxlength="32"
+            placeholder="必填，例如：12 或 12 床"
+            v-model="addressState.bedNo"
+            :inputBorder="false"
+            :clearable="false"
+          />
+        </view>
+      </view>
+      <view class="order-item ss-flex ss-col-center ss-row-between">
+        <view class="item-title">联系人</view>
+        <view class="ss-flex ss-col-center">
+          <uni-easyinput
+            maxlength="20"
+            placeholder="病人或家属姓名"
+            v-model="addressState.receiverName"
+            :inputBorder="false"
+            :clearable="false"
+          />
+        </view>
+      </view>
+      <view class="order-item ss-flex ss-col-center ss-row-between">
+        <view class="item-title">联系电话</view>
+        <view class="ss-flex ss-col-center">
+          <uni-easyinput
+            maxlength="20"
+            placeholder="方便配送时联系"
+            v-model="addressState.receiverMobile"
+            :inputBorder="false"
+            :clearable="false"
+          />
+        </view>
+      </view>
+    </view>
     <!-- 头部地址选择【配送地址】【自提地址】 -->
-    <AddressSelection v-model="addressState" />
+    <AddressSelection v-else v-model="addressState" />
 
     <!-- 商品信息 -->
     <view class="order-card-box ss-m-b-14">
@@ -229,6 +289,8 @@
   import TradeConfigApi from '@/sheep/api/trade/config';
   import { fen2yuan } from '@/sheep/hooks/useGoods';
   import { DeliveryTypeEnum } from '@/sheep/helper/const';
+  import DeliveryApi from '@/sheep/api/trade/delivery';
+  import { getWard, setWard } from '@/sheep/helper/ward';
 
   const state = reactive({
     orderPayload: {},
@@ -250,7 +312,28 @@
     pickUpInfo: {}, // 选择的自提门店信息
     receiverName: '', // 收件人名称
     receiverMobile: '', // 收件人手机
+    wardInfo: {}, // 病房配送：病区
+    bedNo: '', // 病房配送：床号，必填
   });
+  const wardList = ref([]); // 可选的病区列表
+
+  // 选择病区
+  function onWardChange(e) {
+    const ward = wardList.value[e.detail.value];
+    addressState.value.wardInfo = ward;
+    setWard(ward);
+  }
+
+  // 使用病房配送：加载病区列表，并用会员信息预填联系人
+  async function useWardDelivery() {
+    const { code, data } = await DeliveryApi.getDeliveryWardList();
+    if (code === 0) {
+      wardList.value = data;
+    }
+    const userInfo = sheep.$store('user').userInfo;
+    addressState.value.receiverName = addressState.value.receiverName || userInfo.nickname || '';
+    addressState.value.receiverMobile = addressState.value.receiverMobile || userInfo.mobile || '';
+  }
 
   // ========== 积分 ==========
   /**
@@ -270,6 +353,23 @@
 
   // 提交订单
   function onConfirm() {
+    if (addressState.value.deliveryType === DeliveryTypeEnum.WARD.type) {
+      if (!addressState.value.wardInfo.id) {
+        sheep.$helper.toast('请选择病区');
+        return;
+      }
+      if (!addressState.value.bedNo || !addressState.value.bedNo.trim()) {
+        sheep.$helper.toast('请填写床号');
+        return;
+      }
+      if (
+        addressState.value.receiverMobile &&
+        !/^1(3|4|5|7|8|9|6)\d{9}$/.test(addressState.value.receiverMobile)
+      ) {
+        sheep.$helper.toast('请填写正确的手机号');
+        return;
+      }
+    }
     if (addressState.value.deliveryType === 1 && !addressState.value.addressInfo.id) {
       sheep.$helper.toast('请选择收货地址');
       return;
@@ -306,6 +406,8 @@
       pickUpStoreId: addressState.value.pickUpInfo.id, //自提门店编号
       receiverName: addressState.value.receiverName, // 选择门店自提时，该字段为联系人名
       receiverMobile: addressState.value.receiverMobile, // 选择门店自提时，该字段为联系人手机
+      wardId: addressState.value.wardInfo.id, // 病房配送：病区编号
+      bedNo: addressState.value.bedNo, // 病房配送：床号
       pointStatus: state.pointStatus,
       combinationActivityId: state.orderPayload.combinationActivityId,
       combinationHeadId: state.orderPayload.combinationHeadId,
@@ -343,6 +445,8 @@
       pickUpStoreId: addressState.value.pickUpInfo.id, //自提门店编号
       receiverName: addressState.value.receiverName, // 选择门店自提时，该字段为联系人名
       receiverMobile: addressState.value.receiverMobile, // 选择门店自提时，该字段为联系人手机
+      wardId: addressState.value.wardInfo.id, // 病房配送：病区编号
+      bedNo: addressState.value.bedNo, // 病房配送：床号
       pointStatus: state.pointStatus,
       combinationActivityId: state.orderPayload.combinationActivityId,
       combinationHeadId: state.orderPayload.combinationHeadId,
@@ -376,6 +480,16 @@
     }
 
     // 价格计算
+    // 情况零：扫过病区二维码，先自动选择“病房配送”
+    const ward = getWard();
+    if (ward) {
+      addressState.value.wardInfo = ward;
+      addressState.value.deliveryType = DeliveryTypeEnum.WARD.type;
+      if ((await getOrderInfo()) === 0) {
+        await useWardDelivery();
+        return;
+      }
+    }
     // 情况一：先自动选择“快递物流”
     addressState.value.deliveryType = DeliveryTypeEnum.EXPRESS.type;
     let orderCode = await getOrderInfo();
@@ -390,7 +504,13 @@
         return;
       }
     }
-    // 情况三：都失败，则不选择
+    // 情况三：商品只支持病房配送（没有扫码），手动选择病区
+    addressState.value.deliveryType = DeliveryTypeEnum.WARD.type;
+    if ((await getOrderInfo()) === 0) {
+      await useWardDelivery();
+      return;
+    }
+    // 情况四：都失败，则不选择
     addressState.value.deliveryType = undefined;
     await getOrderInfo();
   });
@@ -408,6 +528,28 @@
 </script>
 
 <style lang="scss" scoped>
+  .ward-card-box {
+    padding: 10rpx 20rpx;
+
+    .ward-card-title {
+      font-size: 30rpx;
+      font-weight: 500;
+      line-height: 70rpx;
+    }
+
+    .order-item {
+      height: 80rpx;
+    }
+
+    .item-title {
+      font-size: 28rpx;
+    }
+
+    .item-value {
+      font-size: 28rpx;
+    }
+  }
+
   :deep() {
     .uni-input-wrapper {
       width: 320rpx;

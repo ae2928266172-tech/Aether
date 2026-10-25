@@ -60,10 +60,31 @@
         {{ state.orderInfo.receiverAreaName }} {{ state.orderInfo.receiverDetailAddress }}
       </view>
     </view>
+    <!-- 病房配送 -->
+    <view class="order-address-box" v-else-if="state.orderInfo.deliveryType === 3">
+      <view class="ss-flex ss-col-center">
+        <text class="address-username">
+          {{ state.orderInfo.wardName }} {{ state.orderInfo.bedNo }} 床
+        </text>
+      </view>
+      <view
+        class="address-detail"
+        v-if="state.orderInfo.receiverName || state.orderInfo.receiverMobile"
+      >
+        联系人：{{ state.orderInfo.receiverName }} {{ state.orderInfo.receiverMobile }}
+      </view>
+    </view>
 
     <view
       class="detail-goods"
-      :style="[{ marginTop: state.orderInfo.receiverAreaId > 0 ? '0' : '-40rpx' }]"
+      :style="[
+        {
+          marginTop:
+            state.orderInfo.receiverAreaId > 0 || state.orderInfo.deliveryType === 3
+              ? '0'
+              : '-40rpx',
+        },
+      ]"
     >
       <!-- 订单信 -->
       <view class="order-list" v-for="item in state.orderInfo.items" :key="item.goods_id">

@@ -408,6 +408,10 @@ export const DeliveryTypeEnum = {
   PICK_UP: {
     type: 2,
     name: '到店自提'
+  },
+  WARD: {
+    type: 3,
+    name: '病房配送'
   }
 }
 /**

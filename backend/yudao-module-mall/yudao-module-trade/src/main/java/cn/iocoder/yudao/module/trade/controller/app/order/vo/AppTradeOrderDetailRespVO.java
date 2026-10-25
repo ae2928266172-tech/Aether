@@ -118,6 +118,15 @@ public class AppTradeOrderDetailRespVO {
     @Schema(description = "自提核销码", example = "40964096")
     private String pickUpVerifyCode;
 
+    @Schema(description = "病区编号", example = "1")
+    private Long wardId;
+
+    @Schema(description = "病区名称", example = "内科一病区")
+    private String wardName;
+
+    @Schema(description = "床号", example = "12")
+    private String bedNo;
+
     // ========== 售后基本信息 ==========
 
     @Schema(description = "售后状态", example = "0")

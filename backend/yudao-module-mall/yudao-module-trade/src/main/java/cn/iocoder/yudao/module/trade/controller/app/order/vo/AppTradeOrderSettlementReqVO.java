@@ -11,6 +11,7 @@ import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -46,6 +47,12 @@ public class AppTradeOrderSettlementReqVO {
     @Schema(description = "收件人手机", example = "15601691300") // 选择门店自提时，该字段为联系人手机
     @Mobile(message = "收件人手机格式不正确")
     private String receiverMobile;
+
+    @Schema(description = "病区编号，病房配送时必填（扫病区二维码自动带上）", example = "1")
+    private Long wardId;
+    @Schema(description = "床号，病房配送时必填", example = "12")
+    @Size(max = 32, message = "床号不能超过 32 个字符")
+    private String bedNo;
 
     // ========== 秒杀活动相关字段 ==========
     @Schema(description = "秒杀活动编号", example = "1024")

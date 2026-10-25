@@ -193,7 +193,7 @@
         {{ row.costPrice }}
       </template>
     </el-table-column>
-    <el-table-column align="center" label="库存" min-width="80">
+    <el-table-column v-if="hasStockPermi" align="center" label="库存" min-width="80">
       <template #default="{ row }">
         {{ row.stock }}
       </template>
@@ -273,7 +273,7 @@
         {{ formatToFraction(row.costPrice) }}
       </template>
     </el-table-column>
-    <el-table-column align="center" label="库存" min-width="80">
+    <el-table-column v-if="hasStockPermi" align="center" label="库存" min-width="80">
       <template #default="{ row }">
         {{ row.stock }}
       </template>
@@ -293,9 +293,11 @@ import { RuleConfig } from '@/views/mall/product/spu/components/index'
 import { PropertyAndValues } from './index'
 import { ElTable } from 'element-plus'
 import { isEmpty } from '@/utils/is'
+import { checkPermi } from '@/utils/permission'
 
 defineOptions({ name: 'SkuList' })
 const message = useMessage() // 消息弹窗
+const hasStockPermi = checkPermi(['product:spu:stock']) // 是否可以查看库存（门店店员不可以）
 
 const props = defineProps({
   propFormData: {

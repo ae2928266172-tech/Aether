@@ -60,7 +60,27 @@
           >
             核销
           </el-button>
+          <!-- 病房配送 -->
+          <el-button
+            v-if="formData.deliveryType === DeliveryTypeEnum.WARD.type"
+            v-hasPermi="['trade:order:ward-delivery']"
+            type="warning"
+            @click="handleWardDelivery"
+          >
+            开始配送
+          </el-button>
         </template>
+        <el-button
+          v-if="
+            formData.deliveryType === DeliveryTypeEnum.WARD.type &&
+            formData.status! === TradeOrderStatusEnum.DELIVERED.status
+          "
+          v-hasPermi="['trade:order:ward-delivery']"
+          type="success"
+          @click="handleWardReceive"
+        >
+          确认送达
+        </el-button>
       </el-descriptions-item>
       <el-descriptions-item>
         <template #label><span style="color: red">提醒: </span></template>
@@ -181,6 +201,19 @@
           </el-timeline>
         </el-descriptions-item>
       </div>
+      <!-- 病房配送 -->
+      <div v-if="formData.deliveryType === DeliveryTypeEnum.WARD.type">
+        <el-descriptions-item label="病区: ">{{ formData.wardName }}</el-descriptions-item>
+        <el-descriptions-item label="床号: ">
+          <span class="font-bold">{{ formData.bedNo }}</span>
+        </el-descriptions-item>
+        <el-descriptions-item v-if="formData.deliveryTime" label="开始配送: ">
+          {{ formatDate(formData.deliveryTime) }}
+        </el-descriptions-item>
+        <el-descriptions-item v-if="formData.receiveTime" label="送达时间: ">
+          {{ formatDate(formData.receiveTime) }}
+        </el-descriptions-item>
+      </div>
       <!-- 自提门店 -->
       <div v-if="formData.deliveryType === DeliveryTypeEnum.PICK_UP.type">
         <el-descriptions-item v-if="formData.pickUpStoreId" label="自提门店: ">
@@ -292,6 +325,28 @@ const handlePickUp = async () => {
     await TradeOrderApi.pickUpOrder(formData.value.id!)
     message.success('核销成功')
     // 刷新列表
+    await getDetail()
+  } catch {}
+}
+
+/** 病房配送：开始配送 */
+const handleWardDelivery = async () => {
+  try {
+    await message.confirm(
+      `确认开始配送到【${formData.value.wardName} ${formData.value.bedNo} 床】吗？`
+    )
+    await TradeOrderApi.deliveryWardOrder(formData.value.id!)
+    message.success('已开始配送')
+    await getDetail()
+  } catch {}
+}
+
+/** 病房配送：确认送达 */
+const handleWardReceive = async () => {
+  try {
+    await message.confirm(`确认已送达【${formData.value.wardName} ${formData.value.bedNo} 床】吗？`)
+    await TradeOrderApi.receiveWardOrder(formData.value.id!)
+    message.success('已确认送达')
     await getDetail()
   } catch {}
 }

@@ -166,6 +166,7 @@ public class ProductSpuServiceImplTest extends BaseDbUnitTest {
         // 调用，并断言：快递发货、用户自提，及其组合
         assertEquals(Collections.emptySet(), validateDeliveryTypes(singletonList(DeliveryTypeEnum.EXPRESS.getType())));
         assertEquals(Collections.emptySet(), validateDeliveryTypes(singletonList(DeliveryTypeEnum.PICK_UP.getType())));
+        assertEquals(Collections.emptySet(), validateDeliveryTypes(singletonList(DeliveryTypeEnum.WARD.getType())));
         assertEquals(Collections.emptySet(), validateDeliveryTypes(Arrays.asList(
                 DeliveryTypeEnum.EXPRESS.getType(), DeliveryTypeEnum.PICK_UP.getType())));
     }
@@ -175,9 +176,9 @@ public class ProductSpuServiceImplTest extends BaseDbUnitTest {
         // 调用，并断言：不在枚举范围内
         Set<String> invalidMessages = Collections.singleton("配送方式不正确");
         assertEquals(invalidMessages, validateDeliveryTypes(singletonList(0)));
-        assertEquals(invalidMessages, validateDeliveryTypes(singletonList(3)));
+        assertEquals(invalidMessages, validateDeliveryTypes(singletonList(4)));
         assertEquals(invalidMessages, validateDeliveryTypes(singletonList(-1)));
-        assertEquals(invalidMessages, validateDeliveryTypes(Arrays.asList(DeliveryTypeEnum.EXPRESS.getType(), 3)));
+        assertEquals(invalidMessages, validateDeliveryTypes(Arrays.asList(DeliveryTypeEnum.EXPRESS.getType(), 4)));
         assertEquals(invalidMessages, validateDeliveryTypes(Arrays.asList(DeliveryTypeEnum.EXPRESS.getType(), null)));
         // 调用，并断言：为空
         Set<String> emptyMessages = Collections.singleton("配送方式不能为空");

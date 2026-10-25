@@ -43,6 +43,12 @@ public class TradeOrderPageReqVO extends PageParam {
     @Schema(description = "自提核销码", example = "12345678")
     private String pickUpVerifyCode;
 
+    @Schema(description = "病区编号", example = "1")
+    private Long wardId;
+
+    @Schema(description = "床号", example = "12")
+    private String bedNo;
+
     @Schema(description = "订单类型", example = "1")
     private Integer type;
 

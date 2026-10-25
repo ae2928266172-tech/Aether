@@ -42,6 +42,9 @@ public enum ErpStockRecordBizTypeEnum implements ArrayValuable<Integer> {
 
     PURCHASE_RETURN(80, "采购退货出库"),
     PURCHASE_RETURN_CANCEL(81, "采购退货出库（作废）"),
+
+    MALL_ORDER_OUT(90, "商城订单出库"),
+    MALL_ORDER_OUT_CANCEL(91, "商城订单出库（取消）"),
     ;
 
     public static final Integer[] ARRAYS = Arrays.stream(values()).map(ErpStockRecordBizTypeEnum::getType).toArray(Integer[]::new);

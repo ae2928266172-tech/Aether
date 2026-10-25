@@ -126,6 +126,12 @@
                 {{ scope.row.receiverAreaName }} {{ scope.row.receiverDetailAddress }}
               </span>
             </div>
+            <!-- 病房配送  -->
+            <div v-if="scope.row.deliveryType === DeliveryTypeEnum.WARD.type" class="flex flex-col">
+              <span>买家：{{ scope.row.user?.nickname }}</span>
+              <span class="font-bold">{{ scope.row.wardName }} {{ scope.row.bedNo }} 床</span>
+              <span>联系人：{{ scope.row.receiverName }} {{ scope.row.receiverMobile }}</span>
+            </div>
             <!-- 自提  -->
             <div
               v-if="scope.row.deliveryType === DeliveryTypeEnum.PICK_UP.type"
@@ -153,7 +159,18 @@
         </el-table-column>
         <el-table-column align="center" label="订单状态" width="120">
           <template #default>
-            <dict-tag :type="DICT_TYPE.TRADE_ORDER_STATUS" :value="scope.row.status" />
+            <!-- 病房配送：已发货即配送中，已完成即已送达 -->
+            <el-tag
+              v-if="
+                scope.row.deliveryType === DeliveryTypeEnum.WARD.type && wardStatusText(scope.row)
+              "
+              :type="
+                scope.row.status === TradeOrderStatusEnum.COMPLETED.status ? 'success' : 'warning'
+              "
+            >
+              {{ wardStatusText(scope.row) }}
+            </el-tag>
+            <dict-tag v-else :type="DICT_TYPE.TRADE_ORDER_STATUS" :value="scope.row.status" />
           </template>
         </el-table-column>
         <el-table-column align="center" fixed="right" label="操作" width="160">
@@ -168,7 +185,7 @@
 <script lang="ts" setup>
 import { nextTick, onMounted, onUnmounted, watch } from 'vue'
 import { DICT_TYPE } from '@/utils/dict'
-import { DeliveryTypeEnum } from '@/utils/constants'
+import { DeliveryTypeEnum, TradeOrderStatusEnum } from '@/utils/constants'
 import { formatDate } from '@/utils/formatTime'
 import { floatToFixed2 } from '@/utils'
 import * as TradeOrderApi from '@/api/mall/trade/order'
@@ -183,6 +200,20 @@ const props = defineProps<{
   list: OrderVO[]
   pickUpStoreList: DeliveryPickUpStoreVO[]
 }>()
+
+/** 病房配送订单的状态文案：已发货 = 配送中，已完成 = 已送达；其它状态沿用订单状态字典 */
+const wardStatusText = (order: OrderVO) => {
+  if (order.status === TradeOrderStatusEnum.UNDELIVERED.status) {
+    return '待配送'
+  }
+  if (order.status === TradeOrderStatusEnum.DELIVERED.status) {
+    return '配送中'
+  }
+  if (order.status === TradeOrderStatusEnum.COMPLETED.status) {
+    return '已送达'
+  }
+  return ''
+}
 
 const headerStyle = ({ row, columnIndex }: any) => {
   // 表头第一行第一列占 8

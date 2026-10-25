@@ -78,6 +78,28 @@
         </el-select>
       </el-form-item>
       <el-form-item
+        v-if="queryParams.deliveryType === DeliveryTypeEnum.WARD.type"
+        label="病区"
+        prop="wardId"
+      >
+        <el-select v-model="queryParams.wardId" class="!w-280px" clearable placeholder="全部">
+          <el-option v-for="item in wardList" :key="item.id" :label="item.name" :value="item.id!" />
+        </el-select>
+      </el-form-item>
+      <el-form-item
+        v-if="queryParams.deliveryType === DeliveryTypeEnum.WARD.type"
+        label="床号"
+        prop="bedNo"
+      >
+        <el-input
+          v-model="queryParams.bedNo"
+          class="!w-280px"
+          clearable
+          placeholder="请输入床号"
+          @keyup.enter="handleQuery"
+        />
+      </el-form-item>
+      <el-form-item
         v-if="queryParams.deliveryType === DeliveryTypeEnum.EXPRESS.type"
         label="快递公司"
         prop="logisticsId"
@@ -180,6 +202,29 @@
               <Icon icon="ep:notification" />
               详情
             </el-button>
+            <!-- 病房配送：待配送 -> 开始配送 -> 确认送达 -->
+            <template v-if="row.deliveryType === DeliveryTypeEnum.WARD.type">
+              <el-button
+                v-if="row.status === TradeOrderStatusEnum.UNDELIVERED.status"
+                v-hasPermi="['trade:order:ward-delivery']"
+                link
+                type="warning"
+                @click="handleWardDelivery(row)"
+              >
+                <Icon icon="ep:van" />
+                开始配送
+              </el-button>
+              <el-button
+                v-if="row.status === TradeOrderStatusEnum.DELIVERED.status"
+                v-hasPermi="['trade:order:ward-delivery']"
+                link
+                type="success"
+                @click="handleWardReceive(row)"
+              >
+                <Icon icon="ep:circle-check" />
+                确认送达
+              </el-button>
+            </template>
             <el-dropdown
               v-hasPermi="['trade:order:update']"
               @command="(command) => handleCommand(command, row)"
@@ -232,6 +277,7 @@ import OrderDeliveryForm from '@/views/mall/trade/order/form/OrderDeliveryForm.v
 import OrderUpdateRemarkForm from '@/views/mall/trade/order/form/OrderUpdateRemarkForm.vue'
 import * as TradeOrderApi from '@/api/mall/trade/order'
 import * as PickUpStoreApi from '@/api/mall/trade/delivery/pickUpStore'
+import { DeliveryWardApi, DeliveryWardVO } from '@/api/mall/trade/delivery/ward'
 import { DICT_TYPE, getIntDictOptions, getStrDictOptions } from '@/utils/dict'
 import * as DeliveryExpressApi from '@/api/mall/trade/delivery/express'
 import { DeliveryTypeEnum, TradeOrderStatusEnum } from '@/utils/constants'
@@ -240,6 +286,7 @@ import { OrderTableColumn } from './components'
 defineOptions({ name: 'TradeOrder' })
 
 const { currentRoute, push } = useRouter() // 路由跳转
+const message = useMessage() // 消息弹窗
 const loading = ref(true) // 列表的加载中
 const total = ref(2) // 列表的总页数
 const list = ref<TradeOrderApi.OrderVO[]>([]) // 列表的数据
@@ -256,7 +303,9 @@ const queryParams = ref({
   deliveryType: undefined, // 配送方式
   logisticsId: undefined, // 快递公司
   pickUpStoreId: undefined as number[] | undefined, // 自提门店
-  pickUpVerifyCode: undefined // 自提核销码
+  pickUpVerifyCode: undefined, // 自提核销码
+  wardId: undefined, // 病区
+  bedNo: undefined // 床号
 })
 const queryType = reactive({ queryParam: '' }) // 订单搜索类型 queryParam
 
@@ -318,7 +367,9 @@ const resetQuery = () => {
     deliveryType: undefined, // 配送方式
     logisticsId: undefined, // 快递公司
     pickUpStoreId: undefined, // 自提门店
-    pickUpVerifyCode: undefined // 自提核销码
+    pickUpVerifyCode: undefined, // 自提核销码
+    wardId: undefined, // 病区
+    bedNo: undefined // 床号
   }
   handleQuery()
 }
@@ -342,6 +393,26 @@ const handleCommand = (command: string, row: TradeOrderApi.OrderVO) => {
   }
 }
 
+/** 病房配送：开始配送 */
+const handleWardDelivery = async (row: TradeOrderApi.OrderVO) => {
+  try {
+    await message.confirm(`确认开始配送到【${row.wardName} ${row.bedNo} 床】吗？`)
+    await TradeOrderApi.deliveryWardOrder(row.id!)
+    message.success('已开始配送')
+    await getList()
+  } catch {}
+}
+
+/** 病房配送：确认送达 */
+const handleWardReceive = async (row: TradeOrderApi.OrderVO) => {
+  try {
+    await message.confirm(`确认已送达【${row.wardName} ${row.bedNo} 床】吗？`)
+    await TradeOrderApi.receiveWardOrder(row.id!)
+    message.success('已确认送达')
+    await getList()
+  } catch {}
+}
+
 // 监听路由变化更新列表，解决订单保存/更新后，列表不刷新的问题。
 watch(
   () => currentRoute.value,
@@ -352,10 +423,12 @@ watch(
 
 const pickUpStoreList = ref<PickUpStoreApi.DeliveryPickUpStoreVO[]>([]) // 自提门店精简列表
 const deliveryExpressList = ref<DeliveryExpressApi.DeliveryExpressVO[]>([]) // 物流公司
+const wardList = ref<DeliveryWardVO[]>([]) // 病区精简列表
 /** 初始化 **/
 onMounted(async () => {
   await getList()
   pickUpStoreList.value = await PickUpStoreApi.getSimpleDeliveryPickUpStoreList()
   deliveryExpressList.value = await DeliveryExpressApi.getSimpleDeliveryExpressList()
+  wardList.value = await DeliveryWardApi.getSimpleWardList()
 })
 </script>
