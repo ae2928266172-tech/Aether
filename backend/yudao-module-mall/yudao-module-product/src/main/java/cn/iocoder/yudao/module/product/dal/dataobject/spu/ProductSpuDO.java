@@ -5,6 +5,7 @@ import cn.iocoder.yudao.framework.mybatis.core.type.IntegerListTypeHandler;
 import cn.iocoder.yudao.module.product.dal.dataobject.brand.ProductBrandDO;
 import cn.iocoder.yudao.module.product.dal.dataobject.category.ProductCategoryDO;
 import cn.iocoder.yudao.module.product.dal.dataobject.sku.ProductSkuDO;
+import cn.iocoder.yudao.module.product.enums.spu.ProductSpuGiftStockSourceEnum;
 import cn.iocoder.yudao.module.product.enums.spu.ProductSpuStatusEnum;
 import com.baomidou.mybatisplus.annotation.KeySequence;
 import com.baomidou.mybatisplus.annotation.TableField;
@@ -137,6 +138,44 @@ public class ProductSpuDO extends BaseDO {
      * 对应 TradeDeliveryExpressTemplateDO 的 id 编号
      */
     private Long deliveryTemplateId;
+    /**
+     * 顾客端是否可见
+     *
+     * false 时只在门店收银台售卖，病人在小程序 / H5 看不到、也不能下单（例如价格太低、不值得配送到病区的商品）
+     */
+    private Boolean customerVisible;
+
+    // ========== 供应商相关字段 =========
+
+    /**
+     * 供应商编号
+     *
+     * 对应 ErpSupplierDO 的 id 编号，用于每月按供应商对账
+     */
+    private Long supplierId;
+
+    // ========== 起订量、买赠 =========
+
+    /**
+     * 起订量：顾客端每单至少购买的件数，为空或 0 表示不限制；门店收银不受限制
+     */
+    private Integer minBuyCount;
+    /**
+     * 买赠：每买多少件
+     *
+     * 和 {@link #giftCount} 一起使用，例如买 2 赠 1：giftBuyCount = 2，giftCount = 1；为空或 0 表示没有买赠
+     */
+    private Integer giftBuyCount;
+    /**
+     * 买赠：赠送多少件（赠送同一规格）
+     */
+    private Integer giftCount;
+    /**
+     * 买赠：赠品从哪里扣库存
+     *
+     * 枚举 {@link ProductSpuGiftStockSourceEnum}
+     */
+    private Integer giftStockSource;
 
     // ========== 营销相关字段 =========
 

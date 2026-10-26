@@ -35,6 +35,9 @@ public class AppTradeOrderItemRespVO {
     @Schema(description = "购买数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Integer count;
 
+    @Schema(description = "赠送件数（买赠）", example = "1")
+    private Integer giftCount;
+
     @Schema(description = "是否评价", requiredMode = Schema.RequiredMode.REQUIRED, example = "true")
     private Boolean commentStatus;
 

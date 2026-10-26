@@ -29,4 +29,7 @@ public class AppProductSpuBaseRespVO {
     @Schema(description = "商品状态", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Integer status;
 
+    @Schema(description = "起订量", example = "10")
+    private Integer minBuyCount;
+
 }

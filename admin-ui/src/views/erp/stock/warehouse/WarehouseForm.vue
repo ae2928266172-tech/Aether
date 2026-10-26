@@ -25,6 +25,12 @@
           </el-radio>
         </el-radio-group>
       </el-form-item>
+      <el-form-item label="赠品库" prop="giftStatus">
+        <el-switch v-model="formData.giftStatus" />
+        <span class="ml-8px text-12px text-[var(--el-text-color-secondary)]">
+          商城买赠设置“从赠品库扣”时，赠品从这个仓库出库
+        </span>
+      </el-form-item>
       <el-form-item label="仓储费" prop="warehousePrice">
         <el-input-number
           v-model="formData.warehousePrice"
@@ -88,7 +94,8 @@ const formData = ref({
   principal: undefined as string | undefined,
   warehousePrice: undefined as number | undefined,
   truckagePrice: undefined as number | undefined,
-  status: undefined as number | undefined
+  status: undefined as number | undefined,
+  giftStatus: false as boolean | undefined
 })
 const formRules = reactive({
   name: [{ required: true, message: '仓库名称不能为空', trigger: 'blur' }],
@@ -150,7 +157,8 @@ const resetForm = () => {
     principal: undefined,
     warehousePrice: undefined,
     truckagePrice: undefined,
-    status: CommonStatusEnum.ENABLE
+    status: CommonStatusEnum.ENABLE,
+    giftStatus: false
   }
   formRef.value?.resetFields()
 }

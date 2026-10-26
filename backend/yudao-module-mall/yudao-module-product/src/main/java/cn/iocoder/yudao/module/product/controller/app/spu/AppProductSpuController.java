@@ -3,6 +3,7 @@ package cn.iocoder.yudao.module.product.controller.app.spu;
 import cn.hutool.core.collection.CollUtil;
 import cn.iocoder.yudao.framework.common.pojo.CommonResult;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.collection.CollectionUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.product.controller.app.spu.vo.AppProductSpuDetailRespVO;
 import cn.iocoder.yudao.module.product.controller.app.spu.vo.AppProductSpuPageReqVO;
@@ -32,6 +33,7 @@ import java.util.Set;
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.pojo.CommonResult.success;
 import static cn.iocoder.yudao.framework.security.core.util.SecurityFrameworkUtils.getLoginUserId;
+import static cn.iocoder.yudao.module.product.enums.ErrorCodeConstants.SPU_CUSTOMER_INVISIBLE;
 import static cn.iocoder.yudao.module.product.enums.ErrorCodeConstants.SPU_NOT_ENABLE;
 import static cn.iocoder.yudao.module.product.enums.ErrorCodeConstants.SPU_NOT_EXISTS;
 
@@ -53,7 +55,9 @@ public class AppProductSpuController {
     @Parameter(name = "ids", description = "编号列表", required = true)
     @PermitAll
     public CommonResult<List<AppProductSpuRespVO>> getSpuList(@RequestParam("ids") Set<Long> ids) {
-        List<ProductSpuDO> list = productSpuService.getSpuList(ids);
+        // 只在门店售卖的商品，顾客端不展示
+        List<ProductSpuDO> list = CollectionUtils.filterList(productSpuService.getSpuList(ids),
+                spu -> !Boolean.FALSE.equals(spu.getCustomerVisible()));
         if (CollUtil.isEmpty(list)) {
             return success(Collections.emptyList());
         }
@@ -91,6 +95,9 @@ public class AppProductSpuController {
         }
         if (!ProductSpuStatusEnum.isEnable(spu.getStatus())) {
             throw exception(SPU_NOT_ENABLE, spu.getName());
+        }
+        if (Boolean.FALSE.equals(spu.getCustomerVisible())) {
+            throw exception(SPU_CUSTOMER_INVISIBLE, spu.getName());
         }
         // 获得商品 SKU
         List<ProductSkuDO> skus = productSkuService.getSkuListBySpuId(spu.getId());

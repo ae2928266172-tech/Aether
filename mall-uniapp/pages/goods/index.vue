@@ -138,6 +138,20 @@
             </view>
             <view class="title-text ss-line-2 ss-m-b-6">{{ state.goodsInfo.name }}</view>
             <view class="subtitle-text ss-line-1">{{ state.goodsInfo.introduction }}</view>
+            <view
+              v-if="state.goodsInfo.minBuyCount > 1 || state.goodsInfo.giftBuyCount > 0"
+              class="buy-rule ss-flex ss-m-t-16"
+            >
+              <view v-if="state.goodsInfo.minBuyCount > 1" class="buy-rule-tag">
+                {{ state.goodsInfo.minBuyCount }} 件起购
+              </view>
+              <view
+                v-if="state.goodsInfo.giftBuyCount > 0 && state.goodsInfo.giftCount > 0"
+                class="buy-rule-tag gift"
+              >
+                买{{ state.goodsInfo.giftBuyCount }}赠{{ state.goodsInfo.giftCount }}
+              </view>
+            </view>
           </view>
 
           <!-- 功能卡片 -->
@@ -668,5 +682,22 @@
     line-height: 40rpx;
     display: flex;
     justify-content: flex-end;
+  }
+  .buy-rule {
+    gap: 12rpx;
+  }
+  .buy-rule-tag {
+    padding: 4rpx 14rpx;
+    font-size: 22rpx;
+    line-height: 32rpx;
+    color: var(--ui-BG-Main);
+    border: 1rpx solid var(--ui-BG-Main);
+    border-radius: 6rpx;
+
+    &.gift {
+      color: #fff;
+      background: #ff6000;
+      border-color: #ff6000;
+    }
   }
 </style>

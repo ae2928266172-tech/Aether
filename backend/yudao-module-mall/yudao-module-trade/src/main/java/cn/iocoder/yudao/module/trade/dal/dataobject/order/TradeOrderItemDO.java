@@ -173,6 +173,32 @@ public class TradeOrderItemDO extends BaseDO {
      */
     private Integer afterSaleStatus;
 
+    // ========== 供应商对账 ==========
+
+    /**
+     * 供应商编号，下单时从商品 SPU 复制，用于每月按供应商对账
+     *
+     * 关联 ErpSupplierDO 的 id 编号
+     */
+    private Long supplierId;
+    /**
+     * 成本价，单位：分。下单时从商品 SKU 复制
+     */
+    private Integer costPrice;
+
+    // ========== 买赠 ==========
+
+    /**
+     * 赠送件数（买赠），下单时按商品的买赠规则计算
+     */
+    private Integer giftCount;
+    /**
+     * 赠品库存来源
+     *
+     * 枚举 ProductSpuGiftStockSourceEnum
+     */
+    private Integer giftStockSource;
+
     /**
      * 商品属性
      */

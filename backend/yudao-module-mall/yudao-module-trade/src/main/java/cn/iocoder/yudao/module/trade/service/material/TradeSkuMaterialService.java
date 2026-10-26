@@ -4,6 +4,9 @@ import cn.iocoder.yudao.module.trade.controller.admin.material.vo.TradeSkuMateri
 import cn.iocoder.yudao.module.trade.dal.dataobject.material.TradeSkuMaterialDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.order.TradeOrderDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.order.TradeOrderItemDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.pos.TradePosOrderDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.pos.TradePosOrderItemDO;
+import cn.iocoder.yudao.module.trade.service.material.bo.TradeGiftStockItemBO;
 import jakarta.validation.Valid;
 
 import java.util.Collection;
@@ -48,6 +51,35 @@ public interface TradeSkuMaterialService {
      * @param orderItems 订单项
      */
     void restoreStockByOrder(TradeOrderDO order, List<TradeOrderItemDO> orderItems);
+
+    /**
+     * 门店收银后，按规格物料配置扣减 ERP 库存
+     *
+     * @param order      收银单
+     * @param orderItems 收银单项
+     */
+    void deductStockByPosOrder(TradePosOrderDO order, List<TradePosOrderItemDO> orderItems);
+
+    /**
+     * 门店收银单作废后，退回已扣减的 ERP 库存
+     *
+     * @param order      收银单
+     * @param orderItems 收银单项
+     */
+    void restoreStockByPosOrder(TradePosOrderDO order, List<TradePosOrderItemDO> orderItems);
+
+    /**
+     * 扣减（或退回）买赠的赠品库存
+     *
+     * 赠品来源为【总库存】时：配置了物料的规格从 ERP 默认仓库扣，未配置的直接扣规格库存；
+     * 赠品来源为【赠品库】时：从 ERP 赠品库扣，规格必须配置物料
+     *
+     * @param bizId  单据编号（订单 / 收银单）
+     * @param bizNo  单据号
+     * @param items  赠品
+     * @param deduct true 扣减，false 退回
+     */
+    void updateGiftStock(Long bizId, String bizNo, List<TradeGiftStockItemBO> items, boolean deduct);
 
     /**
      * 按物料库存重新换算规格库存：规格库存 = min(物料库存 / 每件扣减数量)，向下取整

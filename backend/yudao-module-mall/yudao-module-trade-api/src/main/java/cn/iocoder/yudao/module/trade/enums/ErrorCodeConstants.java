@@ -76,6 +76,7 @@ public interface ErrorCodeConstants {
     ErrorCode PRICE_CALCULATE_POINT_TOTAL_LIMIT_COUNT = new ErrorCode(1_011_003_004, "参与积分活动的商品，超过了积分活动商品总限购数量");
     ErrorCode PRICE_CALCULATE_DELIVERY_PRICE_TYPE_ILLEGAL = new ErrorCode(1_011_003_005, "计算快递运费异常，配送方式不匹配");
     ErrorCode PRICE_CALCULATE_COUPON_CAN_NOT_USE = new ErrorCode(1_011_003_006, "该优惠劵无法使用，原因：{}」");
+    ErrorCode PRICE_CALCULATE_MIN_BUY_COUNT = new ErrorCode(1_011_003_010, "商品【{}】{} 件起购");
 
     // ========== 物流 Express 模块 1-011-004-000 ==========
     ErrorCode EXPRESS_NOT_EXISTS = new ErrorCode(1_011_004_000, "快递公司不存在");
@@ -102,6 +103,18 @@ public interface ErrorCodeConstants {
     ErrorCode SKU_MATERIAL_SKU_NOT_EXISTS = new ErrorCode(1_011_021_000, "商品规格不存在");
     ErrorCode SKU_MATERIAL_PRODUCT_NOT_EXISTS = new ErrorCode(1_011_021_001, "库存物料（ERP 产品）不存在");
     ErrorCode SKU_MATERIAL_DEFAULT_WAREHOUSE_NOT_EXISTS = new ErrorCode(1_011_021_002, "未设置默认仓库，无法扣减共享库存，请到【ERP 进销存 - 仓库信息】设置默认仓库");
+
+    // ========== 买赠 1-011-023-000 ==========
+    ErrorCode GIFT_WAREHOUSE_NOT_EXISTS = new ErrorCode(1_011_023_000, "未设置赠品库，请到【ERP 进销存 - 仓库信息】把一个仓库设为赠品库");
+    ErrorCode GIFT_STOCK_MATERIAL_NOT_EXISTS = new ErrorCode(1_011_023_001, "赠品从赠品库扣减时，商品规格必须配置库存物料");
+    ErrorCode GIFT_STOCK_NOT_ENOUGH = new ErrorCode(1_011_023_002, "赠品库存不足");
+
+    // ========== 门店收银 1-011-022-000 ==========
+    ErrorCode POS_ORDER_NOT_EXISTS = new ErrorCode(1_011_022_000, "收银单不存在");
+    ErrorCode POS_ORDER_SKU_NOT_EXISTS = new ErrorCode(1_011_022_001, "商品规格不存在，请刷新收银台");
+    ErrorCode POS_ORDER_SPU_NOT_ENABLE = new ErrorCode(1_011_022_002, "商品【{}】已下架");
+    ErrorCode POS_ORDER_RECEIVED_PRICE_NOT_ENOUGH = new ErrorCode(1_011_022_003, "实收金额不能少于应收金额");
+    ErrorCode POS_ORDER_CANCEL_FAIL_STATUS_NOT_COMPLETED = new ErrorCode(1_011_022_004, "收银单不是已完成状态，无法作废");
 
     // ========== 分销用户 模块 1-011-007-000 ==========
     ErrorCode BROKERAGE_USER_NOT_EXISTS = new ErrorCode(1_011_007_000, "分销用户不存在");

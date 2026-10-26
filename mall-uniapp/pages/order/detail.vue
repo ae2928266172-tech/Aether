@@ -136,6 +136,7 @@
               </view>
             </template>
             <template #priceSuffix>
+              <view v-if="item.giftCount > 0" class="gift-tag">赠 {{ item.giftCount }} 件</view>
               <button class="ss-reset-button tag-btn" v-if="item.status_text">
                 {{ item.status_text }}
               </button>
@@ -697,5 +698,14 @@
       font-weight: 500;
       color: #fff;
     }
+  }
+  .gift-tag {
+    margin-left: 12rpx;
+    padding: 0 10rpx;
+    font-size: 22rpx;
+    line-height: 32rpx;
+    color: #fff;
+    background: #ff6000;
+    border-radius: 6rpx;
   }
 </style>

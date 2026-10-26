@@ -25,6 +25,14 @@
           :propFormData="formData"
         />
       </el-tab-pane>
+      <el-tab-pane label="销售设置" name="sale">
+        <SaleForm
+          ref="saleRef"
+          v-model:activeName="activeName"
+          :is-detail="isDetail"
+          :propFormData="formData"
+        />
+      </el-tab-pane>
       <el-tab-pane label="商品详情" name="description">
         <DescriptionForm
           ref="descriptionRef"
@@ -61,6 +69,7 @@ import DescriptionForm from './DescriptionForm.vue'
 import OtherForm from './OtherForm.vue'
 import SkuForm from './SkuForm.vue'
 import DeliveryForm from './DeliveryForm.vue'
+import SaleForm from './SaleForm.vue'
 import { convertToInteger, floatToFixed2, formatToFraction } from '@/utils'
 import { isEmpty } from '@/utils/is'
 
@@ -78,6 +87,7 @@ const isDetail = ref(false) // 是否查看详情
 const infoRef = ref() // 商品信息 Ref
 const skuRef = ref() // 商品规格 Ref
 const deliveryRef = ref() // 物流设置 Ref
+const saleRef = ref() // 销售设置 Ref
 const descriptionRef = ref() // 商品详情 Ref
 const otherRef = ref() // 其他设置 Ref
 // SPU 表单数据
@@ -111,7 +121,13 @@ const formData = ref<ProductSpuApi.Spu>({
   description: '', // 商品详情
   sort: 0, // 商品排序
   giveIntegral: 0, // 赠送积分
-  virtualSalesCount: 0 // 虚拟销量
+  virtualSalesCount: 0, // 虚拟销量
+  customerVisible: true, // 顾客端是否可见
+  supplierId: undefined, // 供应商
+  minBuyCount: 0, // 起订量
+  giftBuyCount: 0, // 买赠：买 N
+  giftCount: 0, // 买赠：赠 M
+  giftStockSource: 1 // 赠品库存来源
 })
 
 /** 获得详情 */
@@ -156,6 +172,7 @@ const submitForm = async () => {
     await unref(infoRef)?.validate()
     await unref(skuRef)?.validate()
     await unref(deliveryRef)?.validate()
+    await unref(saleRef)?.validate()
     await unref(descriptionRef)?.validate()
     await unref(otherRef)?.validate()
     // 深拷贝一份, 这样最终 server 端不满足，不需要影响原始数据

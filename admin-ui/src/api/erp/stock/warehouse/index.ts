@@ -12,6 +12,7 @@ export interface WarehouseVO {
   truckagePrice: number // 搬运费，单位：元
   status: number // 开启状态
   defaultStatus: boolean // 是否默认
+  giftStatus?: boolean // 是否赠品库
 }
 
 // ERP 仓库 API

@@ -17,6 +17,10 @@ import cn.iocoder.yudao.module.trade.controller.admin.material.vo.TradeSkuMateri
 import cn.iocoder.yudao.module.trade.dal.dataobject.material.TradeSkuMaterialDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.order.TradeOrderDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.order.TradeOrderItemDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.pos.TradePosOrderDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.pos.TradePosOrderItemDO;
+import cn.iocoder.yudao.module.trade.service.material.bo.TradeGiftStockItemBO;
+import cn.iocoder.yudao.module.product.enums.spu.ProductSpuGiftStockSourceEnum;
 import cn.iocoder.yudao.module.trade.dal.mysql.material.TradeSkuMaterialMapper;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -27,11 +31,11 @@ import org.springframework.validation.annotation.Validated;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.*;
+import java.util.function.Function;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.*;
-import static cn.iocoder.yudao.module.trade.enums.ErrorCodeConstants.SKU_MATERIAL_DEFAULT_WAREHOUSE_NOT_EXISTS;
-import static cn.iocoder.yudao.module.trade.enums.ErrorCodeConstants.SKU_MATERIAL_SKU_NOT_EXISTS;
+import static cn.iocoder.yudao.module.trade.enums.ErrorCodeConstants.*;
 
 /**
  * 商品规格库存物料 Service 实现类
@@ -94,33 +98,93 @@ public class TradeSkuMaterialServiceImpl implements TradeSkuMaterialService {
 
     @Override
     public void deductStockByOrder(TradeOrderDO order, List<TradeOrderItemDO> orderItems) {
-        createStockRecords(order, orderItems, ErpStockRecordBizTypeEnum.MALL_ORDER_OUT, -1);
+        createStockRecords(ErpStockRecordBizTypeEnum.MALL_ORDER_OUT, -1, order.getId(), order.getNo(),
+                orderItems, TradeOrderItemDO::getId, TradeOrderItemDO::getSkuId, TradeOrderItemDO::getCount);
     }
 
     @Override
     public void restoreStockByOrder(TradeOrderDO order, List<TradeOrderItemDO> orderItems) {
-        createStockRecords(order, orderItems, ErpStockRecordBizTypeEnum.MALL_ORDER_OUT_CANCEL, 1);
+        createStockRecords(ErpStockRecordBizTypeEnum.MALL_ORDER_OUT_CANCEL, 1, order.getId(), order.getNo(),
+                orderItems, TradeOrderItemDO::getId, TradeOrderItemDO::getSkuId, TradeOrderItemDO::getCount);
     }
 
-    private void createStockRecords(TradeOrderDO order, List<TradeOrderItemDO> orderItems,
-                                    ErpStockRecordBizTypeEnum bizType, int sign) {
-        if (CollUtil.isEmpty(orderItems)) {
+    @Override
+    public void deductStockByPosOrder(TradePosOrderDO order, List<TradePosOrderItemDO> orderItems) {
+        createStockRecords(ErpStockRecordBizTypeEnum.POS_ORDER_OUT, -1, order.getId(), order.getNo(),
+                orderItems, TradePosOrderItemDO::getId, TradePosOrderItemDO::getSkuId, TradePosOrderItemDO::getCount);
+    }
+
+    @Override
+    public void restoreStockByPosOrder(TradePosOrderDO order, List<TradePosOrderItemDO> orderItems) {
+        createStockRecords(ErpStockRecordBizTypeEnum.POS_ORDER_OUT_CANCEL, 1, order.getId(), order.getNo(),
+                orderItems, TradePosOrderItemDO::getId, TradePosOrderItemDO::getSkuId, TradePosOrderItemDO::getCount);
+    }
+
+    @Override
+    public void updateGiftStock(Long bizId, String bizNo, List<TradeGiftStockItemBO> items, boolean deduct) {
+        items = filterList(items, item -> item.getGiftCount() != null && item.getGiftCount() > 0);
+        if (CollUtil.isEmpty(items)) {
             return;
         }
         Map<Long, List<TradeSkuMaterialDO>> materialMap = convertMultiMap(
-                skuMaterialMapper.selectListBySkuIds(convertSet(orderItems, TradeOrderItemDO::getSkuId)),
+                skuMaterialMapper.selectListBySkuIds(convertSet(items, TradeGiftStockItemBO::getSkuId)),
                 TradeSkuMaterialDO::getSkuId);
+        ErpStockRecordBizTypeEnum bizType = deduct ? ErpStockRecordBizTypeEnum.GIFT_OUT
+                : ErpStockRecordBizTypeEnum.GIFT_OUT_CANCEL;
+        int sign = deduct ? -1 : 1;
+        Map<Long, Integer> skuStockIncrs = new HashMap<>(); // 未配置物料的规格，直接改规格库存
+        for (TradeGiftStockItemBO item : items) {
+            List<TradeSkuMaterialDO> materials = materialMap.getOrDefault(item.getSkuId(), Collections.emptyList());
+            boolean fromGiftWarehouse = ProductSpuGiftStockSourceEnum.isGift(item.getGiftStockSource());
+            if (materials.isEmpty()) {
+                if (fromGiftWarehouse) {
+                    throw exception(GIFT_STOCK_MATERIAL_NOT_EXISTS);
+                }
+                skuStockIncrs.merge(item.getSkuId(), sign * item.getGiftCount(), Integer::sum);
+                continue;
+            }
+            Long warehouseId = fromGiftWarehouse ? getGiftWarehouseId() : getDefaultWarehouseId();
+            for (TradeSkuMaterialDO material : materials) {
+                BigDecimal count = material.getQuantity().multiply(BigDecimal.valueOf((long) sign * item.getGiftCount()));
+                erpStockRecordService.createStockRecord(new ErpStockRecordCreateReqBO(
+                        material.getErpProductId(), warehouseId, count,
+                        bizType.getType(), bizId, item.getItemId(), bizNo));
+            }
+        }
+        if (skuStockIncrs.isEmpty()) {
+            return;
+        }
+        Map<Long, Integer> skuStocks = new HashMap<>();
+        for (ProductSkuRespDTO sku : productSkuApi.getSkuList(skuStockIncrs.keySet())) {
+            int stock = ObjectUtil.defaultIfNull(sku.getStock(), 0) + skuStockIncrs.get(sku.getId());
+            if (stock < 0) {
+                throw exception(GIFT_STOCK_NOT_ENOUGH);
+            }
+            skuStocks.put(sku.getId(), stock);
+        }
+        // 赠品不算销量，所以直接设置库存
+        productSkuApi.setSkuStock(skuStocks);
+    }
+
+    private <T> void createStockRecords(ErpStockRecordBizTypeEnum bizType, int sign, Long bizId, String bizNo,
+                                        List<T> items, Function<T, Long> itemIdFunc,
+                                        Function<T, Long> skuIdFunc, Function<T, Integer> countFunc) {
+        if (CollUtil.isEmpty(items)) {
+            return;
+        }
+        Map<Long, List<TradeSkuMaterialDO>> materialMap = convertMultiMap(
+                skuMaterialMapper.selectListBySkuIds(convertSet(items, skuIdFunc)), TradeSkuMaterialDO::getSkuId);
         if (materialMap.isEmpty()) {
             return;
         }
         Long warehouseId = getDefaultWarehouseId();
-        for (TradeOrderItemDO item : orderItems) {
-            for (TradeSkuMaterialDO material : materialMap.getOrDefault(item.getSkuId(), Collections.emptyList())) {
-                BigDecimal count = material.getQuantity().multiply(BigDecimal.valueOf(item.getCount()))
+        for (T item : items) {
+            for (TradeSkuMaterialDO material : materialMap.getOrDefault(skuIdFunc.apply(item), Collections.emptyList())) {
+                BigDecimal count = material.getQuantity().multiply(BigDecimal.valueOf(countFunc.apply(item)))
                         .multiply(BigDecimal.valueOf(sign));
                 erpStockRecordService.createStockRecord(new ErpStockRecordCreateReqBO(
                         material.getErpProductId(), warehouseId, count,
-                        bizType.getType(), order.getId(), item.getId(), order.getNo()));
+                        bizType.getType(), bizId, itemIdFunc.apply(item), bizNo));
             }
         }
     }
@@ -169,6 +233,14 @@ public class TradeSkuMaterialServiceImpl implements TradeSkuMaterialService {
         }
         // 直接设置库存：不能用 updateSkuStock 增量接口，它会同时反向修改销量
         productSkuApi.setSkuStock(skuStocks);
+    }
+
+    private Long getGiftWarehouseId() {
+        ErpWarehouseDO warehouse = erpWarehouseService.getGiftWarehouse();
+        if (warehouse == null) {
+            throw exception(GIFT_WAREHOUSE_NOT_EXISTS);
+        }
+        return warehouse.getId();
     }
 
     private Long getDefaultWarehouseId() {

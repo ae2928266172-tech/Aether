@@ -90,6 +90,7 @@ export interface OrderItemRespVO {
   skuId?: number | null // 商品 SKU 编号
   picUrl?: string //商品图片
   count?: number | null //购买数量
+  giftCount?: number | null // 买赠赠送件数
   // ========== 价格 + 支付基本信息 ==========
   originalPrice?: number | null //商品原价（总）
   originalUnitPrice?: number | null //商品原价（单）

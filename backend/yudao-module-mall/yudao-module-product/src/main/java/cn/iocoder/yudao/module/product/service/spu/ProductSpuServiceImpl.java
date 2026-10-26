@@ -19,6 +19,7 @@ import cn.iocoder.yudao.module.product.enums.spu.ProductSpuStatusEnum;
 import cn.iocoder.yudao.module.product.service.brand.ProductBrandService;
 import cn.iocoder.yudao.module.product.service.category.ProductCategoryService;
 import cn.iocoder.yudao.module.product.service.sku.ProductSkuService;
+import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.google.common.collect.Maps;
 import jakarta.annotation.Resource;
 import org.springframework.context.annotation.Lazy;
@@ -64,6 +65,9 @@ public class ProductSpuServiceImpl implements ProductSpuService {
         productSkuService.validateSkuList(skuSaveReqList, createReqVO.getSpecType());
 
         ProductSpuDO spu = BeanUtils.toBean(createReqVO, ProductSpuDO.class);
+        if (spu.getCustomerVisible() == null) {
+            spu.setCustomerVisible(true);
+        }
         // 初始化 SPU 中 SKU 相关属性
         initSpuFromSkus(spu, skuSaveReqList);
         // 插入 SPU
@@ -90,6 +94,13 @@ public class ProductSpuServiceImpl implements ProductSpuService {
         ProductSpuDO updateObj = BeanUtils.toBean(updateReqVO, ProductSpuDO.class).setStatus(spu.getStatus());
         initSpuFromSkus(updateObj, skuSaveReqList);
         productSpuMapper.updateById(updateObj);
+        // 供应商、赠品库存来源允许清空，updateById 会跳过 null 字段，所以单独置空
+        if (updateObj.getSupplierId() == null || updateObj.getGiftStockSource() == null) {
+            productSpuMapper.update(null, new LambdaUpdateWrapper<ProductSpuDO>()
+                    .eq(ProductSpuDO::getId, updateObj.getId())
+                    .set(updateObj.getSupplierId() == null, ProductSpuDO::getSupplierId, null)
+                    .set(updateObj.getGiftStockSource() == null, ProductSpuDO::getGiftStockSource, null));
+        }
         // 批量更新 SKU
         productSkuService.updateSkuList(updateObj.getId(), updateReqVO.getSkus());
     }

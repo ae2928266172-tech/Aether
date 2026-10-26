@@ -201,6 +201,16 @@ const remainingRouter: AppRouteRecordRaw[] = [
     ]
   },
   {
+    path: '/pos',
+    component: () => import('@/views/mall/trade/pos/terminal/index.vue'),
+    name: 'TradePosTerminal',
+    meta: {
+      hidden: true,
+      title: '门店收银台',
+      noTagsView: true
+    }
+  },
+  {
     path: '/login',
     component: () => import('@/views/Login/Login.vue'),
     name: 'Login',

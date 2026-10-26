@@ -84,6 +84,11 @@
           <dict-tag :type="DICT_TYPE.COMMON_STATUS" :value="scope.row.status" />
         </template>
       </el-table-column>
+      <el-table-column label="赠品库" align="center" prop="giftStatus">
+        <template #default="scope">
+          <el-tag v-if="scope.row.giftStatus" type="success">赠品库</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="是否默认" align="center" prop="defaultStatus">
         <template #default="scope">
           <el-switch

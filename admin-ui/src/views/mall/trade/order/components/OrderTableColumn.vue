@@ -98,6 +98,7 @@
         <el-table-column label="商品原价*数量" prop="price" width="150">
           <template #default="{ row }">
             {{ floatToFixed2(row.price) }} 元 / {{ row.count }}
+            <el-tag v-if="row.giftCount > 0" type="success" size="small">赠 {{ row.giftCount }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="售后状态" prop="afterSaleStatus" width="120">

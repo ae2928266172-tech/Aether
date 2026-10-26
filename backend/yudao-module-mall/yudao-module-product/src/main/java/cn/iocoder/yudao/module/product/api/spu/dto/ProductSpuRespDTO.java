@@ -83,6 +83,30 @@ public class ProductSpuRespDTO {
      * 对应 TradeDeliveryExpressTemplateDO 的 id 编号
      */
     private Long deliveryTemplateId;
+    /**
+     * 顾客端是否可见
+     */
+    private Boolean customerVisible;
+    /**
+     * 供应商编号
+     */
+    private Long supplierId;
+    /**
+     * 起订量
+     */
+    private Integer minBuyCount;
+    /**
+     * 买赠：每买多少件
+     */
+    private Integer giftBuyCount;
+    /**
+     * 买赠：赠送多少件
+     */
+    private Integer giftCount;
+    /**
+     * 买赠：赠品库存来源
+     */
+    private Integer giftStockSource;
 
     // ========== 营销相关字段 =========
 

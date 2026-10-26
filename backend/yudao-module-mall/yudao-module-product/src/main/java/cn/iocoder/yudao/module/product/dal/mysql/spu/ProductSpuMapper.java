@@ -74,6 +74,8 @@ public interface ProductSpuMapper extends BaseMapperX<ProductSpuDO> {
                 .inIfPresent(ProductSpuDO::getCategoryId, categoryIds);
         // 上架状态 且有库存
         query.eq(ProductSpuDO::getStatus, ProductSpuStatusEnum.ENABLE.getStatus());
+        // 只在门店售卖的商品，顾客端不展示
+        query.eq(ProductSpuDO::getCustomerVisible, true);
 
         // 排序逻辑
         Boolean sortAsc = pageReqVO.getSortAsc() != null ? pageReqVO.getSortAsc() : Boolean.TRUE;

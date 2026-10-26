@@ -23,13 +23,16 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
 import static cn.iocoder.yudao.framework.common.exception.util.ServiceExceptionUtil.exception;
 import static cn.iocoder.yudao.framework.common.util.collection.CollectionUtils.*;
 import static cn.iocoder.yudao.module.product.enums.ErrorCodeConstants.SKU_NOT_EXISTS;
+import static cn.iocoder.yudao.module.product.enums.ErrorCodeConstants.SPU_CUSTOMER_INVISIBLE;
 import static cn.iocoder.yudao.module.product.enums.ErrorCodeConstants.SKU_STOCK_NOT_ENOUGH;
+import static cn.iocoder.yudao.module.trade.enums.ErrorCodeConstants.PRICE_CALCULATE_MIN_BUY_COUNT;
 import static cn.iocoder.yudao.module.trade.enums.ErrorCodeConstants.PRICE_CALCULATE_PAY_PRICE_ILLEGAL;
 
 /**
@@ -62,7 +65,7 @@ public class TradePriceServiceImpl implements TradePriceService {
         // 1.1 获得商品 SKU 数组
         List<ProductSkuRespDTO> skuList = checkSkuList(calculateReqBO);
         // 1.2 获得商品 SPU 数组
-        List<ProductSpuRespDTO> spuList = checkSpuList(skuList);
+        List<ProductSpuRespDTO> spuList = checkSpuList(skuList, calculateReqBO);
 
         // 2.1 计算价格
         TradePriceCalculateRespBO calculateRespBO = TradePriceCalculatorHelper
@@ -97,8 +100,23 @@ public class TradePriceServiceImpl implements TradePriceService {
         return skus;
     }
 
-    private List<ProductSpuRespDTO> checkSpuList(List<ProductSkuRespDTO> skuList) {
-        return productSpuApi.validateSpuList(convertSet(skuList, ProductSkuRespDTO::getSpuId));
+    private List<ProductSpuRespDTO> checkSpuList(List<ProductSkuRespDTO> skuList, TradePriceCalculateReqBO reqBO) {
+        List<ProductSpuRespDTO> spus = productSpuApi.validateSpuList(convertSet(skuList, ProductSkuRespDTO::getSpuId));
+        // 只在门店售卖的商品，不能线上下单
+        spus.stream().filter(spu -> Boolean.FALSE.equals(spu.getCustomerVisible())).findFirst()
+                .ifPresent(spu -> { throw exception(SPU_CUSTOMER_INVISIBLE, spu.getName()); });
+        // 起订量：同一商品（不同规格合计）的购买件数，不能少于起订量
+        Map<Long, Long> skuSpuIds = convertMap(skuList, ProductSkuRespDTO::getId, ProductSkuRespDTO::getSpuId);
+        Map<Long, Integer> spuCounts = new HashMap<>();
+        reqBO.getItems().stream().filter(item -> !Boolean.FALSE.equals(item.getSelected()))
+                .forEach(item -> spuCounts.merge(skuSpuIds.get(item.getSkuId()), item.getCount(), Integer::sum));
+        spus.forEach(spu -> {
+            Integer count = spuCounts.get(spu.getId());
+            if (count != null && spu.getMinBuyCount() != null && count < spu.getMinBuyCount()) {
+                throw exception(PRICE_CALCULATE_MIN_BUY_COUNT, spu.getName(), spu.getMinBuyCount());
+            }
+        });
+        return spus;
     }
 
     @Override

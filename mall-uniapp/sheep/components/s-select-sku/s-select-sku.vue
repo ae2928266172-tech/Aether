@@ -69,12 +69,20 @@
           <view class="buy-num-box ss-flex ss-col-center ss-row-between ss-m-b-40">
             <view class="label-text">购买数量</view>
             <su-number-box
-              :min="1"
+              :min="minBuyCount"
               :max="state.selectedSku.stock"
               :step="1"
               v-model="state.selectedSku.goods_num"
               @change="onNumberChange($event)"
             />
+          </view>
+          <view v-if="minBuyCount > 1 || hasGift" class="buy-tip ss-m-b-40">
+            <text v-if="minBuyCount > 1">{{ minBuyCount }} 件起购</text>
+            <text v-if="minBuyCount > 1 && hasGift">，</text>
+            <text v-if="hasGift">
+              买{{ goodsInfo.giftBuyCount }}赠{{ goodsInfo.giftCount }}
+              <text v-if="giftNum > 0">，本次赠送 {{ giftNum }} 件</text>
+            </text>
           </view>
         </scroll-view>
       </view>
@@ -120,6 +128,16 @@
   });
 
   const propertyList = convertProductPropertyList(props.goodsInfo.skus);
+  // 起订量：病人每单至少购买的件数
+  const minBuyCount = computed(() => Math.max(props.goodsInfo.minBuyCount || 1, 1));
+  // 买赠：买 N 赠 M
+  const hasGift = computed(() => props.goodsInfo.giftBuyCount > 0 && props.goodsInfo.giftCount > 0);
+  const giftNum = computed(() =>
+    hasGift.value
+      ? Math.floor((state.selectedSku.goods_num || 0) / props.goodsInfo.giftBuyCount) *
+        props.goodsInfo.giftCount
+      : 0,
+  );
   // SKU 列表
   const skuList = computed(() => {
     let skuPrices = props.goodsInfo.skus;
@@ -157,6 +175,9 @@
       sheep.$helper.toast('库存不足');
       return;
     }
+    if (!checkMinBuyCount()) {
+      return;
+    }
 
     emits('addCart', state.selectedSku);
   }
@@ -171,7 +192,24 @@
       sheep.$helper.toast('库存不足');
       return;
     }
+    if (!checkMinBuyCount()) {
+      return;
+    }
     emits('buy', state.selectedSku);
+  }
+
+  // 校验起订量
+  function checkMinBuyCount() {
+    if (state.selectedSku.stock < minBuyCount.value) {
+      sheep.$helper.toast(`${minBuyCount.value} 件起购，库存不足`);
+      return false;
+    }
+    if ((state.selectedSku.goods_num || 0) < minBuyCount.value) {
+      state.selectedSku.goods_num = minBuyCount.value;
+      sheep.$helper.toast(`${minBuyCount.value} 件起购`);
+      return false;
+    }
+    return true;
   }
 
   // 改变禁用状态：计算每个 property 属性值的按钮，是否禁用
@@ -299,7 +337,7 @@
 
     // 判断所有 property 大类是否选择完成
     if (choosePropertyId.length === propertyList.length && newSkuList.length) {
-      newSkuList[0].goods_num = state.selectedSku.goods_num || 1;
+      newSkuList[0].goods_num = Math.max(state.selectedSku.goods_num || 1, minBuyCount.value);
       state.selectedSku = newSkuList[0];
     } else {
       state.selectedSku = {};
@@ -423,6 +461,12 @@
 
         .buy-num-box {
           height: 100rpx;
+        }
+
+        .buy-tip {
+          margin-top: -20rpx;
+          font-size: 24rpx;
+          color: var(--ui-BG-Main);
         }
 
         .spec-btn {

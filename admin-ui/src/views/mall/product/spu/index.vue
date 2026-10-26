@@ -144,6 +144,15 @@
                   {{ row.name }}
                 </div>
               </el-tooltip>
+              <div class="mt-4px flex flex-wrap gap-4px">
+                <el-tag v-if="row.customerVisible === false" type="warning" size="small">
+                  仅门店售卖
+                </el-tag>
+                <el-tag v-if="row.minBuyCount > 1" size="small">{{ row.minBuyCount }} 件起订</el-tag>
+                <el-tag v-if="row.giftBuyCount > 0 && row.giftCount > 0" type="success" size="small">
+                  买{{ row.giftBuyCount }}赠{{ row.giftCount }}
+                </el-tag>
+              </div>
             </div>
           </div>
         </template>

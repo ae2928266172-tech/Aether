@@ -4,6 +4,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import cn.iocoder.yudao.framework.common.validation.InEnum;
 import cn.iocoder.yudao.module.trade.enums.delivery.DeliveryTypeEnum;
+import cn.iocoder.yudao.module.product.enums.spu.ProductSpuGiftStockSourceEnum;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -68,6 +72,34 @@ public class ProductSpuSaveReqVO {
 
     @Schema(description = "物流配置模板编号", requiredMode = Schema.RequiredMode.REQUIRED, example = "111")
     private Long deliveryTemplateId;
+
+    @Schema(description = "顾客端是否可见：false 时只在门店收银台售卖", example = "true")
+    private Boolean customerVisible;
+
+    @Schema(description = "供应商编号", example = "1")
+    private Long supplierId;
+
+    @Schema(description = "起订量：顾客端每单至少购买的件数，0 表示不限制", example = "10")
+    @Min(value = 0, message = "起订量不能小于 0")
+    private Integer minBuyCount;
+
+    @Schema(description = "买赠：每买多少件，0 表示没有买赠", example = "2")
+    @Min(value = 0, message = "买赠的购买件数不能小于 0")
+    private Integer giftBuyCount;
+
+    @Schema(description = "买赠：赠送多少件", example = "1")
+    @Min(value = 0, message = "买赠的赠送件数不能小于 0")
+    private Integer giftCount;
+
+    @Schema(description = "买赠：赠品库存来源，1 总库存，2 赠品库", example = "1")
+    @InEnum(value = ProductSpuGiftStockSourceEnum.class, message = "赠品库存来源不正确")
+    private Integer giftStockSource;
+
+    @AssertTrue(message = "设置买赠时，赠送件数必须大于 0，并选择赠品库存来源")
+    @JsonIgnore
+    public boolean isGiftValid() {
+        return giftBuyCount == null || giftBuyCount == 0 || (giftCount != null && giftCount > 0 && giftStockSource != null);
+    }
 
     // ========== 营销相关字段 =========
 

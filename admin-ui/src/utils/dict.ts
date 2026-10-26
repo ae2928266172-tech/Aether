@@ -217,6 +217,8 @@ export enum DICT_TYPE {
   TRADE_ORDER_STATUS = 'trade_order_status', // 订单 - 状态
   TRADE_ORDER_ITEM_AFTER_SALE_STATUS = 'trade_order_item_after_sale_status', // 订单项 - 售后状态
   TRADE_DELIVERY_TYPE = 'trade_delivery_type', // 配送方式
+  TRADE_POS_PAY_TYPE = 'trade_pos_pay_type', // 门店收银 - 收款方式
+  TRADE_POS_ORDER_STATUS = 'trade_pos_order_status', // 门店收银 - 收银单状态
   BROKERAGE_ENABLED_CONDITION = 'brokerage_enabled_condition', // 分佣模式
   BROKERAGE_BIND_MODE = 'brokerage_bind_mode', // 分销关系绑定模式
   BROKERAGE_BANK_NAME = 'brokerage_bank_name', // 佣金提现银行

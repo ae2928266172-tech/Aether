@@ -38,6 +38,9 @@ public class TradeOrderItemBaseVO {
     @Schema(description = "购买数量", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Integer count;
 
+    @Schema(description = "赠送件数（买赠）", example = "1")
+    private Integer giftCount;
+
     // ========== 价格 + 支付基本信息 ==========
 
     @Schema(description = "商品原价（单）", requiredMode = Schema.RequiredMode.REQUIRED, example = "100")

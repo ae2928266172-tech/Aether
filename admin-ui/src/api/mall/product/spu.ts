@@ -58,6 +58,12 @@ export interface Spu {
   stock?: number // 商品库存
   createTime?: Date // 商品创建时间
   status?: number // 商品状态
+  customerVisible?: boolean // 顾客端是否可见，false 表示仅门店售卖
+  supplierId?: number // 供应商编号
+  minBuyCount?: number // 起订量
+  giftBuyCount?: number // 买赠：买 N
+  giftCount?: number // 买赠：赠 M
+  giftStockSource?: number // 赠品库存来源：1 总库存，2 赠品库
 }
 
 // 获得 Spu 列表

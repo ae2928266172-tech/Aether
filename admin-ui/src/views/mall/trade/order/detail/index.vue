@@ -107,7 +107,14 @@
               <el-table-column label="商品原价" prop="price" width="150">
                 <template #default="{ row }">{{ fenToYuan(row.price) }}元</template>
               </el-table-column>
-              <el-table-column label="数量" prop="count" width="100" />
+              <el-table-column label="数量" prop="count" width="100">
+                <template #default="{ row }">
+                  {{ row.count }}
+                  <el-tag v-if="row.giftCount > 0" type="success" size="small" class="ml-4px">
+                    赠 {{ row.giftCount }}
+                  </el-tag>
+                </template>
+              </el-table-column>
               <el-table-column label="合计" prop="payPrice" width="150">
                 <template #default="{ row }">{{ fenToYuan(row.payPrice) }}元</template>
               </el-table-column>

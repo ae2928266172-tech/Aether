@@ -233,6 +233,13 @@
       cart.delete(cartItem.id);
       return;
     }
+    // 起订量：少于起订量时恢复，不需要可以删除
+    const minBuyCount = cartItem.spu?.minBuyCount || 1;
+    if (e < minBuyCount) {
+      sheep.$helper.toast(`${minBuyCount} 件起购，不需要可以删除`);
+      cartItem.count = minBuyCount;
+      return;
+    }
     if (cartItem.goods_num === e) return;
     cartItem.goods_num = e;
     cart.update({

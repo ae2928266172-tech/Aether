@@ -25,13 +25,24 @@ VALUES (10020, '商品库存查看', 'product:spu:stock', 3, 10, @spu_menu_id, '
        (10021, '库存物料查询', 'trade:sku-material:query', 3, 11, @spu_menu_id, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
        (10022, '库存物料配置', 'trade:sku-material:update', 3, 12, @spu_menu_id, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0');
 
--- 4. 预置角色（租户 1）
---   门店店员：处理订单、病房配送，只能查看商品（不含库存），没有 ERP 进销存菜单
+-- 4. 门店收银（触屏收银台、收银记录、交班汇总）、供应商对账：放在订单中心下
+SET @order_center_id = (SELECT parent_id FROM system_menu WHERE id = @order_menu_id);
+INSERT INTO system_menu (id, name, permission, type, sort, parent_id, path, icon, component, component_name, status, visible, keep_alive, always_show, creator, updater, deleted)
+VALUES (10030, '门店收银', '', 2, 0, @order_center_id, 'pos', 'ep:money', 'mall/trade/pos/index', 'TradePos', 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10031, '收银下单', 'trade:pos:create', 3, 1, 10030, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10032, '收银记录查询', 'trade:pos:query', 3, 2, 10030, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10033, '收银单作废', 'trade:pos:cancel', 3, 3, 10030, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10040, '供应商对账', '', 2, 20, @order_center_id, 'supplier-settlement', 'ep:document-checked', 'mall/trade/supplierSettlement/index', 'TradeSupplierSettlement', 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10041, '供应商对账查询', 'trade:supplier-settlement:query', 3, 1, 10040, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10042, '供应商对账导出', 'trade:supplier-settlement:export', 3, 2, 10040, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0');
+
+-- 5. 预置角色（租户 1）
+--   门店店员：门店收银、处理订单、病房配送，只能查看商品（不含库存），没有 ERP 进销存菜单
 --   后台管理员：商城、会员、支付、ERP 进销存的全部菜单，可以查看、修改库存
 DELETE FROM system_role WHERE id IN (10001, 10002);
 DELETE FROM system_role_menu WHERE role_id IN (10001, 10002);
 INSERT INTO system_role (id, name, code, sort, data_scope, data_scope_dept_ids, status, type, remark, creator, updater, deleted, tenant_id)
-VALUES (10001, '门店店员', 'store_staff', 11, 1, '', 0, 2, '门店使用：处理订单和病房配送，不能查看、修改库存', '1', '1', b'0', 1),
+VALUES (10001, '门店店员', 'store_staff', 11, 1, '', 0, 2, '门店使用：门店收银、处理订单和病房配送，不能查看、修改库存', '1', '1', b'0', 1),
        (10002, '后台管理员', 'back_office', 12, 1, '', 0, 2, '后台使用：管理商品、库存（ERP 进销存）、共享库存物料', '1', '1', b'0', 1);
 
 -- 门店店员：指定的页面和按钮，再补上它们的上级目录
@@ -40,10 +51,11 @@ WITH RECURSIVE picked AS (
     SELECT id, parent_id FROM system_menu
     WHERE deleted = 0 AND (
         component IN ('mall/product/spu/index', 'mall/trade/order/index', 'mall/trade/afterSale/index',
-                      'mall/trade/delivery/ward/index', 'mall/trade/delivery/pickUpOrder/index')
+                      'mall/trade/delivery/ward/index', 'mall/trade/delivery/pickUpOrder/index', 'mall/trade/pos/index')
         OR permission IN ('product:spu:query', 'product:category:query',
                           'trade:order:query', 'trade:order:update', 'trade:order:pick-up', 'trade:order:ward-delivery',
-                          'trade:after-sale:query', 'trade:delivery:ward:query'))
+                          'trade:after-sale:query', 'trade:delivery:ward:query',
+                          'trade:pos:create', 'trade:pos:query', 'trade:pos:cancel'))
     UNION
     SELECT m.id, m.parent_id FROM system_menu m JOIN picked p ON m.id = p.parent_id
 )
@@ -58,7 +70,7 @@ WITH RECURSIVE tree AS (
 )
 SELECT DISTINCT 10002, id, '1', '1', b'0', 1 FROM tree;
 
--- 5. 演示账号，密码均为 admin123（上线前请修改密码或删除）
+-- 6. 演示账号，密码均为 admin123（上线前请修改密码或删除）
 DELETE FROM system_users WHERE id IN (10001, 10002);
 DELETE FROM system_user_role WHERE user_id IN (10001, 10002);
 INSERT INTO system_users (id, username, password, nickname, remark, dept_id, post_ids, email, mobile, sex, avatar, status, creator, updater, deleted, tenant_id)

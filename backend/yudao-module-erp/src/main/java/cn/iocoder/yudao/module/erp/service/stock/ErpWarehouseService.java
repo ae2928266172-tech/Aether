@@ -65,6 +65,13 @@ public interface ErpWarehouseService {
     ErpWarehouseDO getDefaultWarehouse();
 
     /**
+     * 获得赠品库：商城买赠的赠品可以从赠品库扣减
+     *
+     * @return 赠品库
+     */
+    ErpWarehouseDO getGiftWarehouse();
+
+    /**
      * 校验仓库列表的有效性
      *
      * @param ids 编号数组

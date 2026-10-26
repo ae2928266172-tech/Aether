@@ -99,6 +99,29 @@ public class ProductSpuRespVO {
     @ExcelProperty("物流配置模板编号")
     private Long deliveryTemplateId;
 
+    @Schema(description = "顾客端是否可见", example = "true")
+    @ExcelProperty("顾客端可见")
+    private Boolean customerVisible;
+
+    @Schema(description = "供应商编号", example = "1")
+    @ExcelProperty("供应商编号")
+    private Long supplierId;
+
+    @Schema(description = "起订量", example = "10")
+    @ExcelProperty("起订量")
+    private Integer minBuyCount;
+
+    @Schema(description = "买赠：每买多少件", example = "2")
+    @ExcelProperty("买赠-购买件数")
+    private Integer giftBuyCount;
+
+    @Schema(description = "买赠：赠送多少件", example = "1")
+    @ExcelProperty("买赠-赠送件数")
+    private Integer giftCount;
+
+    @Schema(description = "买赠：赠品库存来源", example = "1")
+    private Integer giftStockSource;
+
     // ========== 营销相关字段 =========
 
     @Schema(description = "赠送积分", requiredMode = Schema.RequiredMode.REQUIRED, example = "111")

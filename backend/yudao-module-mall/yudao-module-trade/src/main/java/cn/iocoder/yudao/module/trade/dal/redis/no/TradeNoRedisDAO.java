@@ -22,6 +22,8 @@ public class TradeNoRedisDAO {
 
     public static final String AFTER_SALE_NO_PREFIX = "r";
 
+    public static final String POS_ORDER_NO_PREFIX = "P";
+
     @Resource
     private StringRedisTemplate stringRedisTemplate;
 

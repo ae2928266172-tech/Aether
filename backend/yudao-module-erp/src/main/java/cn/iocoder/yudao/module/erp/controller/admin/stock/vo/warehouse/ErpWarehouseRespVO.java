@@ -57,6 +57,10 @@ public class ErpWarehouseRespVO {
     @ExcelProperty("是否默认")
     private Boolean defaultStatus;
 
+    @Schema(description = "是否赠品库", example = "false")
+    @ExcelProperty("是否赠品库")
+    private Boolean giftStatus;
+
     @Schema(description = "创建时间", requiredMode = Schema.RequiredMode.REQUIRED)
     @ExcelProperty("创建时间")
     private LocalDateTime createTime;

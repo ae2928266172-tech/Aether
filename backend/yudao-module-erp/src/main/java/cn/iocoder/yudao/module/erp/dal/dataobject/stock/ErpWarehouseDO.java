@@ -66,5 +66,11 @@ public class ErpWarehouseDO extends BaseDO {
      * 是否默认
      */
     private Boolean defaultStatus;
+    /**
+     * 是否赠品库
+     *
+     * 商城商品的买赠，可以设置赠品从赠品库扣减库存
+     */
+    private Boolean giftStatus;
 
 }

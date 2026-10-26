@@ -89,6 +89,11 @@ public class ErpWarehouseServiceImpl implements ErpWarehouseService {
     }
 
     @Override
+    public ErpWarehouseDO getGiftWarehouse() {
+        return warehouseMapper.selectByGiftStatus();
+    }
+
+    @Override
     public ErpWarehouseDO getWarehouse(Long id) {
         return warehouseMapper.selectById(id);
     }

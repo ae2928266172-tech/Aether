@@ -11,6 +11,7 @@ import cn.iocoder.yudao.module.pay.api.order.dto.PayOrderRespDTO;
 import cn.iocoder.yudao.module.pay.api.refund.PayRefundApi;
 import cn.iocoder.yudao.module.pay.enums.order.PayOrderStatusEnum;
 import cn.iocoder.yudao.module.product.api.comment.ProductCommentApi;
+import cn.iocoder.yudao.module.product.api.spu.ProductSpuApi;
 import cn.iocoder.yudao.module.promotion.api.combination.CombinationRecordApi;
 import cn.iocoder.yudao.module.system.api.social.SocialClientApi;
 import cn.iocoder.yudao.module.trade.controller.admin.order.vo.TradeOrderDeliveryReqVO;
@@ -110,6 +111,8 @@ public class TradeOrderUpdateServiceTest extends BaseDbUnitTest {
     private MemberAddressApi addressApi;
     @MockitoBean
     private ProductCommentApi productCommentApi;
+    @MockitoBean
+    private ProductSpuApi productSpuApi;
     @MockitoBean
     private SocialClientApi socialClientApi;
     @MockitoBean

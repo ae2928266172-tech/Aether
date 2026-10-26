@@ -75,8 +75,13 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
+import cn.iocoder.yudao.module.product.api.spu.ProductSpuApi;
+import cn.iocoder.yudao.module.product.api.spu.dto.ProductSpuRespDTO;
+import cn.iocoder.yudao.module.trade.service.material.TradeGiftUtils;
+
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -98,6 +103,8 @@ import static cn.iocoder.yudao.module.trade.enums.MessageTemplateConstants.WXA_O
 @Slf4j
 public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
 
+    @Resource
+    private ProductSpuApi productSpuApi;
     @Resource
     private TradeOrderMapper tradeOrderMapper;
     @Resource
@@ -151,7 +158,13 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
         TradePriceCalculateRespBO calculateRespBO = calculatePrice(userId, settlementReqVO);
 
         // 3. 拼接返回
-        return TradeOrderConvert.INSTANCE.convert(calculateRespBO, address);
+        AppTradeOrderSettlementRespVO respVO = TradeOrderConvert.INSTANCE.convert(calculateRespBO, address);
+        // 3.1 买赠：展示每个商品会赠送几件
+        Map<Long, ProductSpuRespDTO> spuMap = productSpuApi.getSpuMap(
+                convertSet(respVO.getItems(), AppTradeOrderSettlementRespVO.Item::getSpuId));
+        respVO.getItems().forEach(item -> item.setGiftCount(
+                TradeGiftUtils.calculateGiftCount(spuMap.get(item.getSpuId()), item.getCount())));
+        return respVO;
     }
 
     /**

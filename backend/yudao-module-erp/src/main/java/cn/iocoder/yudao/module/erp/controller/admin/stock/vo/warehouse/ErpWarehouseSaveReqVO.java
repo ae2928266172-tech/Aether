@@ -44,4 +44,7 @@ public class ErpWarehouseSaveReqVO {
     @InEnum(CommonStatusEnum.class)
     private Integer status;
 
+    @Schema(description = "是否赠品库：商城买赠的赠品可以从赠品库扣减", example = "false")
+    private Boolean giftStatus;
+
 }

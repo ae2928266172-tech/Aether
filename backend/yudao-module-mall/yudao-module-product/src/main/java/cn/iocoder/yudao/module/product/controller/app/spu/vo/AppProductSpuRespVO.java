@@ -45,6 +45,15 @@ public class AppProductSpuRespVO {
 
     // ========== 统计相关字段 =========
 
+    @Schema(description = "起订量，0 或为空表示不限制", example = "10")
+    private Integer minBuyCount;
+
+    @Schema(description = "买赠：每买多少件", example = "2")
+    private Integer giftBuyCount;
+
+    @Schema(description = "买赠：赠送多少件", example = "1")
+    private Integer giftCount;
+
     @Schema(description = "商品销量", requiredMode = Schema.RequiredMode.REQUIRED, example = "1024")
     private Integer salesCount;
 

@@ -74,7 +74,11 @@
         :price="item.price"
         :num="item.count"
         marginBottom="10"
-      />
+      >
+        <template #priceSuffix>
+          <view v-if="item.giftCount > 0" class="gift-tag">赠 {{ item.giftCount }} 件</view>
+        </template>
+      </s-goods-item>
       <view class="order-item ss-flex ss-col-center ss-row-between ss-p-x-20 bg-white ss-r-10">
         <view class="item-title">订单备注</view>
         <view class="ss-flex ss-col-center">
@@ -512,7 +516,10 @@
     }
     // 情况四：都失败，则不选择
     addressState.value.deliveryType = undefined;
-    await getOrderInfo();
+    if ((await getOrderInfo()) !== 0) {
+      // 不选配送方式也算不出价格，说明是商品本身的问题（例如不满足起订量），提示后返回
+      setTimeout(() => sheep.$router.back(), 2000);
+    }
   });
 
   // 使用 watch 监听地址和配送方式的变化
@@ -667,5 +674,14 @@
   .cicon-box {
     font-size: 36rpx;
     color: #999999;
+  }
+  .gift-tag {
+    margin-left: 12rpx;
+    padding: 0 10rpx;
+    font-size: 22rpx;
+    line-height: 32rpx;
+    color: #fff;
+    background: #ff6000;
+    border-radius: 6rpx;
   }
 </style>

@@ -28,6 +28,11 @@ public interface ErpWarehouseMapper extends BaseMapperX<ErpWarehouseDO> {
         return selectOne(ErpWarehouseDO::getDefaultStatus, true);
     }
 
+    default ErpWarehouseDO selectByGiftStatus() {
+        return selectOne(new LambdaQueryWrapperX<ErpWarehouseDO>().eq(ErpWarehouseDO::getGiftStatus, true)
+                .orderByAsc(ErpWarehouseDO::getId).last("LIMIT 1"));
+    }
+
     default List<ErpWarehouseDO> selectListByStatus(Integer status) {
         return selectList(ErpWarehouseDO::getStatus, status);
     }
