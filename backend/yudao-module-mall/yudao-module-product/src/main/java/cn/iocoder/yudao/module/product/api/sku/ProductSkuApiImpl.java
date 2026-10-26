@@ -11,6 +11,7 @@ import org.springframework.validation.annotation.Validated;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品 SKU API 实现类
@@ -46,6 +47,11 @@ public class ProductSkuApiImpl implements ProductSkuApi {
     @Override
     public void updateSkuStock(ProductSkuUpdateStockReqDTO updateStockReqDTO) {
         productSkuService.updateSkuStock(updateStockReqDTO);
+    }
+
+    @Override
+    public void setSkuStock(Map<Long, Integer> skuStocks) {
+        productSkuService.setSkuStock(skuStocks);
     }
 
 }

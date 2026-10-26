@@ -13,7 +13,6 @@ import cn.iocoder.yudao.module.erp.service.stock.ErpWarehouseService;
 import cn.iocoder.yudao.module.erp.service.stock.bo.ErpStockRecordCreateReqBO;
 import cn.iocoder.yudao.module.product.api.sku.ProductSkuApi;
 import cn.iocoder.yudao.module.product.api.sku.dto.ProductSkuRespDTO;
-import cn.iocoder.yudao.module.product.api.sku.dto.ProductSkuUpdateStockReqDTO;
 import cn.iocoder.yudao.module.trade.controller.admin.material.vo.TradeSkuMaterialSaveReqVO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.material.TradeSkuMaterialDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.order.TradeOrderDO;
@@ -148,7 +147,7 @@ public class TradeSkuMaterialServiceImpl implements TradeSkuMaterialService {
         Map<Long, List<TradeSkuMaterialDO>> materialMap = convertMultiMap(
                 skuMaterialMapper.selectListBySkuIds(skuIds), TradeSkuMaterialDO::getSkuId);
         Map<Long, BigDecimal> stockCounts = new HashMap<>();
-        List<ProductSkuUpdateStockReqDTO.Item> items = new ArrayList<>();
+        Map<Long, Integer> skuStocks = new HashMap<>();
         for (ProductSkuRespDTO sku : productSkuApi.getSkuList(skuIds)) {
             List<TradeSkuMaterialDO> materials = materialMap.get(sku.getId());
             if (CollUtil.isEmpty(materials)) {
@@ -164,17 +163,12 @@ public class TradeSkuMaterialServiceImpl implements TradeSkuMaterialService {
                         : stockCount.divide(material.getQuantity(), 0, RoundingMode.FLOOR).intValue();
                 available = Math.min(available, count);
             }
-            int incrCount = available - ObjectUtil.defaultIfNull(sku.getStock(), 0);
-            if (incrCount != 0) {
-                ProductSkuUpdateStockReqDTO.Item item = new ProductSkuUpdateStockReqDTO.Item();
-                item.setId(sku.getId());
-                item.setIncrCount(incrCount);
-                items.add(item);
+            if (available != ObjectUtil.defaultIfNull(sku.getStock(), 0)) {
+                skuStocks.put(sku.getId(), available);
             }
         }
-        if (CollUtil.isNotEmpty(items)) {
-            productSkuApi.updateSkuStock(new ProductSkuUpdateStockReqDTO(items));
-        }
+        // 直接设置库存：不能用 updateSkuStock 增量接口，它会同时反向修改销量
+        productSkuApi.setSkuStock(skuStocks);
     }
 
     private Long getDefaultWarehouseId() {

@@ -276,4 +276,19 @@ public class ProductSkuServiceImpl implements ProductSkuService {
         productSpuService.updateSpuStock(spuStockIncrCounts);
     }
 
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void setSkuStock(Map<Long, Integer> skuStocks) {
+        if (CollUtil.isEmpty(skuStocks)) {
+            return;
+        }
+        skuStocks.forEach((id, stock) -> productSkuMapper.updateById(new ProductSkuDO().setId(id).setStock(stock)));
+        // 按 SKU 库存汇总 SPU 库存
+        Set<Long> spuIds = convertSet(productSkuMapper.selectByIds(skuStocks.keySet()), ProductSkuDO::getSpuId);
+        Map<Long, Integer> spuStocks = new HashMap<>();
+        getSkuListBySpuId(spuIds).forEach(sku ->
+                spuStocks.merge(sku.getSpuId(), ObjectUtil.defaultIfNull(sku.getStock(), 0), Integer::sum));
+        productSpuService.setSpuStock(spuStocks);
+    }
+
 }

@@ -6,6 +6,7 @@ import cn.iocoder.yudao.module.product.dal.dataobject.sku.ProductSkuDO;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 商品 SKU Service 接口
@@ -77,6 +78,13 @@ public interface ProductSkuService {
      * @param updateStockReqDTO 更行请求
      */
     void updateSkuStock(ProductSkuUpdateStockReqDTO updateStockReqDTO);
+
+    /**
+     * 直接设置 SKU 库存，不影响销量；SPU 库存按其下 SKU 库存汇总
+     *
+     * @param skuStocks SKU 编号与库存的映射
+     */
+    void setSkuStock(Map<Long, Integer> skuStocks);
 
     /**
      * 获得商品 SKU 集合

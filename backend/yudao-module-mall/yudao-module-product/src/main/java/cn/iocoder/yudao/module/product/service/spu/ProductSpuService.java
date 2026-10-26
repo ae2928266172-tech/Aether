@@ -111,6 +111,13 @@ public interface ProductSpuService {
     void updateSpuStock(Map<Long, Integer> stockIncrCounts);
 
     /**
+     * 直接设置商品 SPU 库存，不影响销量
+     *
+     * @param spuStocks SPU 编号与库存的映射
+     */
+    void setSpuStock(Map<Long, Integer> spuStocks);
+
+    /**
      * 更新 SPU 状态
      *
      * @param updateReqVO 更新请求

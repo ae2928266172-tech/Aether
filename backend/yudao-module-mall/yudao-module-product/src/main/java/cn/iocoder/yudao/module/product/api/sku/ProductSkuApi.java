@@ -58,4 +58,11 @@ public interface ProductSkuApi {
      */
     void updateSkuStock(ProductSkuUpdateStockReqDTO updateStockReqDTO);
 
+    /**
+     * 直接设置 SKU 库存，不影响销量，用于外部库存（例如 ERP 物料库存）同步
+     *
+     * @param skuStocks SKU 编号与库存的映射
+     */
+    void setSkuStock(Map<Long, Integer> skuStocks);
+
 }

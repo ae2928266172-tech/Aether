@@ -244,6 +244,11 @@ public class ProductSpuServiceImpl implements ProductSpuService {
     }
 
     @Override
+    public void setSpuStock(Map<Long, Integer> spuStocks) {
+        spuStocks.forEach((id, stock) -> productSpuMapper.updateById(new ProductSpuDO().setId(id).setStock(stock)));
+    }
+
+    @Override
     @Transactional(rollbackFor = Exception.class)
     public void updateSpuStatus(ProductSpuUpdateStatusReqVO updateReqVO) {
         // 校验存在

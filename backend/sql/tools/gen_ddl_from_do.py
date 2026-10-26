@@ -22,7 +22,9 @@ TENANT_COLUMN = "`tenant_id` bigint NOT NULL DEFAULT 0 COMMENT '租户编号'"
 
 # 会被 "x = x + ?" 这类 SQL 累加的数值字段，需要默认 0，否则 NULL + n 仍为 NULL
 ZERO_DEFAULT = re.compile(r'(count|stock|num|quantity|price|point|points|balance|amount|sort|times)$')
-TEXT_NAMES = re.compile(r'(description|content|remark|text|detail|memo|config|data|params|result)$')
+TEXT_NAMES = re.compile(r'(description|content|remark|text|detail|memo|config|data|params|result|response|package_info)$')
+# 装修页面等 JSON 属性，内容可能超过 text 的 64KB
+LONG_TEXT_NAMES = re.compile(r'(property)$')
 URL_NAMES = re.compile(r'(url|urls|pic|pics|image|images|avatar|address)$')
 
 
@@ -58,6 +60,8 @@ def column_type(java_type, col, has_handler):
     if t == 'byte[]':
         return 'longblob'
     if t == 'String':
+        if LONG_TEXT_NAMES.search(col):
+            return 'longtext'
         if TEXT_NAMES.search(col):
             return 'text'
         if URL_NAMES.search(col):
@@ -129,7 +133,7 @@ def parse(path):
             pk = col
             continue
         default = ' DEFAULT 0' if ctype in ('int', 'bigint', 'decimal(24,6)') and ZERO_DEFAULT.search(col) else ' DEFAULT NULL'
-        if ctype in ('text', 'longblob'):
+        if ctype in ('text', 'longtext', 'longblob'):
             default = ''
         note = comments.get(fname, '').replace("'", "''")
         cols.append(f"`{col}` {ctype}{default}" + (f" COMMENT '{note}'" if note else ''))
