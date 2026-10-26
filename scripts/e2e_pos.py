@@ -104,6 +104,11 @@ def settle_path(body):
     return '/app-api/trade/order/settlement?' + urllib.parse.urlencode({k: str(v).lower() if isinstance(v, bool) else v for k, v in q.items()})
 r = call('GET', settle_path(order_body(gauze_sku, 5)), M, expect_ok=False)
 check('少于起订量不能下单', (r['code'], r['msg']), (1011003010, '商品【医用纱布】10 件起购'))
+# 绕过页面直接调下单接口，同样被拦截（顾客手动改数量、改购物车都走这个接口）
+r = call('POST', '/app-api/trade/order/create', M, order_body(gauze_sku, 5), expect_ok=False)
+check('直接调下单接口也不能少于起订量', (r['code'], r['msg']), (1011003010, '商品【医用纱布】10 件起购'))
+r = call('POST', '/app-api/trade/order/create', M, order_body(gauze_sku, 0), expect_ok=False)
+check('数量 0 不能下单', r['code'] != 0, True)
 st = ok(settle_path(order_body(gauze_sku, 10)), M)
 check('结算页显示赠送件数', st['items'][0]['giftCount'], 5)
 r = call('POST', '/app-api/trade/order/create', M, order_body(swab_sku, 1), expect_ok=False)
