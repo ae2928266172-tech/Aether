@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.util.collection.CollectionUtils;
 import cn.iocoder.yudao.module.trade.controller.admin.config.vo.TradeConfigSaveReqVO;
 import cn.iocoder.yudao.module.trade.convert.config.TradeConfigConvert;
 import cn.iocoder.yudao.module.trade.dal.dataobject.config.TradeConfigDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.config.TradePosReceiptConfig;
 import cn.iocoder.yudao.module.trade.dal.mysql.config.TradeConfigMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.validation.annotation.Validated;
@@ -39,6 +40,22 @@ public class TradeConfigServiceImpl implements TradeConfigService {
     public TradeConfigDO getTradeConfig() {
         List<TradeConfigDO> list = tradeConfigMapper.selectList();
         return CollectionUtils.getFirst(list);
+    }
+
+    @Override
+    public TradePosReceiptConfig getPosReceiptConfig() {
+        TradeConfigDO config = getTradeConfig();
+        return TradePosReceiptConfig.fillDefaults(config != null ? config.getPosReceipt() : null);
+    }
+
+    @Override
+    public void savePosReceiptConfig(TradePosReceiptConfig receiptConfig) {
+        TradeConfigDO dbConfig = getTradeConfig();
+        if (dbConfig != null) {
+            tradeConfigMapper.updateById(new TradeConfigDO().setId(dbConfig.getId()).setPosReceipt(receiptConfig));
+            return;
+        }
+        tradeConfigMapper.insert(new TradeConfigDO().setPosReceipt(receiptConfig));
     }
 
 }

@@ -107,6 +107,22 @@ public class ProductSpuRespDTO {
      * 买赠：赠品库存来源
      */
     private Integer giftStockSource;
+    /**
+     * 医疗器械信息：医疗器械注册证号 / 备案凭证号，可选择打印在门店收银小票上
+     */
+    private String registrationNo;
+    /**
+     * 医疗器械信息：生产许可证号 / 生产备案凭证号，可选择打印在门店收银小票上
+     */
+    private String productionLicenseNo;
+    /**
+     * 医疗器械信息：注册人 / 备案人，可选择打印在门店收银小票上
+     */
+    private String registrant;
+    /**
+     * 医疗器械信息：生产地址，可选择打印在门店收银小票上
+     */
+    private String productionAddress;
 
     // ========== 营销相关字段 =========
 

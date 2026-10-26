@@ -4,6 +4,7 @@ import cn.hutool.core.collection.CollUtil;
 import cn.hutool.core.util.ObjectUtil;
 import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.common.pojo.PageResult;
+import cn.iocoder.yudao.framework.common.util.number.MoneyUtils;
 import cn.iocoder.yudao.framework.common.util.object.BeanUtils;
 import cn.iocoder.yudao.module.product.api.sku.ProductSkuApi;
 import cn.iocoder.yudao.module.product.api.property.dto.ProductPropertyValueDetailRespDTO;
@@ -131,12 +132,25 @@ public class TradePosServiceImpl implements TradePosService {
                     .giftCount(giftCount).giftStockSource(giftCount > 0 ? spu.getGiftStockSource() : null)
                     .supplierId(spu.getSupplierId()).costPrice(sku.getCostPrice()).build());
         });
-        // 1.3 计算金额、找零
+        // 1.3 计算应收：整单打折、手动改价只影响本单收款金额，商品售价、库存扣减不变
         int totalPrice = getSumValue(items, TradePosOrderItemDO::getTotalPrice, Integer::sum);
-        int receivedPrice = totalPrice;
+        int payPrice = totalPrice;
+        if (createReqVO.getDiscountRate() != null) {
+            payPrice = (int) Math.round(totalPrice * createReqVO.getDiscountRate() / 100.0);
+        }
+        boolean priceAdjusted = createReqVO.getPayPrice() != null;
+        if (priceAdjusted) {
+            if (createReqVO.getPayPrice() > totalPrice) {
+                throw exception(POS_ORDER_PAY_PRICE_TOO_HIGH, MoneyUtils.fenToYuanStr(totalPrice));
+            }
+            payPrice = createReqVO.getPayPrice();
+        }
+        allocatePayPrice(items, totalPrice, payPrice);
+        // 1.4 现金找零
+        int receivedPrice = payPrice;
         if (TradePosPayTypeEnum.isCash(createReqVO.getPayType()) && createReqVO.getReceivedPrice() != null) {
             receivedPrice = createReqVO.getReceivedPrice();
-            if (receivedPrice < totalPrice) {
+            if (receivedPrice < payPrice) {
                 throw exception(POS_ORDER_RECEIVED_PRICE_NOT_ENOUGH);
             }
         }
@@ -146,8 +160,9 @@ public class TradePosServiceImpl implements TradePosService {
                 .no(tradeNoRedisDAO.generate(TradeNoRedisDAO.POS_ORDER_NO_PREFIX))
                 .status(TradePosOrderStatusEnum.COMPLETED.getStatus())
                 .productCount(getSumValue(items, TradePosOrderItemDO::getCount, Integer::sum))
-                .totalPrice(totalPrice).payType(createReqVO.getPayType())
-                .receivedPrice(receivedPrice).changePrice(receivedPrice - totalPrice)
+                .totalPrice(totalPrice).discountRate(createReqVO.getDiscountRate()).priceAdjusted(priceAdjusted)
+                .discountPrice(totalPrice - payPrice).payPrice(payPrice).payType(createReqVO.getPayType())
+                .receivedPrice(receivedPrice).changePrice(receivedPrice - payPrice)
                 .cashierId(cashierId).cashierName(cashierName).remark(createReqVO.getRemark()).build();
         posOrderMapper.insert(order);
         items.forEach(item -> item.setOrderId(order.getId()));
@@ -158,7 +173,7 @@ public class TradePosServiceImpl implements TradePosService {
                 new ProductSkuUpdateStockReqDTO.Item().setId(item.getSkuId()).setIncrCount(-item.getCount()))));
         skuMaterialService.deductStockByPosOrder(order, items);
         skuMaterialService.updateGiftStock(order.getId(), order.getNo(), buildGiftItems(items), true);
-        log.info("[createOrder][收银员({}) 收银单({}) 金额({})]", cashierId, order.getNo(), totalPrice);
+        log.info("[createOrder][收银员({}) 收银单({}) 商品金额({}) 应收({})]", cashierId, order.getNo(), totalPrice, payPrice);
         return order;
     }
 
@@ -215,13 +230,14 @@ public class TradePosServiceImpl implements TradePosService {
                 order -> TradePosOrderStatusEnum.COMPLETED.getStatus().equals(order.getStatus()));
         TradePosSummaryRespVO summary = new TradePosSummaryRespVO();
         summary.setOrderCount(completed.size());
-        summary.setTotalPrice(completed.stream().mapToInt(TradePosOrderDO::getTotalPrice).sum());
+        summary.setTotalPrice(completed.stream().mapToInt(TradePosServiceImpl::getPayPrice).sum());
+        summary.setDiscountPrice(completed.stream().mapToInt(order -> order.getTotalPrice() - getPayPrice(order)).sum());
         summary.setCancelCount(orders.size() - completed.size());
         Map<Integer, List<TradePosOrderDO>> payTypeMap = convertMultiMap(completed, TradePosOrderDO::getPayType);
         summary.setPayTypes(Arrays.stream(TradePosPayTypeEnum.values()).map(payType -> {
             List<TradePosOrderDO> list = payTypeMap.getOrDefault(payType.getType(), Collections.emptyList());
             return new TradePosSummaryRespVO.PayTypeSummary(payType.getType(), list.size(),
-                    list.stream().mapToInt(TradePosOrderDO::getTotalPrice).sum());
+                    list.stream().mapToInt(TradePosServiceImpl::getPayPrice).sum());
         }).collect(Collectors.toList()));
         return summary;
     }
@@ -236,6 +252,27 @@ public class TradePosServiceImpl implements TradePosService {
         String name = sku.getProperties().stream().filter(p -> p.getPropertyId() != null && p.getPropertyId() != 0L)
                 .map(ProductPropertyValueDetailRespDTO::getValueName).collect(Collectors.joining(" / "));
         return name.isEmpty() ? null : name;
+    }
+
+    /**
+     * 把整单优惠按小计金额比例分摊到每个商品，最后一项补齐尾差，保证合计等于应收
+     */
+    static void allocatePayPrice(List<TradePosOrderItemDO> items, int totalPrice, int payPrice) {
+        int remain = payPrice;
+        for (int i = 0; i < items.size(); i++) {
+            TradePosOrderItemDO item = items.get(i);
+            int itemPayPrice = i == items.size() - 1 ? remain
+                    : totalPrice == 0 ? 0 : (int) ((long) item.getTotalPrice() * payPrice / totalPrice);
+            item.setPayPrice(itemPayPrice);
+            remain -= itemPayPrice;
+        }
+    }
+
+    /**
+     * 应收金额；兼容没有打折字段的历史收银单
+     */
+    private static int getPayPrice(TradePosOrderDO order) {
+        return order.getPayPrice() != null ? order.getPayPrice() : order.getTotalPrice();
     }
 
     private static List<TradeGiftStockItemBO> buildGiftItems(List<TradePosOrderItemDO> items) {

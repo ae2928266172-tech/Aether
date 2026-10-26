@@ -137,6 +137,14 @@ public class TradeConfigDO extends BaseDO {
     @TableField(typeHandler = IntegerListTypeHandler.class)
     private List<Integer> brokerageWithdrawTypes;
 
+    // ========== 门店收银 ==========
+
+    /**
+     * 门店收银小票设置
+     */
+    @TableField(typeHandler = JacksonTypeHandler.class)
+    private TradePosReceiptConfig posReceipt;
+
     public static final String WARD_DELIVERY_NAME_DEFAULT = "送到病房";
     public static final String WARD_AREA_LABEL_DEFAULT = "病区";
     public static final String WARD_SPOT_LABEL_DEFAULT = "床号";

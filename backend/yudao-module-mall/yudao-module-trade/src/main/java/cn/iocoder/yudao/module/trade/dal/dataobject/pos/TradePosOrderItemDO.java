@@ -62,9 +62,13 @@ public class TradePosOrderItemDO extends BaseDO {
      */
     private Integer count;
     /**
-     * 小计金额，单位：分
+     * 小计金额，单位：分。= 单价 × 件数
      */
     private Integer totalPrice;
+    /**
+     * 分摊优惠后的实收金额，单位：分。整单打折、改价时按小计金额比例分摊，用于报表和供应商对账
+     */
+    private Integer payPrice;
     /**
      * 赠送件数（买赠）
      */

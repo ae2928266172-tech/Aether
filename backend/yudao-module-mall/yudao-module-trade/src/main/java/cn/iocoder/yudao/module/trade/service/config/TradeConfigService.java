@@ -2,6 +2,7 @@ package cn.iocoder.yudao.module.trade.service.config;
 
 import cn.iocoder.yudao.module.trade.controller.admin.config.vo.TradeConfigSaveReqVO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.config.TradeConfigDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.config.TradePosReceiptConfig;
 
 import jakarta.validation.Valid;
 
@@ -25,5 +26,19 @@ public interface TradeConfigService {
      * @return 交易中心配置
      */
     TradeConfigDO getTradeConfig();
+
+    /**
+     * 获得门店收银小票设置，没有设置的项填默认值
+     *
+     * @return 小票设置
+     */
+    TradePosReceiptConfig getPosReceiptConfig();
+
+    /**
+     * 保存门店收银小票设置
+     *
+     * @param config 小票设置
+     */
+    void savePosReceiptConfig(@Valid TradePosReceiptConfig config);
 
 }

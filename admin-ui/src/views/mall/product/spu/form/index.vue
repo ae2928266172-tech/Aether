@@ -127,7 +127,11 @@ const formData = ref<ProductSpuApi.Spu>({
   minBuyCount: 0, // 起订量
   giftBuyCount: 0, // 买赠：买 N
   giftCount: 0, // 买赠：赠 M
-  giftStockSource: 1 // 赠品库存来源
+  giftStockSource: 1, // 赠品库存来源
+  registrationNo: '', // 注册证号
+  productionLicenseNo: '', // 生产许可证号
+  registrant: '', // 注册人
+  productionAddress: '' // 生产地址
 })
 
 /** 获得详情 */

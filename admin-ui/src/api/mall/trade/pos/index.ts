@@ -40,7 +40,13 @@ export interface PosOrderItemVO {
   price: number
   count: number
   totalPrice: number
+  payPrice?: number // 分摊整单优惠后的金额
   giftCount?: number
+  // 医疗器械信息（取商品当前设置），可以打印在小票上
+  registrationNo?: string
+  productionLicenseNo?: string
+  registrant?: string
+  productionAddress?: string
 }
 
 export interface PosOrderVO {
@@ -48,7 +54,11 @@ export interface PosOrderVO {
   no: string
   status: number // 10 已完成，20 已作废
   productCount: number
-  totalPrice: number
+  totalPrice: number // 商品金额（未打折）
+  discountRate?: number // 整单折扣，90 表示 9 折
+  priceAdjusted?: boolean // 是否手动改了收款金额
+  discountPrice?: number // 优惠金额
+  payPrice: number // 应收（打折、改价后）
   payType: number
   receivedPrice: number
   changePrice: number
@@ -63,9 +73,27 @@ export interface PosOrderVO {
 
 export interface PosSummaryVO {
   orderCount: number
-  totalPrice: number
+  totalPrice: number // 实收合计
+  discountPrice: number // 优惠合计
   cancelCount: number
   payTypes: { payType: number; orderCount: number; totalPrice: number }[]
+}
+
+// 小票设置
+export interface PosReceiptConfigVO {
+  title?: string // 小票标题（店名）
+  headerText?: string // 标题下方文字，支持变量
+  footerText?: string // 底部文字，支持变量
+  paperWidth: number // 58 或 80（mm）
+  autoPrint: boolean // 收款后自动打印
+  copies: number // 打印份数
+  voice: boolean // 收款成功语音播报
+  showSkuName: boolean
+  showPrice: boolean
+  showCashier: boolean
+  showPayment: boolean
+  showDeviceInfo: boolean // 打印医疗器械信息
+  deviceFields: string[] // registrationNo、productionLicenseNo、registrant、productionAddress
 }
 
 // 收款方式
@@ -88,6 +116,8 @@ export const PosApi = {
     items: { skuId: number; count: number }[]
     payType: number
     receivedPrice?: number
+    discountRate?: number // 整单折扣，需要打折权限
+    payPrice?: number // 本单收款金额，需要改价权限
     remark?: string
   }): Promise<PosOrderVO> => {
     return await request.post({ url: `/trade/pos/create`, data })
@@ -103,5 +133,11 @@ export const PosApi = {
   },
   getSummary: async (params?: { date?: string; all?: boolean }): Promise<PosSummaryVO> => {
     return await request.get({ url: `/trade/pos/summary`, params })
+  },
+  getReceiptConfig: async (): Promise<PosReceiptConfigVO> => {
+    return await request.get({ url: `/trade/pos/receipt-config` })
+  },
+  saveReceiptConfig: async (data: PosReceiptConfigVO) => {
+    return await request.put({ url: `/trade/pos/receipt-config`, data })
   }
 }

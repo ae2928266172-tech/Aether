@@ -17,6 +17,9 @@ public class TradePosSummaryRespVO {
     @Schema(description = "收款合计，单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "35600")
     private Integer totalPrice;
 
+    @Schema(description = "优惠合计（打折、改价），单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "200")
+    private Integer discountPrice;
+
     @Schema(description = "作废单数", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Integer cancelCount;
 

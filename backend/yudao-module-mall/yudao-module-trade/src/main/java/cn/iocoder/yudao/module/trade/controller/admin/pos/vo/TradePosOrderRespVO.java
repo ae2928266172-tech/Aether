@@ -22,13 +22,25 @@ public class TradePosOrderRespVO {
     @Schema(description = "商品件数（不含赠品）", requiredMode = Schema.RequiredMode.REQUIRED, example = "3")
     private Integer productCount;
 
-    @Schema(description = "应收金额，单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "1000")
+    @Schema(description = "商品金额，单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "1000")
     private Integer totalPrice;
+
+    @Schema(description = "整单折扣，百分比", example = "90")
+    private Integer discountRate;
+
+    @Schema(description = "是否手动修改了收款金额", example = "false")
+    private Boolean priceAdjusted;
+
+    @Schema(description = "优惠金额，单位：分", example = "100")
+    private Integer discountPrice;
+
+    @Schema(description = "应收金额（打折、改价后），单位：分", example = "900")
+    private Integer payPrice;
 
     @Schema(description = "收款方式", requiredMode = Schema.RequiredMode.REQUIRED, example = "1")
     private Integer payType;
 
-    @Schema(description = "实收金额，单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "2000")
+    @Schema(description = "顾客付的金额，单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "2000")
     private Integer receivedPrice;
 
     @Schema(description = "找零金额，单位：分", requiredMode = Schema.RequiredMode.REQUIRED, example = "1000")
@@ -86,8 +98,23 @@ public class TradePosOrderRespVO {
         @Schema(description = "小计金额，单位：分", example = "560")
         private Integer totalPrice;
 
+        @Schema(description = "分摊优惠后的金额，单位：分", example = "500")
+        private Integer payPrice;
+
         @Schema(description = "赠送件数", example = "1")
         private Integer giftCount;
+
+        @Schema(description = "医疗器械注册证号 / 备案凭证号")
+        private String registrationNo;
+
+        @Schema(description = "生产许可证号 / 生产备案凭证号")
+        private String productionLicenseNo;
+
+        @Schema(description = "注册人 / 备案人")
+        private String registrant;
+
+        @Schema(description = "生产地址")
+        private String productionAddress;
 
     }
 

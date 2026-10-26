@@ -64,6 +64,10 @@ export interface Spu {
   giftBuyCount?: number // 买赠：买 N
   giftCount?: number // 买赠：赠 M
   giftStockSource?: number // 赠品库存来源：1 总库存，2 赠品库
+  registrationNo?: string // 医疗器械注册证号
+  productionLicenseNo?: string // 生产许可证号
+  registrant?: string // 注册人
+  productionAddress?: string // 生产地址
 }
 
 // 获得 Spu 列表

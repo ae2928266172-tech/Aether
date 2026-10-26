@@ -24,9 +24,13 @@ ALTER TABLE trade_pos_order_item ADD INDEX idx_order_id (order_id);
 ALTER TABLE trade_order_item ADD INDEX idx_supplier_id (supplier_id);
 
 
--- 默认仓库：商城下单从默认仓库扣减共享库存物料
+-- 门店（默认仓库）：病房订单、门店收银都从这里扣减共享库存物料，商品可售库存按这里的库存计算
 INSERT INTO erp_warehouse (id, name, address, sort, remark, principal, status, default_status, creator, updater, deleted, tenant_id)
-VALUES (1, '住院部仓库', '', 1, '商城订单从默认仓库扣减库存', '', 0, b'1', '1', '1', b'0', 1);
+VALUES (1, '门店', '', 1, '默认仓库：病房订单、门店收银从这里扣减库存', '', 0, b'1', '1', '1', b'0', 1);
+
+-- 中心仓库：采购先入这里，每天在「仓库台账」里出库到门店（调拨）
+INSERT INTO erp_warehouse (id, name, address, sort, remark, principal, status, default_status, creator, updater, deleted, tenant_id)
+VALUES (3, '中心仓库', '', 0, '采购入库到这里，每天出库到门店', '', 0, b'0', '1', '1', b'0', 1);
 
 -- 赠品库：买赠的赠品可以设置从赠品库扣减
 INSERT INTO erp_warehouse (id, name, address, sort, remark, principal, status, default_status, gift_status, creator, updater, deleted, tenant_id)

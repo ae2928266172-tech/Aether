@@ -115,6 +115,9 @@ public interface ErrorCodeConstants {
     ErrorCode POS_ORDER_SPU_NOT_ENABLE = new ErrorCode(1_011_022_002, "商品【{}】已下架");
     ErrorCode POS_ORDER_RECEIVED_PRICE_NOT_ENOUGH = new ErrorCode(1_011_022_003, "实收金额不能少于应收金额");
     ErrorCode POS_ORDER_CANCEL_FAIL_STATUS_NOT_COMPLETED = new ErrorCode(1_011_022_004, "收银单不是已完成状态，无法作废");
+    ErrorCode POS_ORDER_DISCOUNT_NO_PERMISSION = new ErrorCode(1_011_022_005, "没有打折权限，请联系管理员");
+    ErrorCode POS_ORDER_ADJUST_PRICE_NO_PERMISSION = new ErrorCode(1_011_022_006, "没有修改收款金额的权限，请联系管理员");
+    ErrorCode POS_ORDER_PAY_PRICE_TOO_HIGH = new ErrorCode(1_011_022_007, "收款金额不能高于商品金额 {} 元");
 
     // ========== 分销用户 模块 1-011-007-000 ==========
     ErrorCode BROKERAGE_USER_NOT_EXISTS = new ErrorCode(1_011_007_000, "分销用户不存在");

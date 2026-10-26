@@ -8,6 +8,7 @@ import cn.iocoder.yudao.module.product.enums.spu.ProductSpuGiftStockSourceEnum;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
@@ -94,6 +95,22 @@ public class ProductSpuSaveReqVO {
     @Schema(description = "买赠：赠品库存来源，1 总库存，2 赠品库", example = "1")
     @InEnum(value = ProductSpuGiftStockSourceEnum.class, message = "赠品库存来源不正确")
     private Integer giftStockSource;
+
+    @Schema(description = "医疗器械注册证号 / 备案凭证号", example = "国械注准20263140001")
+    @Size(max = 255, message = "医疗器械注册证号 / 备案凭证号不能超过 255 个字")
+    private String registrationNo;
+
+    @Schema(description = "生产许可证号 / 生产备案凭证号", example = "苏食药监械生产许20160012号")
+    @Size(max = 255, message = "生产许可证号 / 生产备案凭证号不能超过 255 个字")
+    private String productionLicenseNo;
+
+    @Schema(description = "注册人 / 备案人", example = "某某医疗用品有限公司")
+    @Size(max = 255, message = "注册人 / 备案人不能超过 255 个字")
+    private String registrant;
+
+    @Schema(description = "生产地址", example = "江苏省某某市某某路 1 号")
+    @Size(max = 255, message = "生产地址不能超过 255 个字")
+    private String productionAddress;
 
     @AssertTrue(message = "设置买赠时，赠送件数必须大于 0，并选择赠品库存来源")
     @JsonIgnore

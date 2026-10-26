@@ -122,6 +122,22 @@ public class ProductSpuRespVO {
     @Schema(description = "买赠：赠品库存来源", example = "1")
     private Integer giftStockSource;
 
+    @Schema(description = "医疗器械注册证号 / 备案凭证号", example = "国械注准20263140001")
+    @ExcelProperty("医疗器械注册证号 / 备案凭证号")
+    private String registrationNo;
+
+    @Schema(description = "生产许可证号 / 生产备案凭证号", example = "苏食药监械生产许20160012号")
+    @ExcelProperty("生产许可证号 / 生产备案凭证号")
+    private String productionLicenseNo;
+
+    @Schema(description = "注册人 / 备案人", example = "某某医疗用品有限公司")
+    @ExcelProperty("注册人 / 备案人")
+    private String registrant;
+
+    @Schema(description = "生产地址", example = "江苏省某某市某某路 1 号")
+    @ExcelProperty("生产地址")
+    private String productionAddress;
+
     // ========== 营销相关字段 =========
 
     @Schema(description = "赠送积分", requiredMode = Schema.RequiredMode.REQUIRED, example = "111")

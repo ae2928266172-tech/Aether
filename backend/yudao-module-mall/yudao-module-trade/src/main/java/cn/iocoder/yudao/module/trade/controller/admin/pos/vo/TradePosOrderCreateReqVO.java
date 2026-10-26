@@ -4,6 +4,7 @@ import cn.iocoder.yudao.framework.common.validation.InEnum;
 import cn.iocoder.yudao.module.trade.enums.pos.TradePosPayTypeEnum;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
@@ -29,6 +30,15 @@ public class TradePosOrderCreateReqVO {
     @Schema(description = "实收金额，单位：分。现金收款时必填", example = "5000")
     @Min(value = 0, message = "实收金额不能小于 0")
     private Integer receivedPrice;
+
+    @Schema(description = "整单折扣，百分比，例如 90 表示 9 折。需要打折权限", example = "90")
+    @Min(value = 1, message = "折扣不能小于 1")
+    @Max(value = 99, message = "折扣必须小于 100")
+    private Integer discountRate;
+
+    @Schema(description = "手动修改的本单收款金额，单位：分。只影响本单，不改商品售价；需要改价权限", example = "1000")
+    @Min(value = 0, message = "收款金额不能小于 0")
+    private Integer payPrice;
 
     @Schema(description = "备注", example = "3 床家属")
     @Size(max = 255, message = "备注不能超过 255 个字")

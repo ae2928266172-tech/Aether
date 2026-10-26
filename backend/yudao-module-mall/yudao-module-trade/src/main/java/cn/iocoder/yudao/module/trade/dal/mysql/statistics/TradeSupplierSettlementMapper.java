@@ -33,10 +33,10 @@ public interface TradeSupplierSettlementMapper {
                                                         @Param("endTime") LocalDateTime endTime);
 
     /**
-     * 门店收银：已完成（未作废）的收银单，按收银时间统计
+     * 门店收银：已完成（未作废）的收银单，按收银时间统计；销售额取分摊整单优惠后的金额
      */
     @Select("SELECT i.supplier_id AS supplierId, i.spu_id AS spuId, MAX(i.spu_name) AS spuName," +
-            " SUM(i.count) AS count, SUM(IFNULL(i.gift_count, 0)) AS giftCount, SUM(i.total_price) AS totalPrice," +
+            " SUM(i.count) AS count, SUM(IFNULL(i.gift_count, 0)) AS giftCount, SUM(IFNULL(i.pay_price, i.total_price)) AS totalPrice," +
             " SUM(IFNULL(i.cost_price, 0) * i.count) AS costPrice," +
             " SUM(IFNULL(i.cost_price, 0) * IFNULL(i.gift_count, 0)) AS giftCostPrice" +
             " FROM trade_pos_order_item i INNER JOIN trade_pos_order o ON i.order_id = o.id" +

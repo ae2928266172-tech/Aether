@@ -10,6 +10,9 @@
       >
         <Icon icon="ep:monitor" class="mr-5px" /> 打开收银台
       </el-button>
+      <el-button size="large" @click="receiptConfigRef.open()" v-hasPermi="['trade:pos:receipt-config']">
+        <Icon icon="ep:tickets" class="mr-5px" /> 小票设置
+      </el-button>
       <div class="flex flex-wrap gap-12px">
         <div class="summary-card">
           <span>今日收款</span>
@@ -22,6 +25,10 @@
         <div v-for="item in summary.payTypes || []" :key="item.payType" class="summary-card">
           <span><dict-tag :type="DICT_TYPE.TRADE_POS_PAY_TYPE" :value="item.payType" /></span>
           <strong>¥{{ fenToYuan(item.totalPrice) }}</strong>
+        </div>
+        <div v-if="summary.discountPrice" class="summary-card">
+          <span>优惠</span>
+          <strong>¥{{ fenToYuan(summary.discountPrice) }}</strong>
         </div>
         <div class="summary-card">
           <span>作废</span>
@@ -125,8 +132,24 @@
       </el-table-column>
       <el-table-column label="收银时间" prop="createTime" :formatter="dateFormatter" width="180" />
       <el-table-column label="件数" prop="productCount" width="80" align="center" />
-      <el-table-column label="金额" width="110" align="right">
+      <el-table-column label="商品金额" width="100" align="right">
         <template #default="{ row }">¥{{ fenToYuan(row.totalPrice) }}</template>
+      </el-table-column>
+      <el-table-column label="优惠" width="120" align="right">
+        <template #default="{ row }">
+          <template v-if="row.discountPrice">
+            <el-tag size="small" :type="row.priceAdjusted ? 'warning' : 'success'" class="mr-4px">
+              {{ row.priceAdjusted ? '改价' : row.discountRate / 10 + ' 折' }}
+            </el-tag>
+            -{{ fenToYuan(row.discountPrice) }}
+          </template>
+          <span v-else class="text-[var(--el-text-color-placeholder)]">—</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="应收" width="100" align="right">
+        <template #default="{ row }">
+          <strong>¥{{ fenToYuan(row.payPrice ?? row.totalPrice) }}</strong>
+        </template>
       </el-table-column>
       <el-table-column label="收款方式" width="100" align="center">
         <template #default="{ row }">
@@ -139,8 +162,9 @@
         </template>
       </el-table-column>
       <el-table-column label="收银员" prop="cashierName" width="110" />
-      <el-table-column label="操作" width="100" fixed="right" align="center">
+      <el-table-column label="操作" width="130" fixed="right" align="center">
         <template #default="{ row }">
+          <el-button link type="primary" @click="handleReprint(row)">补打</el-button>
           <el-button
             v-if="row.status === 10"
             link
@@ -160,6 +184,8 @@
       @pagination="getList"
     />
   </ContentWrap>
+
+  <ReceiptConfigDialog ref="receiptConfigRef" />
 </template>
 <script lang="ts" setup>
 import { ElMessageBox } from 'element-plus'
@@ -167,6 +193,9 @@ import { fenToYuan } from '@/utils'
 import { DICT_TYPE, getIntDictOptions } from '@/utils/dict'
 import { dateFormatter, defaultShortcuts } from '@/utils/formatTime'
 import { PosApi, PosOrderVO, PosSummaryVO } from '@/api/mall/trade/pos'
+import { useAppStore } from '@/store/modules/app'
+import ReceiptConfigDialog from './receipt/ReceiptConfigDialog.vue'
+import { printReceipt } from './receipt/receipt'
 
 defineOptions({ name: 'TradePos' })
 
@@ -210,6 +239,15 @@ const resetQuery = () => {
   handleQuery()
 }
 
+const appStore = useAppStore()
+const receiptConfigRef = ref()
+
+/** 补打小票：取收银单最新详情（带医疗器械信息）和当前小票设置 */
+const handleReprint = async (row: PosOrderVO) => {
+  const [order, config] = await Promise.all([PosApi.getOrder(row.id), PosApi.getReceiptConfig()])
+  printReceipt(order, { ...config, copies: 1 }, appStore.getTitle)
+}
+
 const openTerminal = () => {
   router.push({ name: 'TradePosTerminal' })
 }
@@ -217,7 +255,7 @@ const openTerminal = () => {
 /** 作废：退款给顾客后操作，商品退回库存 */
 const handleCancel = async (row: PosOrderVO) => {
   const { value } = await ElMessageBox.prompt(
-    `作废后商品退回库存，请确认已把 ¥${fenToYuan(row.totalPrice)} 退还给顾客。`,
+    `作废后商品退回库存，请确认已把 ¥${fenToYuan(row.payPrice ?? row.totalPrice)} 退还给顾客。`,
     `作废收银单 ${row.no}`,
     { inputPlaceholder: '作废原因（选填）', confirmButtonText: '作废', cancelButtonText: '取消', type: 'warning' }
   )

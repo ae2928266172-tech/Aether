@@ -47,9 +47,25 @@ public class TradePosOrderDO extends BaseDO {
      */
     private Integer productCount;
     /**
-     * 应收金额，单位：分
+     * 商品金额，单位：分。按商品售价计算，未打折
      */
     private Integer totalPrice;
+    /**
+     * 折扣，百分比，例如 90 表示 9 折；为空表示没有整单打折
+     */
+    private Integer discountRate;
+    /**
+     * 是否手动修改了本单应收金额（只影响本单，不改商品售价）
+     */
+    private Boolean priceAdjusted;
+    /**
+     * 优惠金额，单位：分。= 商品金额 - 应收金额
+     */
+    private Integer discountPrice;
+    /**
+     * 应收金额，单位：分。打折或改价后顾客实际要付的钱
+     */
+    private Integer payPrice;
     /**
      * 收款方式
      *
@@ -57,7 +73,7 @@ public class TradePosOrderDO extends BaseDO {
      */
     private Integer payType;
     /**
-     * 实收金额，单位：分。现金收款时为顾客给的金额，其它方式等于应收金额
+     * 顾客付的金额，单位：分。现金收款时为顾客给的金额，其它方式等于应收金额
      */
     private Integer receivedPrice;
     /**

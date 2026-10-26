@@ -34,10 +34,25 @@ VALUES (10030, '门店收银', '', 2, 0, @order_center_id, 'pos', 'ep:money', 'm
        (10033, '收银单作废', 'trade:pos:cancel', 3, 3, 10030, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
        (10040, '供应商对账', '', 2, 20, @order_center_id, 'supplier-settlement', 'ep:document-checked', 'mall/trade/supplierSettlement/index', 'TradeSupplierSettlement', 0, b'1', b'1', b'1', '1', '1', b'0'),
        (10041, '供应商对账查询', 'trade:supplier-settlement:query', 3, 1, 10040, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
-       (10042, '供应商对账导出', 'trade:supplier-settlement:export', 3, 2, 10040, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0');
+       (10042, '供应商对账导出', 'trade:supplier-settlement:export', 3, 2, 10040, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       -- 收银打折、改收款金额、小票设置：按钮权限，在「角色管理」里分配
+       (10034, '收银整单打折', 'trade:pos:discount', 3, 4, 10030, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10035, '收银修改收款金额', 'trade:pos:update-price', 3, 5, 10030, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10036, '小票设置', 'trade:pos:receipt-config', 3, 6, 10030, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       -- 营收报表：日报、周报、月报，商品销售明细
+       (10050, '营收报表', '', 2, 21, @order_center_id, 'report', 'ep:trend-charts', 'mall/trade/report/index', 'TradeReport', 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10051, '营收报表查询', 'trade:report:query', 3, 1, 10050, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10052, '营收报表导出', 'trade:report:export', 3, 2, 10050, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0');
+
+-- 4.1 仓库台账：进销存下，像表格一样看期初、入库、出库、结存，并快速入库、出库、出库到门店
+SET @erp_menu_id = (SELECT id FROM system_menu WHERE parent_id = 0 AND path = '/erp' AND deleted = 0 LIMIT 1);
+INSERT INTO system_menu (id, name, permission, type, sort, parent_id, path, icon, component, component_name, status, visible, keep_alive, always_show, creator, updater, deleted)
+VALUES (10060, '仓库台账', '', 2, 1, @erp_menu_id, 'stock-ledger', 'ep:notebook', 'erp/stock/ledger/index', 'ErpStockLedger', 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10061, '仓库台账查询', 'erp:stock-ledger:query', 3, 1, 10060, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0'),
+       (10062, '仓库出入库', 'erp:stock-ledger:operate', 3, 2, 10060, '', '', NULL, NULL, 0, b'1', b'1', b'1', '1', '1', b'0');
 
 -- 5. 预置角色（租户 1）
---   门店店员：门店收银、处理订单、病房配送，只能查看商品（不含库存），没有 ERP 进销存菜单
+--   门店店员：门店收银（可以打折、改收款金额）、处理订单、病房配送，只能查看商品（不含库存），没有 ERP 进销存菜单
 --   后台管理员：商城、会员、支付、ERP 进销存的全部菜单，可以查看、修改库存
 DELETE FROM system_role WHERE id IN (10001, 10002);
 DELETE FROM system_role_menu WHERE role_id IN (10001, 10002);
@@ -55,7 +70,8 @@ WITH RECURSIVE picked AS (
         OR permission IN ('product:spu:query', 'product:category:query',
                           'trade:order:query', 'trade:order:update', 'trade:order:pick-up', 'trade:order:ward-delivery',
                           'trade:after-sale:query', 'trade:delivery:ward:query',
-                          'trade:pos:create', 'trade:pos:query', 'trade:pos:cancel'))
+                          'trade:pos:create', 'trade:pos:query', 'trade:pos:cancel',
+                          'trade:pos:discount', 'trade:pos:update-price'))
     UNION
     SELECT m.id, m.parent_id FROM system_menu m JOIN picked p ON m.id = p.parent_id
 )
