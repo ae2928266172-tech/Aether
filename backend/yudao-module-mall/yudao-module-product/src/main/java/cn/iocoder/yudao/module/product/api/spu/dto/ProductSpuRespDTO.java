@@ -1,0 +1,144 @@
+package cn.iocoder.yudao.module.product.api.spu.dto;
+
+import cn.iocoder.yudao.module.product.enums.spu.ProductSpuStatusEnum;
+import lombok.Data;
+
+import java.util.List;
+
+/**
+ * 商品 SPU 信息 Response DTO
+ *
+ * @author LeeYan9
+ * @since 2022-08-26
+ */
+@Data
+public class ProductSpuRespDTO {
+
+    /**
+     * 商品 SPU 编号，自增
+     */
+    private Long id;
+
+    // ========== 基本信息 =========
+
+    /**
+     * 商品名称
+     */
+    private String name;
+
+    /**
+     * 商品分类编号
+     */
+    private Long categoryId;
+    /**
+     * 商品封面图
+     */
+    private String picUrl;
+
+    /**
+     * 商品状态
+     * <p>
+     * 枚举 {@link ProductSpuStatusEnum}
+     */
+    private Integer status;
+
+    // ========== SKU 相关字段 =========
+
+    /**
+     * 规格类型
+     *
+     * false - 单规格
+     * true - 多规格
+     */
+    private Boolean specType;
+    /**
+     * 商品价格，单位使用：分
+     */
+    private Integer price;
+    /**
+     * 市场价，单位使用：分
+     */
+    private Integer marketPrice;
+    /**
+     * 成本价，单位使用：分
+     */
+    private Integer costPrice;
+    /**
+     * 库存
+     */
+    private Integer stock;
+
+    // ========== 物流相关字段 =========
+
+    /**
+     * 配送方式数组
+     *
+     * 对应 DeliveryTypeEnum 枚举
+     */
+    private List<Integer> deliveryTypes;
+
+    /**
+     * 物流配置模板编号
+     *
+     * 对应 TradeDeliveryExpressTemplateDO 的 id 编号
+     */
+    private Long deliveryTemplateId;
+    /**
+     * 顾客端是否可见
+     */
+    private Boolean customerVisible;
+    /**
+     * 供应商编号
+     */
+    private Long supplierId;
+    /**
+     * 起订量
+     */
+    private Integer minBuyCount;
+    /**
+     * 买赠：每买多少件
+     */
+    private Integer giftBuyCount;
+    /**
+     * 买赠：赠送多少件
+     */
+    private Integer giftCount;
+    /**
+     * 买赠：赠品库存来源
+     */
+    private Integer giftStockSource;
+    /**
+     * 医疗器械信息：医疗器械注册证号 / 备案凭证号，可选择打印在门店收银小票上
+     */
+    private String registrationNo;
+    /**
+     * 医疗器械信息：生产许可证号 / 生产备案凭证号，可选择打印在门店收银小票上
+     */
+    private String productionLicenseNo;
+    /**
+     * 医疗器械信息：注册人 / 备案人，可选择打印在门店收银小票上
+     */
+    private String registrant;
+    /**
+     * 医疗器械信息：生产地址，可选择打印在门店收银小票上
+     */
+    private String productionAddress;
+
+    // ========== 营销相关字段 =========
+
+    /**
+     * 赠送积分
+     */
+    private Integer giveIntegral;
+
+    // ========== 分销相关字段 =========
+
+    /**
+     * 分销类型
+     *
+     * false - 默认
+     * true - 自行设置
+     */
+    private Boolean subCommissionType;
+
+}
