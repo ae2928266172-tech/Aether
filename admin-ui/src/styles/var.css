@@ -5,23 +5,23 @@
 
   --left-menu-min-width: 64px;
 
-  --left-menu-bg-color: #0f1f24;
+  --left-menu-bg-color: #ffffff;
 
-  --left-menu-bg-light-color: #162b31;
+  --left-menu-bg-light-color: #ffffff;
 
-  --left-menu-bg-active-color: var(--el-color-primary);
+  --left-menu-bg-active-color: #f1f3f5;
 
-  --left-menu-text-color: #b6c6ca;
+  --left-menu-text-color: #4b5563;
 
-  --left-menu-text-active-color: #fff;
+  --left-menu-text-active-color: #111827;
 
-  --left-menu-collapse-bg-active-color: var(--el-color-primary);
+  --left-menu-collapse-bg-active-color: #f1f3f5;
   /* left menu end */
 
   /* logo start */
   --logo-height: 50px;
 
-  --logo-title-text-color: #fff;
+  --logo-title-text-color: #111827;
   /* logo end */
 
   /* header start */
@@ -48,7 +48,7 @@
 
   --app-content-padding: 20px;
 
-  --app-content-bg-color: #f5f7f9;
+  --app-content-bg-color: #f6f7f9;
 
   --app-footer-height: 50px;
 

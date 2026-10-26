@@ -16,8 +16,8 @@
         </div>
       </div>
       <div class="ledger-actions" v-hasPermi="['erp:stock-ledger:operate']">
-        <el-button type="success" @click="openOperate('in')"><Icon icon="ep:download" class="mr-5px" /> 入库</el-button>
-        <el-button type="warning" @click="openOperate('out')"><Icon icon="ep:upload" class="mr-5px" /> 出库</el-button>
+        <el-button @click="openOperate('in')"><Icon icon="ep:download" class="mr-5px" /> 入库</el-button>
+        <el-button @click="openOperate('out')"><Icon icon="ep:upload" class="mr-5px" /> 出库</el-button>
         <el-button type="primary" @click="openOperate('move')">
           <Icon icon="ep:right" class="mr-5px" /> 出库到门店
         </el-button>
@@ -53,8 +53,6 @@
       <el-form-item>
         <el-button @click="getList"><Icon icon="ep:search" class="mr-5px" /> 查询</el-button>
         <el-button
-          type="success"
-          plain
           :loading="exportLoading"
           @click="handleExport"
           v-hasPermi="['erp:stock-ledger:query']"

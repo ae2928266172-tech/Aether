@@ -104,7 +104,10 @@ $prefix-cls: #{$namespace}-login;
   overflow: auto;
 
   &__left {
-    background: linear-gradient(145deg, #0f766e 0%, #0d9488 45%, #14b8a6 100%);
+    background:
+      radial-gradient(circle at 85% 0%, rgb(20 184 166 / 22%), transparent 45%),
+      radial-gradient(circle at 0% 100%, rgb(20 184 166 / 10%), transparent 40%),
+      #0b1015;
 
     &::before,
     &::after {
@@ -118,7 +121,7 @@ $prefix-cls: #{$namespace}-login;
       right: -120px;
       width: 480px;
       height: 480px;
-      background: rgb(255 255 255 / 8%);
+      border: 1px solid rgb(255 255 255 / 6%);
     }
 
     &::after {
@@ -126,7 +129,7 @@ $prefix-cls: #{$namespace}-login;
       left: -140px;
       width: 520px;
       height: 520px;
-      background: rgb(255 255 255 / 6%);
+      border: 1px solid rgb(255 255 255 / 5%);
     }
   }
 
@@ -134,8 +137,8 @@ $prefix-cls: #{$namespace}-login;
     display: flex;
     max-width: 440px;
     padding: 14px 18px;
-    background: rgb(255 255 255 / 10%);
-    border: 1px solid rgb(255 255 255 / 16%);
+    background: rgb(255 255 255 / 3%);
+    border: 1px solid rgb(255 255 255 / 8%);
     border-radius: 14px;
     backdrop-filter: blur(4px);
     align-items: center;
@@ -146,8 +149,8 @@ $prefix-cls: #{$namespace}-login;
     display: flex;
     width: 42px;
     height: 42px;
-    color: #fff;
-    background: rgb(255 255 255 / 18%);
+    color: #5eead4;
+    background: rgb(20 184 166 / 12%);
     border-radius: 12px;
     flex: none;
     align-items: center;

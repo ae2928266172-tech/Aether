@@ -34,8 +34,6 @@
         <el-form-item>
           <el-button @click="getRevenue"><Icon icon="ep:refresh" class="mr-5px" /> 刷新</el-button>
           <el-button
-            type="success"
-            plain
             :loading="exportLoading"
             @click="handleExportRevenue"
             v-hasPermi="['trade:report:export']"
@@ -148,8 +146,6 @@
           <el-button type="primary" @click="handleSalesQuery"><Icon icon="ep:search" class="mr-5px" /> 查询</el-button>
           <el-button @click="resetSalesQuery"><Icon icon="ep:refresh" class="mr-5px" /> 重置</el-button>
           <el-button
-            type="success"
-            plain
             :loading="exportLoading"
             @click="handleExportSales"
             v-hasPermi="['trade:report:export']"
@@ -508,18 +504,18 @@ onMounted(() => {
   display: flex;
   padding: 18px 20px;
   background: var(--el-bg-color);
-  border: 1px solid var(--el-border-color-lighter);
+  border: 1px solid var(--app-line);
   border-radius: 12px;
   gap: 14px;
   align-items: center;
 
   &__icon {
     display: flex;
-    width: 46px;
-    height: 46px;
-    color: var(--kpi-color);
-    background: color-mix(in srgb, var(--kpi-color) 12%, transparent);
-    border-radius: 12px;
+    width: 40px;
+    height: 40px;
+    color: var(--el-text-color-regular);
+    border: 1px solid var(--app-line);
+    border-radius: 10px;
     flex: none;
     align-items: center;
     justify-content: center;
@@ -533,7 +529,8 @@ onMounted(() => {
   &__value {
     margin: 2px 0;
     font-size: 24px;
-    font-weight: 700;
+    font-weight: 600;
+    letter-spacing: -0.3px;
     color: var(--el-text-color-primary);
     font-variant-numeric: tabular-nums;
   }

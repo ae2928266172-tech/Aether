@@ -14,7 +14,7 @@ export const CACHE_KEY = {
   // 系统设置
   IS_DARK: 'isDark',
   LANG: 'lang',
-  THEME: 'theme',
+  THEME: 'theme_v2', // 默认主题改为浅色简约风格，换 key 让旧缓存失效
   LAYOUT: 'layout',
   DICT_CACHE: 'dictCache',
   // 登录表单

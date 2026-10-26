@@ -36,42 +36,120 @@
   }
 }
 
-/* ========== 界面美化：圆角卡片、圆角菜单、柔和背景 ========== */
-:root:not(.dark) {
-  --app-content-bg-color: #f3f6f8;
+/* ========== 界面风格：简约高端（白底、细线、低饱和、字体层级） ========== */
+:root {
+  --app-font: -apple-system, blinkmacsystemfont, 'SF Pro Text', 'PingFang SC', 'HarmonyOS Sans SC',
+    'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --app-line: #eceef1;
+  --app-ink: #111827;
 }
 
+:root:not(.dark) {
+  --app-content-bg-color: #f6f7f9;
+  --el-text-color-primary: #111827;
+  --el-text-color-regular: #374151;
+  --el-text-color-secondary: #6b7280;
+  --el-text-color-placeholder: #9ca3af;
+  --el-border-color: #e5e7eb;
+  --el-border-color-light: #eceef1;
+  --el-border-color-lighter: #f0f1f3;
+  --el-fill-color-light: #f6f7f9;
+  --el-fill-color-lighter: #f9fafb;
+}
+
+.dark {
+  --app-line: var(--el-border-color-lighter);
+  --app-ink: #f3f4f6;
+}
+
+body {
+  font-family: var(--app-font);
+  letter-spacing: 0.1px;
+}
+
+/* 卡片：细线描边，不用阴影 */
 .el-card {
-  border-color: transparent !important;
+  border-color: var(--app-line) !important;
   border-radius: 12px !important;
-  box-shadow: 0 1px 2px rgb(15 31 36 / 4%), 0 4px 16px rgb(15 31 36 / 4%) !important;
+  box-shadow: none !important;
 }
 
 .el-button,
 .el-input__wrapper,
 .el-select__wrapper,
-.el-textarea__inner {
+.el-textarea__inner,
+.el-date-editor.el-input__wrapper {
   border-radius: 8px !important;
+}
+
+.el-button {
+  font-weight: 500;
+}
+
+/* 主按钮：实色，不要渐变和彩色阴影 */
+.el-button--primary:not(.is-plain, .is-link, .is-text) {
+  --el-button-hover-bg-color: #115e59;
+  --el-button-hover-border-color: #115e59;
 }
 
 .el-tag {
   border-radius: 6px;
 }
 
+/* 表格：浅灰表头、小号灰字、细分隔线 */
+.el-table {
+  --el-table-border-color: var(--app-line);
+  --el-table-row-hover-bg-color: #f9fafb;
+}
+
 .el-table th.el-table__cell {
-  font-weight: 600;
-  color: var(--el-text-color-regular);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--el-text-color-secondary);
+  letter-spacing: 0.3px;
   background-color: var(--el-fill-color-lighter) !important;
 }
 
-/* 左侧菜单：选中项、悬停项做成圆角块，留出左右间距 */
+.el-dialog {
+  border-radius: 14px;
+}
+
+.el-dialog__title {
+  font-weight: 600;
+}
+
+/* 顶栏和标签页：白底细线 */
+.v-layout .v-tool-header,
+.v-tool-header {
+  border-bottom: 1px solid var(--app-line);
+}
+
+.v-tags-view {
+  background: var(--el-bg-color);
+  border-bottom: 1px solid var(--app-line) !important;
+}
+
+/* 左侧菜单：浅色，右侧细线；选中项是浅灰圆角块 + 深色粗体字 */
+.v-menu {
+  border-right: 1px solid var(--app-line);
+}
+
+.v-logo {
+  border-right: 1px solid var(--app-line);
+}
+
 .v-menu .el-menu:not(.el-menu--collapse) {
   .el-menu-item,
   .el-sub-menu__title {
-    height: 44px;
-    margin: 2px 8px;
-    line-height: 44px;
+    height: 40px;
+    margin: 2px 10px;
+    font-size: 14px;
+    line-height: 40px;
     border-radius: 8px;
+  }
+
+  .el-menu-item.is-active {
+    font-weight: 600;
   }
 }
 
@@ -82,4 +160,9 @@
   .el-sub-menu__title {
     background-color: transparent !important;
   }
+}
+
+.v-menu .el-menu-item:not(.is-active):hover,
+.v-menu .el-sub-menu__title:hover {
+  background-color: #f6f7f9 !important;
 }

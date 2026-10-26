@@ -66,3 +66,9 @@
     --ui-BG-Main-TC: #ffffff !important;
   }
 }
+
+// 品牌主题：实色按钮，不用渐变和彩色阴影（简约风格）
+.main-teal {
+  --ui-BG-Main-gradient: #0f766e;
+  --ui-Main-box-shadow: none;
+}

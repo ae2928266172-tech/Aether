@@ -3,11 +3,12 @@
   <div class="home">
     <div class="home-hero">
       <div>
+        <div class="home-hero__sub">{{ today }}</div>
         <div class="home-hero__title">{{ greeting }}，{{ nickname }}</div>
-        <div class="home-hero__sub">{{ today }} · {{ appStore.getTitle }}</div>
       </div>
       <el-button
         v-if="checkPermi(['trade:pos:create'])"
+        type="primary"
         size="large"
         class="home-hero__btn"
         @click="go('TradePosTerminal')"
@@ -24,14 +25,13 @@
         :class="{ 'is-link': item.route }"
         @click="item.route && go(item.route)"
       >
-        <div class="home-stat__icon" :style="{ color: item.color, background: item.bg }">
-          <Icon :icon="item.icon" :size="22" />
+        <div class="home-stat__label">
+          <Icon :icon="item.icon" :size="14" />
+          {{ item.label }}
+          <Icon v-if="item.route" icon="ep:arrow-right" :size="12" class="home-stat__arrow" />
         </div>
-        <div class="min-w-0">
-          <div class="home-stat__label">{{ item.label }}</div>
-          <div class="home-stat__value">{{ item.value }}</div>
-          <div class="home-stat__hint">{{ item.hint }}</div>
-        </div>
+        <div class="home-stat__value">{{ item.value }}</div>
+        <div class="home-stat__hint">{{ item.hint }}</div>
       </div>
     </div>
 
@@ -75,7 +75,7 @@
         <template #header><span class="font-600">快捷入口</span></template>
         <div class="home-shortcuts">
           <div v-for="item in shortcuts" :key="item.route" class="home-shortcut" @click="go(item.route)">
-            <div class="home-shortcut__icon" :style="{ color: item.color, background: item.bg }">
+            <div class="home-shortcut__icon">
               <Icon :icon="item.icon" :size="22" />
             </div>
             <span>{{ item.title }}</span>
@@ -218,87 +218,95 @@ onMounted(loadStats)
 .home {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .home-hero {
   display: flex;
-  padding: 24px 28px;
-  color: #fff;
-  background: linear-gradient(120deg, #0f766e 0%, #0d9488 55%, #2dd4bf 100%);
-  border-radius: 14px;
-  align-items: center;
+  padding: 4px 2px 0;
+  align-items: flex-end;
   justify-content: space-between;
   gap: 16px;
   flex-wrap: wrap;
 
-  &__title {
-    font-size: 22px;
-    font-weight: 600;
+  &__sub {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
   }
 
-  &__sub {
-    margin-top: 6px;
-    font-size: 14px;
-    opacity: 0.85;
+  &__title {
+    margin-top: 4px;
+    font-size: 26px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    letter-spacing: -0.3px;
   }
 
   &__btn {
-    font-weight: 600;
-    color: #0f766e;
-    background: #fff;
-    border: none;
+    height: 42px;
+    padding: 0 20px;
+    font-weight: 500;
+    border-radius: 10px !important;
   }
 }
 
+/* 指标：一整块细线面板，竖线分隔 */
 .home-stats {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 16px;
+  overflow: hidden;
+  background: var(--el-bg-color);
+  border: 1px solid var(--app-line);
+  border-radius: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
 }
 
 .home-stat {
-  display: flex;
-  padding: 18px 20px;
-  background: var(--el-bg-color);
-  border-radius: 12px;
-  box-shadow: 0 1px 3px rgb(15 23 42 / 6%);
-  align-items: center;
-  gap: 14px;
-  transition: transform 0.15s, box-shadow 0.15s;
+  position: relative;
+  padding: 20px 24px;
+  border-left: 1px solid var(--app-line);
+  margin-left: -1px;
+  transition: background 0.15s;
 
   &.is-link {
     cursor: pointer;
 
     &:hover {
-      box-shadow: 0 6px 16px rgb(15 23 42 / 10%);
-      transform: translateY(-2px);
+      background: var(--el-fill-color-lighter);
+
+      .home-stat__arrow {
+        opacity: 1;
+        transform: translateX(0);
+      }
     }
   }
 
-  &__icon {
-    display: flex;
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    flex: none;
-    align-items: center;
-    justify-content: center;
-  }
-
   &__label {
+    display: flex;
     font-size: 13px;
     color: var(--el-text-color-secondary);
+    align-items: center;
+    gap: 6px;
+  }
+
+  &__arrow {
+    margin-left: auto;
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: all 0.15s;
   }
 
   &__value {
-    margin-top: 2px;
-    font-size: 24px;
-    font-weight: 700;
+    margin-top: 10px;
+    font-size: 30px;
+    font-weight: 600;
+    line-height: 1.1;
     color: var(--el-text-color-primary);
+    letter-spacing: -0.5px;
+    font-variant-numeric: tabular-nums;
   }
 
   &__hint {
+    margin-top: 6px;
     overflow: hidden;
     font-size: 12px;
     color: var(--el-text-color-secondary);
@@ -310,7 +318,7 @@ onMounted(loadStats)
 .home-grid {
   display: grid;
   grid-template-columns: 3fr 2fr;
-  gap: 16px;
+  gap: 20px;
   align-items: start;
 
   @media (width <= 1100px) {
@@ -320,17 +328,17 @@ onMounted(loadStats)
 
 .home-order {
   display: flex;
-  padding: 12px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 
   &:last-child {
     border-bottom: none;
   }
 
   &__place {
-    font-weight: 600;
+    font-weight: 500;
     color: var(--el-text-color-primary);
   }
 
@@ -351,38 +359,48 @@ onMounted(loadStats)
 
   &__price {
     font-weight: 600;
-    color: var(--el-color-danger);
+    color: var(--el-text-color-primary);
+    font-variant-numeric: tabular-nums;
   }
 }
 
 .home-shortcuts {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
-  gap: 12px;
+  gap: 8px;
 }
 
 .home-shortcut {
   display: flex;
-  padding: 14px 6px;
+  padding: 16px 6px 12px;
   font-size: 13px;
   color: var(--el-text-color-regular);
   cursor: pointer;
   border-radius: 10px;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  transition: background 0.15s;
 
   &:hover {
     background: var(--el-fill-color-light);
+
+    .home-shortcut__icon {
+      color: var(--el-color-primary);
+      border-color: var(--el-color-primary-light-7);
+    }
   }
 
   &__icon {
     display: flex;
     width: 44px;
     height: 44px;
+    color: var(--el-text-color-regular);
+    border: 1px solid var(--app-line);
     border-radius: 12px;
     align-items: center;
     justify-content: center;
+    transition: all 0.15s;
   }
 }
 </style>
