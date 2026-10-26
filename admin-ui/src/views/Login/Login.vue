@@ -4,27 +4,29 @@
     class="relative h-[100%] lt-md:px-10px lt-sm:px-10px lt-xl:px-10px lt-xl:px-10px"
   >
     <div class="relative mx-auto h-full flex">
-      <div
-        :class="`${prefixCls}__left flex-1 bg-gray-500 bg-opacity-20 relative p-30px lt-xl:hidden overflow-x-hidden overflow-y-auto`"
-      >
+      <div :class="`${prefixCls}__left flex-1 relative p-40px lt-xl:hidden overflow-hidden`">
         <!-- 左上角的 logo + 系统标题 -->
-        <div class="relative flex items-center text-white">
-          <img alt="" class="mr-10px h-48px w-48px" src="@/assets/imgs/logo.png" />
-          <span class="text-20px font-bold">{{ underlineToHump(appStore.getTitle) }}</span>
+        <div class="relative z-1 flex items-center text-white">
+          <img alt="" class="mr-12px h-44px w-44px rounded-12px" src="@/assets/imgs/logo.png" />
+          <span class="text-22px font-bold tracking-wide">{{ appStore.getTitle }}</span>
         </div>
-        <!-- 左边的背景图 + 欢迎语 -->
-        <div class="h-[calc(100%-60px)] flex items-center justify-center">
-          <TransitionGroup
-            appear
-            enter-active-class="animate__animated animate__bounceInLeft"
-            tag="div"
-          >
-            <img key="1" alt="" class="w-350px" src="@/assets/svgs/login-box-bg.svg" />
-            <div key="2" class="text-3xl text-white">{{ t('login.welcome') }}</div>
-            <div key="3" class="mt-5 text-14px font-normal text-white">
-              {{ t('login.message') }}
+        <!-- 品牌标语 + 功能亮点 -->
+        <div class="relative z-1 h-[calc(100%-60px)] flex flex-col justify-center pl-40px">
+          <div class="text-40px font-bold leading-tight text-white">{{ slogan }}</div>
+          <div class="mt-16px max-w-420px text-16px leading-relaxed text-white/80">
+            顾客扫码下单，门店触屏收银，库存与供应商对账一处管理。
+          </div>
+          <div class="mt-48px flex flex-col gap-16px">
+            <div v-for="item in features" :key="item.title" :class="`${prefixCls}__feature`">
+              <div :class="`${prefixCls}__feature-icon`">
+                <Icon :icon="item.icon" :size="22" />
+              </div>
+              <div>
+                <div class="text-16px font-600 text-white">{{ item.title }}</div>
+                <div class="mt-2px text-13px text-white/70">{{ item.desc }}</div>
+              </div>
             </div>
-          </TransitionGroup>
+          </div>
         </div>
       </div>
       <div
@@ -37,11 +39,10 @@
         >
           <div class="flex items-center at-2xl:hidden at-xl:hidden">
             <img alt="" class="mr-10px h-48px w-48px" src="@/assets/imgs/logo.png" />
-            <span class="text-20px font-bold">{{ underlineToHump(appStore.getTitle) }}</span>
+            <span class="text-20px font-bold">{{ appStore.getTitle }}</span>
           </div>
           <div class="flex items-center justify-end space-x-10px h-48px">
             <ThemeSwitch />
-            <LocaleDropdown />
           </div>
         </div>
         <!-- 右边的登录界面 -->
@@ -68,12 +69,9 @@
   </div>
 </template>
 <script lang="ts" setup>
-import { underlineToHump } from '@/utils'
-
 import { useDesign } from '@/hooks/web/useDesign'
 import { useAppStore } from '@/store/modules/app'
 import { ThemeSwitch } from '@/layout/components/ThemeSwitch'
-import { LocaleDropdown } from '@/layout/components/LocaleDropdown'
 
 import {
   LoginForm,
@@ -90,6 +88,13 @@ const { t } = useI18n()
 const appStore = useAppStore()
 const { getPrefixCls } = useDesign()
 const prefixCls = getPrefixCls('login')
+
+const slogan = import.meta.env.VITE_APP_SLOGAN || '扫码下单 · 门店收银 · 进销存一体'
+const features = [
+  { icon: 'ep:iphone', title: '扫码下单，送到指定位置', desc: '每个区域一张二维码，顾客手机下单，工作人员配送' },
+  { icon: 'ep:monitor', title: '门店触屏收银', desc: '大按钮点选、扫码枪、现金找零、小票打印' },
+  { icon: 'ep:box', title: '进销存与对账', desc: '多规格共用库存、买赠、供应商月度对账' }
+]
 </script>
 
 <style lang="scss" scoped>
@@ -99,18 +104,54 @@ $prefix-cls: #{$namespace}-login;
   overflow: auto;
 
   &__left {
-    &::before {
+    background: linear-gradient(145deg, #0f766e 0%, #0d9488 45%, #14b8a6 100%);
+
+    &::before,
+    &::after {
       position: absolute;
-      top: 0;
-      left: 0;
-      z-index: -1;
-      width: 100%;
-      height: 100%;
-      background-image: url('@/assets/svgs/login-bg.svg');
-      background-position: center;
-      background-repeat: no-repeat;
+      border-radius: 50%;
       content: '';
     }
+
+    &::before {
+      top: -160px;
+      right: -120px;
+      width: 480px;
+      height: 480px;
+      background: rgb(255 255 255 / 8%);
+    }
+
+    &::after {
+      bottom: -200px;
+      left: -140px;
+      width: 520px;
+      height: 520px;
+      background: rgb(255 255 255 / 6%);
+    }
+  }
+
+  &__feature {
+    display: flex;
+    max-width: 440px;
+    padding: 14px 18px;
+    background: rgb(255 255 255 / 10%);
+    border: 1px solid rgb(255 255 255 / 16%);
+    border-radius: 14px;
+    backdrop-filter: blur(4px);
+    align-items: center;
+    gap: 14px;
+  }
+
+  &__feature-icon {
+    display: flex;
+    width: 42px;
+    height: 42px;
+    color: #fff;
+    background: rgb(255 255 255 / 18%);
+    border-radius: 12px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
   }
 }
 </style>

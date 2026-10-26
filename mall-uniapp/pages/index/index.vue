@@ -73,7 +73,7 @@
         }
         if (!data) {
           removeWard();
-          sheep.$helper.toast('该病区暂不支持下单');
+          sheep.$helper.toast('该区域暂不支持下单');
           return;
         }
         setWard(data);

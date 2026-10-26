@@ -41,6 +41,7 @@ import cn.iocoder.yudao.module.trade.controller.app.order.vo.AppTradeOrderSettle
 import cn.iocoder.yudao.module.trade.controller.app.order.vo.item.AppTradeOrderItemCommentCreateReqVO;
 import cn.iocoder.yudao.module.trade.convert.order.TradeOrderConvert;
 import cn.iocoder.yudao.module.trade.dal.dataobject.cart.CartDO;
+import cn.iocoder.yudao.module.trade.dal.dataobject.config.TradeConfigDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.delivery.DeliveryExpressDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.delivery.DeliveryPickUpStoreDO;
 import cn.iocoder.yudao.module.trade.dal.dataobject.delivery.DeliveryWardDO;
@@ -55,6 +56,7 @@ import cn.iocoder.yudao.module.trade.framework.order.config.TradeOrderProperties
 import cn.iocoder.yudao.module.trade.framework.order.core.annotations.TradeOrderLog;
 import cn.iocoder.yudao.module.trade.framework.order.core.utils.TradeOrderLogUtils;
 import cn.iocoder.yudao.module.trade.service.cart.CartService;
+import cn.iocoder.yudao.module.trade.service.config.TradeConfigService;
 import cn.iocoder.yudao.module.trade.service.delivery.DeliveryExpressService;
 import cn.iocoder.yudao.module.trade.service.delivery.DeliveryPickUpStoreService;
 import cn.iocoder.yudao.module.trade.service.delivery.DeliveryWardService;
@@ -123,6 +125,8 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
     private DeliveryExpressService deliveryExpressService;
     @Resource
     private DeliveryWardService deliveryWardService;
+    @Resource
+    private TradeConfigService tradeConfigService;
     @Resource
     private TradeMessageService tradeMessageService;
     @Resource
@@ -248,15 +252,18 @@ public class TradeOrderUpdateServiceImpl implements TradeOrderUpdateService {
             order.setReceiverName(createReqVO.getReceiverName()).setReceiverMobile(createReqVO.getReceiverMobile());
             order.setPickUpVerifyCode(RandomUtil.randomNumbers(8)); // 随机一个核销码，长度为 8 位
         } else if (Objects.equals(createReqVO.getDeliveryType(), DeliveryTypeEnum.WARD.getType())) {
-            // 病房配送：病区来自扫码，床号必须由病人填写
-            if (StrUtil.isBlank(createReqVO.getBedNo())) {
-                throw exception(ORDER_CREATE_FAIL_WARD_BED_NO_EMPTY);
+            // 扫码配送（病房配送）：区域来自扫码，位置（床号）由顾客填写，是否必填、叫法在交易配置里设置
+            TradeConfigDO config = ObjUtil.defaultIfNull(tradeConfigService.getTradeConfig(), new TradeConfigDO())
+                    .fillWardDefaults();
+            if (config.getWardSpotRequired() && StrUtil.isBlank(createReqVO.getBedNo())) {
+                throw exception(ORDER_CREATE_FAIL_WARD_BED_NO_EMPTY, config.getWardSpotLabel());
             }
             DeliveryWardDO ward = deliveryWardService.validateWardEnabled(createReqVO.getWardId());
             String bedNo = StrUtil.trim(createReqVO.getBedNo());
             order.setWardId(ward.getId()).setWardName(ward.getName()).setBedNo(bedNo);
             order.setReceiverName(createReqVO.getReceiverName()).setReceiverMobile(createReqVO.getReceiverMobile())
-                    .setReceiverDetailAddress(StrUtil.format("{} {} 床", ward.getName(), bedNo));
+                    .setReceiverDetailAddress(StrUtil.isBlank(bedNo) ? ward.getName()
+                            : StrUtil.format("{} {}：{}", ward.getName(), config.getWardSpotLabel(), bedNo));
         }
         return order;
     }

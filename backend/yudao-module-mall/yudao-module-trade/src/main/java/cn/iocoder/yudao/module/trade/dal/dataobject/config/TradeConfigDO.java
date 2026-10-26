@@ -1,5 +1,6 @@
 package cn.iocoder.yudao.module.trade.dal.dataobject.config;
 
+import cn.hutool.core.util.StrUtil;
 import cn.iocoder.yudao.framework.mybatis.core.dataobject.BaseDO;
 import cn.iocoder.yudao.framework.mybatis.core.type.IntegerListTypeHandler;
 import cn.iocoder.yudao.module.trade.enums.brokerage.BrokerageBindModeEnum;
@@ -64,6 +65,27 @@ public class TradeConfigDO extends BaseDO {
      */
     private Boolean deliveryPickUpEnabled;
 
+    // ========== 扫码配送（病房配送）的顾客端文案 ==========
+    // 不同场景可以改成自己的说法，例如“送到宿舍 / 楼栋 / 房间号”“送到桌边 / 区域 / 桌号”
+
+    /**
+     * 配送方式名称，默认“送到病房”
+     */
+    private String wardDeliveryName;
+    /**
+     * 区域的叫法（二维码按区域划分），默认“病区”
+     */
+    private String wardAreaLabel;
+    /**
+     * 位置的叫法（顾客下单时填写），默认“床号”
+     */
+    private String wardSpotLabel;
+    /**
+     * 位置是否必填，默认必填
+     */
+    private Boolean wardSpotRequired;
+
+
     // ========== 分销相关 ==========
 
     /**
@@ -114,5 +136,28 @@ public class TradeConfigDO extends BaseDO {
      */
     @TableField(typeHandler = IntegerListTypeHandler.class)
     private List<Integer> brokerageWithdrawTypes;
+
+    public static final String WARD_DELIVERY_NAME_DEFAULT = "送到病房";
+    public static final String WARD_AREA_LABEL_DEFAULT = "病区";
+    public static final String WARD_SPOT_LABEL_DEFAULT = "床号";
+
+    /**
+     * 补齐扫码配送文案的默认值，老数据没有这些字段
+     */
+    public TradeConfigDO fillWardDefaults() {
+        if (StrUtil.isBlank(wardDeliveryName)) {
+            wardDeliveryName = WARD_DELIVERY_NAME_DEFAULT;
+        }
+        if (StrUtil.isBlank(wardAreaLabel)) {
+            wardAreaLabel = WARD_AREA_LABEL_DEFAULT;
+        }
+        if (StrUtil.isBlank(wardSpotLabel)) {
+            wardSpotLabel = WARD_SPOT_LABEL_DEFAULT;
+        }
+        if (wardSpotRequired == null) {
+            wardSpotRequired = true;
+        }
+        return this;
+    }
 
 }

@@ -1,11 +1,11 @@
 <template>
   <s-layout title="确认订单">
-    <!-- 病房配送：病区来自扫码（也可手动选择），床号必须填写 -->
+    <!-- 扫码配送：区域来自扫码（也可手动选择），位置（床号）是否必填、叫法在后台「交易配置」里设置 -->
     <view
       v-if="addressState.deliveryType === DeliveryTypeEnum.WARD.type"
       class="ward-card-box bg-white ss-r-10 ss-m-b-14"
     >
-      <view class="ward-card-title">送到病房</view>
+      <view class="ward-card-title">{{ wardText.deliveryName }}</view>
       <picker
         :range="wardList"
         range-key="name"
@@ -13,22 +13,24 @@
         @change="onWardChange"
       >
         <view class="order-item ss-flex ss-col-center ss-row-between">
-          <view class="item-title">病区</view>
+          <view class="item-title">{{ wardText.areaLabel }}</view>
           <view class="ss-flex ss-col-center">
             <text class="item-value" v-if="addressState.wardInfo.id">
               {{ addressState.wardInfo.name }}
             </text>
-            <text class="item-value text-red" v-else>请选择病区</text>
+            <text class="item-value text-red" v-else>请选择{{ wardText.areaLabel }}</text>
             <text class="_icon-forward ss-m-l-10" v-if="wardList.length > 0" />
           </view>
         </view>
       </picker>
       <view class="order-item ss-flex ss-col-center ss-row-between">
-        <view class="item-title"><text class="text-red">*</text>床号</view>
+        <view class="item-title">
+          <text v-if="wardText.spotRequired" class="text-red">*</text>{{ wardText.spotLabel }}
+        </view>
         <view class="ss-flex ss-col-center">
           <uni-easyinput
             maxlength="32"
-            placeholder="必填，例如：12 或 12 床"
+            :placeholder="`${wardText.spotRequired ? '必填' : '选填'}，请输入${wardText.spotLabel}`"
             v-model="addressState.bedNo"
             :inputBorder="false"
             :clearable="false"
@@ -40,7 +42,7 @@
         <view class="ss-flex ss-col-center">
           <uni-easyinput
             maxlength="20"
-            placeholder="病人或家属姓名"
+            placeholder="收货人姓名"
             v-model="addressState.receiverName"
             :inputBorder="false"
             :clearable="false"
@@ -320,6 +322,13 @@
     bedNo: '', // 病房配送：床号，必填
   });
   const wardList = ref([]); // 可选的病区列表
+  // 扫码配送的叫法，后台「交易配置 → 扫码配送」可改
+  const wardText = ref({
+    deliveryName: '送到病房',
+    areaLabel: '病区',
+    spotLabel: '床号',
+    spotRequired: true,
+  });
 
   // 选择病区
   function onWardChange(e) {
@@ -359,11 +368,14 @@
   function onConfirm() {
     if (addressState.value.deliveryType === DeliveryTypeEnum.WARD.type) {
       if (!addressState.value.wardInfo.id) {
-        sheep.$helper.toast('请选择病区');
+        sheep.$helper.toast(`请选择${wardText.value.areaLabel}`);
         return;
       }
-      if (!addressState.value.bedNo || !addressState.value.bedNo.trim()) {
-        sheep.$helper.toast('请填写床号');
+      if (
+        wardText.value.spotRequired &&
+        (!addressState.value.bedNo || !addressState.value.bedNo.trim())
+      ) {
+        sheep.$helper.toast(`请填写${wardText.value.spotLabel}`);
         return;
       }
       if (
@@ -481,6 +493,12 @@
     const { data, code } = await TradeConfigApi.getTradeConfig();
     if (code === 0) {
       addressState.value.isPickUp = data.deliveryPickUpEnabled;
+      wardText.value = {
+        deliveryName: data.wardDeliveryName || '送到病房',
+        areaLabel: data.wardAreaLabel || '病区',
+        spotLabel: data.wardSpotLabel || '床号',
+        spotRequired: data.wardSpotRequired !== false,
+      };
     }
 
     // 价格计算
@@ -681,7 +699,7 @@
     font-size: 22rpx;
     line-height: 32rpx;
     color: #fff;
-    background: #ff6000;
+    background: var(--ui-BG-Main);
     border-radius: 6rpx;
   }
 </style>

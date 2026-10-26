@@ -27,8 +27,8 @@ public interface ErrorCodeConstants {
     ErrorCode ORDER_DELIVERY_FAIL_COMBINATION_RECORD_STATUS_NOT_SUCCESS = new ErrorCode(1_011_000_022, "交易订单发货失败，拼团未成功");
     ErrorCode ORDER_DELIVERY_FAIL_BARGAIN_RECORD_STATUS_NOT_SUCCESS = new ErrorCode(1_011_000_023, "交易订单发货失败，砍价未成功");
     ErrorCode ORDER_DELIVERY_FAIL_DELIVERY_TYPE_NOT_EXPRESS = new ErrorCode(1_011_000_024, "交易订单发货失败，发货类型不是快递");
-    ErrorCode ORDER_CREATE_FAIL_WARD_BED_NO_EMPTY = new ErrorCode(1_011_000_060, "病房配送必须填写床号");
-    ErrorCode ORDER_DELIVERY_TYPE_NOT_WARD = new ErrorCode(1_011_000_061, "操作失败，订单不是病房配送");
+    ErrorCode ORDER_CREATE_FAIL_WARD_BED_NO_EMPTY = new ErrorCode(1_011_000_060, "请填写{}");
+    ErrorCode ORDER_DELIVERY_TYPE_NOT_WARD = new ErrorCode(1_011_000_061, "操作失败，订单不是扫码配送");
     ErrorCode ORDER_CANCEL_FAIL_STATUS_NOT_UNPAID = new ErrorCode(1_011_000_025, "交易订单取消失败，订单不是【待支付】状态");
     ErrorCode ORDER_UPDATE_PRICE_FAIL_PAID = new ErrorCode(1_011_000_026, "支付订单调价失败，原因：支付订单已付款,不能调价");
     ErrorCode ORDER_UPDATE_PRICE_FAIL_ALREADY = new ErrorCode(1_011_000_027, "支付订单调价失败，原因：已经修改过价格");

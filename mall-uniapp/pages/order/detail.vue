@@ -64,7 +64,7 @@
     <view class="order-address-box" v-else-if="state.orderInfo.deliveryType === 3">
       <view class="ss-flex ss-col-center">
         <text class="address-username">
-          {{ state.orderInfo.wardName }} {{ state.orderInfo.bedNo }} 床
+          {{ state.orderInfo.receiverDetailAddress || state.orderInfo.wardName }}
         </text>
       </view>
       <view

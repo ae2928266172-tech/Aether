@@ -39,7 +39,7 @@ public class AppTradeConfigController {
     @Operation(summary = "获得交易配置")
     @PermitAll
     public CommonResult<AppTradeConfigRespVO> getTradeConfig() {
-        TradeConfigDO config = ObjUtil.defaultIfNull(tradeConfigService.getTradeConfig(), new TradeConfigDO());
+        TradeConfigDO config = ObjUtil.defaultIfNull(tradeConfigService.getTradeConfig(), new TradeConfigDO()).fillWardDefaults();
         return success(TradeConfigConvert.INSTANCE.convert02(config).setTencentLbsKey(tencentLbsKey));
     }
 

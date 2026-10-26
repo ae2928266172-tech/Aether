@@ -7,6 +7,10 @@ export interface ConfigVO {
   deliveryExpressFreeEnabled: boolean
   deliveryExpressFreePrice: number
   deliveryPickUpEnabled: boolean
+  wardDeliveryName?: string // 扫码配送：配送方式名称
+  wardAreaLabel?: string // 扫码配送：区域叫法
+  wardSpotLabel?: string // 扫码配送：位置叫法
+  wardSpotRequired?: boolean // 扫码配送：位置是否必填
   brokerageEnabled: boolean
   brokerageEnabledCondition?: number
   brokerageBindMode?: number

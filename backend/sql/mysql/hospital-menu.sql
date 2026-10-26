@@ -79,3 +79,17 @@ VALUES (10001, 'store', '$2a$04$.vd8nPeLwxt6hnSzmAoAyul8BOLX7Cib6QhcxRe30rfvrIPQ
 INSERT INTO system_user_role (user_id, role_id, creator, updater, deleted, tenant_id)
 VALUES (10001, 10001, '1', '1', b'0', 1),
        (10002, 10002, '1', '1', b'0', 1);
+
+-- 7. 品牌与菜单精简：隐藏本项目用不到的上游模块和外链菜单（status=1 停用，可在「菜单管理」重新启用）
+UPDATE system_menu SET status = 1
+WHERE parent_id = 0 AND deleted = 0
+  AND (id IN (194, 347, 348)
+    OR path IN ('/report', '/bpm', '/crm', '/wms', '/mes', '/oa', '/hrm', '/fms', '/pms',
+                '/ai', '/iot', '/im', '/mp', '/cms'));
+UPDATE system_menu SET name = '商城管理' WHERE parent_id = 0 AND path = '/mall';
+UPDATE system_menu SET name = '进销存', icon = 'ep:box' WHERE parent_id = 0 AND path = '/erp';
+
+-- 默认租户改成自己的品牌名（登录时租户名与前端 VITE_APP_DEFAULT_LOGIN_TENANT 一致），停用上游演示租户
+UPDATE system_tenant SET name = 'Aether', contact_name = '管理员' WHERE id = 1;
+UPDATE system_tenant SET status = 1 WHERE id IN (121, 122);
+UPDATE system_users SET nickname = '管理员', remark = '超级管理员' WHERE id = 1;

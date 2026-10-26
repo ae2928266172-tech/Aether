@@ -3,7 +3,8 @@ import { staticUrl } from '@/sheep/config';
 
 const cdn = (url = '', cdnurl = '') => {
   if (!url) return '';
-  if (url.indexOf('http') === 0) {
+  // http 地址，以及随包发布的 /static/local/ 自有图片（logo、底部导航图标等），不拼 CDN 前缀
+  if (url.indexOf('http') === 0 || url.indexOf('/static/local/') === 0) {
     return url;
   }
   if (cdnurl === '') {

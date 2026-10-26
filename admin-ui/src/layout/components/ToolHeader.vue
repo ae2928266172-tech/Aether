@@ -51,9 +51,12 @@ const message = computed(() => appStore.getMessage)
 // IM即时通讯图标
 const im = computed(() => appStore.getIm)
 
-// 租户切换权限
+// 租户切换权限（单品牌部署时 VITE_APP_TENANT_INPUT_ENABLE=false，不显示租户切换）
 const hasTenantVisitPermission = computed(
-  () => import.meta.env.VITE_APP_TENANT_ENABLE === 'true' && checkPermi(['system:tenant:visit'])
+  () =>
+    import.meta.env.VITE_APP_TENANT_ENABLE === 'true' &&
+    import.meta.env.VITE_APP_TENANT_INPUT_ENABLE === 'true' &&
+    checkPermi(['system:tenant:visit'])
 )
 
 // 顶部聊天入口：用路由 name resolve 出完整 URL，在新标签页打开 IM 主页

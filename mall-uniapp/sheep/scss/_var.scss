@@ -6,6 +6,7 @@ $orange: #f37b1d;   // 桔橙
 $gold: #fbbd08;     // 明黄
 $green: #8dc63f;    // 橄榄绿
 $cyan: #1cbbb4;     // 天青
+$teal: #0d9488;     // 品牌青绿
 $blue: #0081ff;     // 海蓝
 $purple: #6739b6;   // 姹紫
 $brightRed: #e54d42;  // 嫣红
@@ -25,6 +26,7 @@ $colors: map-merge(
     'gold':$gold,
     'green':$green,
     'cyan':$cyan,
+    'teal':$teal,
     'blue':$blue,
     'purple':$purple,
     'brightRed':$brightRed,

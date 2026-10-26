@@ -71,6 +71,49 @@
             <el-switch v-model="formData.deliveryPickUpEnabled" style="user-select: none" />
           </el-form-item>
         </el-tab-pane>
+        <!-- 扫码配送：顾客端的叫法 -->
+        <el-tab-pane label="扫码配送">
+          <el-alert
+            type="info"
+            :closable="false"
+            class="mb-16px !w-640px"
+            title="顾客扫区域二维码下单、工作人员送到指定位置。这里改的是顾客在小程序里看到的叫法，可以按你的场景改，例如“送到宿舍 / 楼栋 / 房间号”“送到桌边 / 区域 / 桌号”。"
+          />
+          <el-form-item label="配送方式名称" prop="wardDeliveryName">
+            <el-input v-model="formData.wardDeliveryName" maxlength="16" class="!w-xs" placeholder="送到病房" />
+          </el-form-item>
+          <el-form-item label="区域叫法" prop="wardAreaLabel">
+            <el-input v-model="formData.wardAreaLabel" maxlength="8" class="!w-xs" placeholder="病区" />
+            <el-text class="w-full" size="small" type="info">
+              每个区域一张二维码，在「配送管理 → 病区管理」里维护
+            </el-text>
+          </el-form-item>
+          <el-form-item label="位置叫法" prop="wardSpotLabel">
+            <el-input v-model="formData.wardSpotLabel" maxlength="8" class="!w-xs" placeholder="床号" />
+            <el-text class="w-full" size="small" type="info">顾客下单时填写，配送员按它送达</el-text>
+          </el-form-item>
+          <el-form-item label="位置必填" prop="wardSpotRequired">
+            <el-switch v-model="formData.wardSpotRequired" />
+          </el-form-item>
+          <el-form-item label="顾客端预览">
+            <div class="ward-preview">
+              <div class="ward-preview__title">{{ formData.wardDeliveryName || '送到病房' }}</div>
+              <div class="ward-preview__row">
+                <span>{{ formData.wardAreaLabel || '病区' }}</span>
+                <span>内科一{{ formData.wardAreaLabel || '病区' }}</span>
+              </div>
+              <div class="ward-preview__row">
+                <span>
+                  <i v-if="formData.wardSpotRequired" class="text-[var(--el-color-danger)]">*</i>
+                  {{ formData.wardSpotLabel || '床号' }}
+                </span>
+                <span class="text-[var(--el-text-color-placeholder)]">
+                  {{ formData.wardSpotRequired ? '必填' : '选填' }}，请输入{{ formData.wardSpotLabel || '床号' }}
+                </span>
+              </div>
+            </div>
+          </el-form-item>
+        </el-tab-pane>
         <!-- 分销 -->
         <el-tab-pane label="分销">
           <el-form-item label="分佣启用" prop="brokerageEnabled">
@@ -219,6 +262,10 @@ const formData = ref<ConfigApi.ConfigVO>({
   deliveryExpressFreeEnabled: false,
   deliveryExpressFreePrice: 0,
   deliveryPickUpEnabled: false,
+  wardDeliveryName: '送到病房',
+  wardAreaLabel: '病区',
+  wardSpotLabel: '床号',
+  wardSpotRequired: true,
   brokerageEnabled: false,
   brokerageEnabledCondition: undefined,
   brokerageBindMode: undefined,
@@ -291,3 +338,30 @@ onMounted(() => {
   getConfig()
 })
 </script>
+<style lang="scss" scoped>
+.ward-preview {
+  width: 320px;
+  padding: 12px 16px;
+  background: var(--el-fill-color-lighter);
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 12px;
+
+  &__title {
+    margin-bottom: 4px;
+    font-weight: 600;
+  }
+
+  &__row {
+    display: flex;
+    padding: 6px 0;
+    font-size: 13px;
+    border-top: 1px solid var(--el-border-color-lighter);
+    justify-content: space-between;
+
+    i {
+      margin-right: 2px;
+      font-style: normal;
+    }
+  }
+}
+</style>

@@ -35,3 +35,51 @@
     border-left-color: var(--el-color-primary);
   }
 }
+
+/* ========== 界面美化：圆角卡片、圆角菜单、柔和背景 ========== */
+:root:not(.dark) {
+  --app-content-bg-color: #f3f6f8;
+}
+
+.el-card {
+  border-color: transparent !important;
+  border-radius: 12px !important;
+  box-shadow: 0 1px 2px rgb(15 31 36 / 4%), 0 4px 16px rgb(15 31 36 / 4%) !important;
+}
+
+.el-button,
+.el-input__wrapper,
+.el-select__wrapper,
+.el-textarea__inner {
+  border-radius: 8px !important;
+}
+
+.el-tag {
+  border-radius: 6px;
+}
+
+.el-table th.el-table__cell {
+  font-weight: 600;
+  color: var(--el-text-color-regular);
+  background-color: var(--el-fill-color-lighter) !important;
+}
+
+/* 左侧菜单：选中项、悬停项做成圆角块，留出左右间距 */
+.v-menu .el-menu:not(.el-menu--collapse) {
+  .el-menu-item,
+  .el-sub-menu__title {
+    height: 44px;
+    margin: 2px 8px;
+    line-height: 44px;
+    border-radius: 8px;
+  }
+}
+
+.v-menu .el-menu .el-menu {
+  background-color: transparent !important;
+
+  .el-menu-item:not(.is-active),
+  .el-sub-menu__title {
+    background-color: transparent !important;
+  }
+}

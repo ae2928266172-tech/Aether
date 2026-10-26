@@ -11,6 +11,7 @@ import org.hibernate.validator.constraints.Range;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
+import jakarta.validation.constraints.Size;
 import java.util.List;
 
 /**
@@ -47,6 +48,21 @@ public class TradeConfigBaseVO {
     @Schema(description = "是否开启自提", requiredMode = Schema.RequiredMode.REQUIRED, example = "true")
     @NotNull(message = "是否开启自提不能为空")
     private Boolean deliveryPickUpEnabled;
+
+    @Schema(description = "扫码配送：配送方式名称", example = "送到病房")
+    @Size(max = 16, message = "配送方式名称不能超过 16 个字")
+    private String wardDeliveryName;
+
+    @Schema(description = "扫码配送：区域的叫法", example = "病区")
+    @Size(max = 8, message = "区域的叫法不能超过 8 个字")
+    private String wardAreaLabel;
+
+    @Schema(description = "扫码配送：位置的叫法", example = "床号")
+    @Size(max = 8, message = "位置的叫法不能超过 8 个字")
+    private String wardSpotLabel;
+
+    @Schema(description = "扫码配送：位置是否必填", example = "true")
+    private Boolean wardSpotRequired;
 
     // ========== 分销相关 ==========
 

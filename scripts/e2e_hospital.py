@@ -117,4 +117,21 @@ if st == 10:
     d = call('GET', f"/admin-api/trade/order/get-detail?id={created['id']}", S)['data']
     print('final status', d['status'], [l['content'] for l in d.get('logs', [])])
 print('after paid order (小, 大, 同款, 物料):', stocks()); assert st == 10 and d['status'] == 30 and stocks() == (8, 4, 8, 8.0)
+# 后台改顾客端配送文案：区域叫“楼层”、位置叫“房间号”且选填
+cfg = call('GET', '/admin-api/trade/config/get', A)['data']
+call('PUT', '/admin-api/trade/config/save', A, {**cfg, 'wardDeliveryName': '送货上门', 'wardAreaLabel': '楼层',
+                                                'wardSpotLabel': '房间号', 'wardSpotRequired': False})
+app_cfg = call('GET', '/app-api/trade/config/get')['data']
+print('app wording:', app_cfg['wardDeliveryName'], app_cfg['wardAreaLabel'], app_cfg['wardSpotLabel'], app_cfg['wardSpotRequired'])
+assert (app_cfg['wardDeliveryName'], app_cfg['wardSpotLabel'], app_cfg['wardSpotRequired']) == ('送货上门', '房间号', False)
+order['bedNo'] = ''; order['items'] = [{'skuId': small, 'count': 1}]
+created = call('POST', '/app-api/trade/order/create', M, order)['data']
+assert call('GET', f"/admin-api/trade/order/get-detail?id={created['id']}", A)['data']['receiverDetailAddress'] == '内科一病区'
+order['bedNo'] = '301'
+created = call('POST', '/app-api/trade/order/create', M, order)['data']
+addr = call('GET', f"/admin-api/trade/order/get-detail?id={created['id']}", A)['data']['receiverDetailAddress']
+print('optional spot address:', addr); assert addr == '内科一病区 房间号：301'
+call('PUT', '/admin-api/trade/config/save', A, cfg)  # 恢复默认
+r = call('POST', '/app-api/trade/order/create', M, {**order, 'bedNo': ''}, expect_ok=False)
+print('required again ->', r['code'], r['msg']); assert r['code'] != 0 and '床号' in r['msg']
 print('ALL OK')

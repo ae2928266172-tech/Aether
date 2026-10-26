@@ -19,6 +19,18 @@ public class AppTradeConfigRespVO {
     @NotNull(message = "是否开启自提不能为空")
     private Boolean deliveryPickUpEnabled;
 
+    @Schema(description = "扫码配送：配送方式名称", example = "送到病房")
+    private String wardDeliveryName;
+
+    @Schema(description = "扫码配送：区域的叫法", example = "病区")
+    private String wardAreaLabel;
+
+    @Schema(description = "扫码配送：位置的叫法", example = "床号")
+    private String wardSpotLabel;
+
+    @Schema(description = "扫码配送：位置是否必填", example = "true")
+    private Boolean wardSpotRequired;
+
     // ========== 售后相关 ==========
 
     @Schema(description = "售后的退款理由", requiredMode = Schema.RequiredMode.REQUIRED)

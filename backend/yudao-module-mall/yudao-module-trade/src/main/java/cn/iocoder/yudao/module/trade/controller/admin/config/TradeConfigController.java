@@ -43,6 +43,9 @@ public class TradeConfigController {
     @PreAuthorize("@ss.hasPermission('trade:config:query')")
     public CommonResult<TradeConfigRespVO> getConfig() {
         TradeConfigDO config = tradeConfigService.getTradeConfig();
+        if (config != null) {
+            config.fillWardDefaults();
+        }
         TradeConfigRespVO configVO = TradeConfigConvert.INSTANCE.convert(config);
         if (configVO != null) {
             configVO.setTencentLbsKey(tencentLbsKey);

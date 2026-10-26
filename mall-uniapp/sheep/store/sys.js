@@ -12,7 +12,7 @@ const sys = defineStore('sys', {
   actions: {
     setTheme(theme = '') {
       if (theme === '') {
-        this.theme = app().template?.basic.theme || 'orange';
+        this.theme = app().template?.basic.theme || 'teal';
       } else {
         this.theme = theme;
       }
