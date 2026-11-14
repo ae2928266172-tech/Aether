@@ -80,6 +80,13 @@ class Store(Base, TimestampMixin):
     staff_can_edit_stock: Mapped[bool] = mapped_column(Boolean, default=False)
     # 是否接收小程序订单
     accept_online_orders: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 出票方式：browser 门店工作台所在电脑用浏览器打印；agent 由接小票机的电脑上的“打印小助手”取票打印
+    print_mode: Mapped[str] = mapped_column(String(20), default="browser")
+    # 打印小助手凭这个密钥取本店的打印任务
+    print_key: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    auto_print_online: Mapped[bool] = mapped_column(Boolean, default=True)  # 新的小程序订单自动出票
+    auto_print_pos: Mapped[bool] = mapped_column(Boolean, default=True)  # 收银后自动出票
+    agent_seen_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # 打印小助手最近一次联网
     location: Mapped[Location] = relationship(lazy="joined")
 
 
@@ -347,6 +354,20 @@ class OrderLog(Base):
     action: Mapped[str] = mapped_column(String(30))
     detail: Mapped[str] = mapped_column(String(300), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+
+class PrintJob(Base):
+    """打印任务队列（打印小助手模式）。小票内容在取票时按订单当前实际内容生成。"""
+    __tablename__ = "print_jobs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)  # 测试页为空
+    kind: Mapped[str] = mapped_column(String(20))  # new_order 新订单 / pos 收银 / reprint 补打 / test 测试
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending / sent / done
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 

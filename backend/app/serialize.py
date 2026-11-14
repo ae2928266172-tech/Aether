@@ -27,7 +27,8 @@ def user_out(u: User) -> dict:
 def store_out(s: Store) -> dict:
     return {"id": s.id, "name": s.name, "address": s.address, "phone": s.phone, "active": s.active,
             "location_id": s.location_id, "staff_can_view_stock": s.staff_can_view_stock,
-            "staff_can_edit_stock": s.staff_can_edit_stock, "accept_online_orders": s.accept_online_orders}
+            "staff_can_edit_stock": s.staff_can_edit_stock, "accept_online_orders": s.accept_online_orders,
+            "print_mode": s.print_mode, "auto_print_online": s.auto_print_online, "auto_print_pos": s.auto_print_pos}
 
 
 def area_out(a: Area) -> dict:

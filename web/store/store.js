@@ -7,6 +7,9 @@ const err = (e) => ElMessage.error(e.message || String(e));
 function pref(key, def) { try { const v = localStorage.getItem('shouyin_pref_' + key); return v === null ? def : JSON.parse(v); } catch (e) { return def; } }
 function setPref(key, v) { try { localStorage.setItem('shouyin_pref_' + key, JSON.stringify(v)); } catch (e) {} }
 
+// 打印小助手模式下已发到小票机队列；否则在本机浏览器打印
+function outPrint(r) { if (r && r.queued) ElMessage.success('已发送到小票机'); else printReceipt(r); }
+
 const METHODS = { cash: '现金', wechat: '微信', alipay: '支付宝', other: '其他' };
 
 // 优惠（打折 / 调低应收）+ 收款，收银和订单收款共用
@@ -73,7 +76,7 @@ const PayDialog = {
 
 // ---------------- 收银 ----------------
 const Pos = {
-  props: ['user', 'storeId', 'settings'],
+  props: ['user', 'storeId', 'settings', 'agent'],
   components: { PayDialog },
   template: `
   <div class="ws-body">
@@ -154,10 +157,10 @@ const Pos = {
           payable: p.payable, remark: remark.value, request_id: reqId });
         reqId = rid(); last.value = o; lastChange.value = p.change; payDlg.value = false; doneDlg.value = true; clear();
         if (props.settings.sound) { beep(1); speak('收款成功，' + yuan(o.payable_amount) + '元' + (p.change ? '，找零' + yuan(p.change) + '元' : '')); }
-        if (props.settings.autoPrintPos) printReceipt(await api.post('/api/orders/' + o.id + '/print', {}));
+        if (props.settings.autoPrintPos && !props.agent) printReceipt(await api.post('/api/orders/' + o.id + '/print', {}));
       } catch (e) { err(e); }
     };
-    const reprint = async () => { try { printReceipt(await api.post('/api/orders/' + last.value.id + '/print', { reprint: true })); } catch (e) { err(e); } };
+    const reprint = async () => { try { outPrint(await api.post('/api/orders/' + last.value.id + '/print', { reprint: true })); } catch (e) { err(e); } };
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); });
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
       priceText, add, pick, onScan, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
@@ -166,7 +169,7 @@ const Pos = {
 
 // ---------------- 订单 ----------------
 const Orders = {
-  props: ['user', 'storeId', 'settings', 'pendingCount', 'tick'],
+  props: ['user', 'storeId', 'settings', 'pendingCount', 'tick', 'agent'],
   components: { PayDialog },
   template: `
   <div class="ws-body" style="flex-direction:column">
@@ -269,7 +272,7 @@ const Orders = {
       try { const r = await api.post('/api/orders/' + cur.value.id + '/refund', { lines, method: rf.method, restock: rf.restock, reason: rf.reason, request_id: rf.rid });
         rDlg.value = false; await refresh(); ElMessage.success('已退款 ¥' + yuan(r.refund.amount)); } catch (e) { err(e); }
     };
-    const print = async () => { try { printReceipt(await api.post('/api/orders/' + cur.value.id + '/print', { reprint: cur.value.print_count > 0 })); await refresh(); } catch (e) { err(e); } };
+    const print = async () => { try { outPrint(await api.post('/api/orders/' + cur.value.id + '/print', { reprint: cur.value.print_count > 0 })); await refresh(); } catch (e) { err(e); } };
     onMounted(load);
     return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, print, yuan, methods: METHODS };
   },
@@ -366,6 +369,7 @@ const App = {
       <el-popover placement="bottom" :width="280" trigger="click">
         <template #reference><el-button class="ghost">本机设置</el-button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
+        <div v-if="cur.print_mode === 'agent'" class="hint" style="margin:0 0 6px">本店小票由接小票机那台电脑上的“打印小助手”出票（后台设置），下面两项打印选项在本机不起作用。</div>
         <div><el-checkbox v-model="settings.autoPrintOnline">新订单自动打印小票</el-checkbox></div>
         <div><el-checkbox v-model="settings.autoPrintPos">收银后自动打印小票</el-checkbox></div>
         <div class="muted" style="font-size:12px;margin-top:6px">本设置只对这台电脑生效。想要不弹打印框直接出票：Chrome 快捷方式“目标”末尾加 --kiosk-printing，并把小票机设为默认打印机。</div>
@@ -376,8 +380,8 @@ const App = {
     </div>
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
     <template v-else>
-      <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" />
-      <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" />
+      <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" />
+      <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
       <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" />
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" />
     </template>
@@ -407,7 +411,7 @@ const App = {
           tick.value++;
           if (settings.sound) { beep(3); speak('您有' + fresh.length + '个新订单'); }
           ElementPlus.ElNotification({ title: '新订单', message: fresh.map(o => (o.area_name + ' ' + o.location_note).trim() + ' ¥' + yuan(o.payable_amount)).join('\n'), type: 'warning', duration: 8000 });
-          if (settings.autoPrintOnline) {
+          if (settings.autoPrintOnline && cur.value.print_mode !== 'agent') {
             for (const o of fresh) printing = printing.then(async () => { try { await printReceipt(await api.post('/api/orders/' + o.id + '/print', {})); } catch (e) { err(e); } });
           }
         }
@@ -430,7 +434,7 @@ const App = {
     window.onUnauthorized = () => { user.value = null; clearInterval(timer); };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); });
-    return { user, lf, busy, stores, storeId, storeName, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, switchStore };
+    return { user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, switchStore };
   },
 };
 

@@ -205,6 +205,12 @@ def print_receipt(oid: int, body: PrintIn, db: Session = Depends(get_db), user: 
             raise HTTPException(403, "没有补打小票权限")
     elif not (has_perm(user, "pos") or has_perm(user, "orders")):
         raise HTTPException(403, "没有打印权限")
+    if o.store.print_mode == "agent":
+        # 小票机接在别的电脑上：放进打印队列，由打印小助手取走打印（计数和日志在出票时记）
+        from ..services.printq import enqueue
+        enqueue(db, o.store, o, "reprint" if (body.reprint or o.print_count > 0) else "pos", user)
+        db.commit()
+        return {"queued": True, "order_no": o.no}
     o.print_count += 1
     svc.log(db, o, "补打小票" if o.print_count > 1 else "打印小票", "", user)
     receipt = build_receipt(db, o, user, reprint=o.print_count > 1)

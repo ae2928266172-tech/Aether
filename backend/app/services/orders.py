@@ -20,6 +20,7 @@ from ..models import (Area, Order, OrderItem, OrderLog, Payment, Product, Refund
 from ..security import has_perm
 from ..settings_store import get_setting
 from .inventory import change_stock
+from .printq import auto_enqueue
 
 PAY_METHODS = {"cash": "现金", "wechat": "微信", "alipay": "支付宝", "other": "其他"}
 STATUS_TEXT = {"pending": "待接单", "accepted": "已接单", "completed": "已完成", "cancelled": "已取消"}
@@ -217,6 +218,7 @@ def pos_checkout(db: Session, user: User, store: Store, lines: list[dict], payme
     order.accepted_by = user.id
     log(db, order, "收银", f"应收 {order.payable_amount / 100:.2f}", user)
     db.flush()
+    auto_enqueue(db, order, user)
     return order
 
 
@@ -249,6 +251,7 @@ def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], 
         deduct_stock(db, order, rules["online_allow_negative"], None)
     log(db, order, "下单", f"{area.name} {location_note}")
     db.flush()
+    auto_enqueue(db, order)
     return order
 
 

@@ -26,6 +26,9 @@ class StoreIn(BaseModel):
     staff_can_view_stock: bool = False
     staff_can_edit_stock: bool = False
     accept_online_orders: bool = True
+    print_mode: str = Field("browser", pattern="^(browser|agent)$")
+    auto_print_online: bool = True
+    auto_print_pos: bool = True
 
 
 @router.get("/stores")

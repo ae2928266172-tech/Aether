@@ -207,6 +207,7 @@ const Stores = {
       <el-table-column label="门店看库存" width="100"><template #default="{row}">{{row.staff_can_view_stock ? '允许' : '不允许'}}</template></el-table-column>
       <el-table-column label="门店改库存" width="100"><template #default="{row}">{{row.staff_can_edit_stock ? '允许' : '不允许'}}</template></el-table-column>
       <el-table-column label="小程序接单" width="100"><template #default="{row}">{{row.accept_online_orders ? '接单' : '暂停'}}</template></el-table-column>
+      <el-table-column label="出票" width="110"><template #default="{row}">{{row.print_mode === 'agent' ? '打印小助手' : '本机浏览器'}}</template></el-table-column>
       <el-table-column label="状态" width="80"><template #default="{row}">{{row.active ? '营业' : '停用'}}</template></el-table-column>
       <el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="editStore(row)">编辑</el-button></template></el-table-column>
     </el-table>
@@ -233,6 +234,25 @@ const Stores = {
       <el-form-item label="允许门店改库存"><el-switch v-model="sForm.staff_can_edit_stock" /></el-form-item>
       <el-form-item label="接收小程序订单"><el-switch v-model="sForm.accept_online_orders" /></el-form-item>
       <el-form-item label="营业"><el-switch v-model="sForm.active" /></el-form-item>
+      <div class="form-section">出票方式</div>
+      <el-form-item label="小票机接在">
+        <el-radio-group v-model="sForm.print_mode">
+          <el-radio value="browser">开门店工作台的这台电脑</el-radio>
+          <el-radio value="agent">另一台电脑（打印小助手）</el-radio>
+        </el-radio-group>
+      </el-form-item>
+      <template v-if="sForm.print_mode==='agent'">
+        <el-form-item label="自动出票"><el-checkbox v-model="sForm.auto_print_online">新的小程序订单</el-checkbox><el-checkbox v-model="sForm.auto_print_pos">门店收银后</el-checkbox></el-form-item>
+        <el-form-item v-if="sForm.id" label="打印密钥">
+          <el-input :model-value="printer.print_key || '还没生成'" readonly style="width:230px" />
+          <el-button style="margin-left:6px" @click="resetKey">{{printer.print_key ? '换新密钥' : '生成'}}</el-button>
+        </el-form-item>
+        <el-form-item v-if="sForm.id" label="打印小助手">
+          <el-tag :type="printer.agent_online ? 'success' : 'info'">{{printer.agent_online ? '在线' : (printer.agent_seen_at ? '离线，最后联网 ' + printer.agent_seen_at : '还没连接过')}}</el-tag>
+          <el-button link type="primary" style="margin-left:8px" :disabled="!printer.print_key" @click="testPrint">打印测试页</el-button>
+        </el-form-item>
+        <div class="hint" style="margin-left:130px">在接小票机的电脑上（Win7 也可以，只要能上网）用浏览器打开 <a :href="agentUrl" target="_blank">{{agentUrl}}</a> 下载，解压后双击“安装打印小助手.bat”，按提示填系统地址 {{origin}} 和上面的打印密钥。新订单会在那台电脑上响铃并自动出票。</div>
+      </template>
     </el-form>
     <template #footer><el-button @click="sDlg=false">取消</el-button><el-button type="primary" @click="saveStore">保存</el-button></template>
   </el-dialog>
@@ -260,8 +280,21 @@ const Stores = {
     const sForm = reactive({}), aForm = reactive({}), qArea = ref({}), qImg = ref(''), qUrl = ref('');
     const loadAreas = async () => { try { areas.value = await api.get('/api/areas'); } catch (e) { err(e); } };
     const reloadStores = async () => { props.meta.stores = await api.get('/api/stores'); };
-    const editStore = (r) => { Object.assign(sForm, r ? { ...r } : { id: null, name: '', address: '', phone: '', staff_can_view_stock: false, staff_can_edit_stock: false, accept_online_orders: true, active: true }); sDlg.value = true; };
+    const printer = ref({}), origin = location.origin, agentUrl = location.origin + '/api/print-agent/download';
+    const loadPrinter = async () => { printer.value = sForm.id ? await api.get('/api/stores/' + sForm.id + '/printer').catch(() => ({})) : {}; };
+    const editStore = (r) => {
+      Object.assign(sForm, r ? { ...r } : { id: null, name: '', address: '', phone: '', staff_can_view_stock: false, staff_can_edit_stock: false, accept_online_orders: true, active: true,
+        print_mode: 'browser', auto_print_online: true, auto_print_pos: true });
+      printer.value = {}; loadPrinter(); sDlg.value = true;
+    };
     const saveStore = async () => { try { sForm.id ? await api.put('/api/stores/' + sForm.id, sForm) : await api.post('/api/stores', sForm); ok(); sDlg.value = false; reloadStores(); } catch (e) { err(e); } };
+    const resetKey = async () => {
+      if (printer.value.print_key) { try { await ElMessageBox.confirm('换新密钥后，打印小助手要用新密钥重新安装才能出票。确定吗？', '换新密钥', { type: 'warning' }); } catch (e) { return; } }
+      try { if (sForm.print_mode === 'agent') await api.put('/api/stores/' + sForm.id, sForm); printer.value = await api.post('/api/stores/' + sForm.id + '/printer/key'); } catch (e) { err(e); }
+    };
+    const testPrint = async () => {
+      try { await api.put('/api/stores/' + sForm.id, sForm); printer.value = { ...printer.value, ...(await api.post('/api/stores/' + sForm.id + '/printer/test')) }; ok('测试页已发送，打印小助手在线时几秒内出纸'); } catch (e) { err(e); }
+    };
     const editArea = (r) => { Object.assign(aForm, r ? { ...r } : { id: null, store_id: (props.meta.stores[0] || {}).id, name: '', sort: 0, active: true }); aDlg.value = true; };
     const saveArea = async () => { try { aForm.id ? await api.put('/api/areas/' + aForm.id, aForm) : await api.post('/api/areas', aForm); ok(); aDlg.value = false; loadAreas(); } catch (e) { err(e); } };
     const resetCode = async (r) => {
@@ -274,7 +307,7 @@ const Stores = {
     };
     const downloadQr = () => { const a = document.createElement('a'); a.href = qImg.value; a.download = qArea.value.store_name + '_' + qArea.value.name + '.gif'; a.click(); };
     onMounted(loadAreas);
-    return { areas, sDlg, aDlg, qDlg, sForm, aForm, qArea, qImg, qUrl, editStore, saveStore, editArea, saveArea, resetCode, showQr, downloadQr };
+    return { areas, sDlg, aDlg, qDlg, sForm, aForm, qArea, qImg, qUrl, editStore, saveStore, printer, origin, agentUrl, resetKey, testPrint, editArea, saveArea, resetCode, showQr, downloadQr };
   },
 };
 
