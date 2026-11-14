@@ -22,7 +22,7 @@ const Products = {
       <el-button type="primary" @click="edit()">新增商品</el-button>
     </div>
     <el-table :data="rows" border stripe>
-      <el-table-column label="图片" width="70"><template #default="{row}"><el-image v-if="row.image" :src="row.image" style="width:44px;height:44px" fit="cover"/></template></el-table-column>
+      <el-table-column label="" width="66"><template #default="{row}"><div class="thumb"><img v-if="row.image" :src="row.image"><span v-else>{{row.name.slice(0,1)}}</span></div></template></el-table-column>
       <el-table-column prop="name" label="商品名称" min-width="140" />
       <el-table-column prop="code" label="货号" width="100" />
       <el-table-column prop="category_name" label="分类" width="100" />
@@ -705,51 +705,124 @@ const Rules = {
   },
 };
 
+// ---------------- 经营概览 ----------------
+const Dashboard = {
+  props: ['meta', 'go'],
+  template: `
+  <div>
+    <div class="stats">
+      <div class="stat accent"><div class="k">今日实收</div><div class="v">¥{{yuan(t.net)}}</div><div class="s">收款 ¥{{yuan(t.received)}} · 退款 ¥{{yuan(t.refunded)}}</div></div>
+      <div class="stat"><div class="k">今日单数</div><div class="v">{{t.orders || 0}}</div><div class="s">门店收银 {{t.pos_orders || 0}} · 小程序 {{t.online_orders || 0}}</div></div>
+      <div class="stat"><div class="k">待接单</div><div class="v" :style="pending ? 'color:#dc2626' : ''">{{pending}}</div><div class="s">各门店小程序订单</div></div>
+      <div class="stat"><div class="k">本月实收</div><div class="v">¥{{yuan(m.net)}}</div><div class="s">毛利 ¥{{yuan(m.profit)}}</div></div>
+    </div>
+    <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px">
+      <div class="panel">
+        <div class="panel-title">今日各门店</div><div class="panel-desc">按收款时间统计，退款已扣除</div>
+        <el-table :data="byStore" size="small">
+          <el-table-column prop="store_name" label="门店" />
+          <el-table-column prop="orders" label="单数" width="80" />
+          <el-table-column label="优惠" width="100" class-name="right"><template #default="{row}">{{yuan(row.discount)}}</template></el-table-column>
+          <el-table-column label="实收" width="110" class-name="right"><template #default="{row}"><b>{{yuan(row.net)}}</b></template></el-table-column>
+        </el-table>
+        <el-empty v-if="!byStore.length" :image-size="60" description="今天还没有收款" />
+      </div>
+      <div class="panel">
+        <div class="panel-title">常用</div><div class="panel-desc">&nbsp;</div>
+        <div class="quick">
+          <div class="q" @click="go('products')"><b>新增商品</b><span>规格、库存品、扣减量</span></div>
+          <div class="q" @click="go('inventory')"><b>调拨到门店</b><span>仓库每日出库</span></div>
+          <div class="q" @click="go('revenue')"><b>营收报表</b><span>日报 / 周报 / 月报</span></div>
+          <div class="q" @click="go('stores')"><b>区域二维码</b><span>打印贴到区域</span></div>
+        </div>
+      </div>
+    </div>
+  </div>`,
+  setup() {
+    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]);
+    onMounted(async () => {
+      const d = today();
+      try {
+        const [a, b, p] = await Promise.all([api.get('/api/reports/revenue', { begin: d, end: d }),
+          api.get('/api/reports/revenue', { begin: d.slice(0, 8) + '01', end: d, group: 'month' }), api.get('/api/orders', { status: 'pending', size: 1 })]);
+        t.value = a.total; m.value = b.total; pending.value = p.total; byStore.value = a.rows;
+      } catch (e) { err(e); }
+    });
+    return { t, m, pending, byStore, yuan };
+  },
+};
+
 // ---------------- 主框架 ----------------
+// [键, 名称, 权限, 组件, 分组, 图标, 说明]
 const MENU = [
-  ['products', '商品', 'catalog', Products], ['categories', '商品分类', 'catalog', Categories], ['stockItems', '库存品', 'catalog', StockItems],
-  ['suppliers', '供应商', 'catalog', Suppliers], ['inventory', '仓库与库存', 'inventory', Inventory], ['stores', '门店与区域', 'stores', Stores],
-  ['orders', '订单', 'reports', Orders], ['revenue', '营收报表', 'reports', Revenue], ['productSales', '商品销售核对', 'reports', ProductSales],
-  ['receipt', '小票设置', 'receipt_config', ReceiptSettings], ['accounts', '账号与权限', 'users', Accounts], ['rules', '业务规则', 'stores', Rules],
+  ['dashboard', '经营概览', 'reports', Dashboard, '经营', '◎', '今天和本月的营收、待处理订单'],
+  ['orders', '订单', 'reports', Orders, '经营', '☰', '所有门店的收银单和小程序订单'],
+  ['revenue', '营收报表', 'reports', Revenue, '经营', '↗', '按门店、日 / 周 / 月统计，可导出'],
+  ['productSales', '商品销售核对', 'reports', ProductSales, '经营', '✓', '某商品卖了多少件，展开看逐单明细'],
+  ['products', '商品', 'catalog', Products, '商品资料', '▦', '名称、规格、售价、图片、医疗器械资料'],
+  ['categories', '商品分类', 'catalog', Categories, '商品资料', '◫', '大类、小类'],
+  ['stockItems', '库存品', 'catalog', StockItems, '商品资料', '◆', '实际占库存的东西，多个规格可共用'],
+  ['suppliers', '供应商', 'catalog', Suppliers, '商品资料', '⌂', ''],
+  ['inventory', '仓库与库存', 'inventory', Inventory, '库存', '▤', '入库、出库、调拨到门店、盘点、台账'],
+  ['stores', '门店与区域', 'stores', Stores, '门店', '⌖', '门店设置、区域二维码'],
+  ['receipt', '小票设置', 'receipt_config', ReceiptSettings, '门店', '▭', '小票文字、字段、底部图片'],
+  ['rules', '业务规则', 'stores', Rules, '门店', '⚙', '扣库存时机、库存不够能否卖'],
+  ['accounts', '账号与权限', 'users', Accounts, '系统', '☺', '角色权限、优惠上限、门店分配'],
 ];
 
 const App = {
   components: Object.fromEntries(MENU.map(m => [m[0], m[3]])),
   template: `
   <div v-if="!user" class="login-wrap">
-    <div class="login-card">
-      <h1>收银系统后台</h1><p>商品、库存、门店、账号和营收管理</p>
-      <el-form @submit.prevent="login">
-        <el-form-item><el-input v-model="lf.username" placeholder="账号" size="large" /></el-form-item>
-        <el-form-item><el-input v-model="lf.password" type="password" placeholder="密码" size="large" show-password @keyup.enter="login" /></el-form-item>
-        <el-button type="primary" size="large" style="width:100%" :loading="busy" @click="login">登录</el-button>
-      </el-form>
-      <p style="margin:16px 0 0;font-size:13px">门店员工请使用 <a href="/web/store/">门店工作台</a></p>
+    <div class="login-hero">
+      <div class="logo"><span class="mark">收</span>收银系统</div>
+      <div><h2>多门店收银与库存<br>一套数据，各端共用</h2>
+        <ul><li>商品规格共用库存，按扣减量自动扣</li><li>仓库每日调拨到门店，台账随时核对</li><li>扫区域二维码点单，门店自动出票</li><li>营收、优惠、退款一目了然</li></ul></div>
+      <div class="foot">后台管理 · 仅限授权人员</div>
     </div>
+    <div class="login-side"><div class="login-card">
+      <h1>登录后台</h1><p>商品、库存、门店、账号和营收管理</p>
+      <el-input v-model="lf.username" placeholder="账号" size="large" />
+      <el-input v-model="lf.password" type="password" placeholder="密码" size="large" show-password @keyup.enter="login" />
+      <el-button type="primary" size="large" style="width:100%;margin-top:6px" :loading="busy" @click="login">登录</el-button>
+      <div class="switch">门店员工请使用 <a href="/web/store/">门店工作台</a></div>
+    </div></div>
   </div>
+  <div v-else-if="!menu.length" class="login-wrap"><div class="login-side" style="width:100%"><div class="login-card" style="text-align:center">
+    <h1>这是门店账号</h1><p>{{user.display_name || user.username}} 没有后台权限，请到门店工作台收银和处理订单。</p>
+    <el-button type="primary" size="large" @click="toStore">进入门店工作台</el-button>
+    <div class="switch"><el-button link @click="logout">换个账号登录</el-button></div></div></div></div>
   <div v-else class="layout">
     <div class="aside">
-      <div class="brand">收银系统后台</div>
-      <el-menu :default-active="tab" background-color="#10201f" text-color="#b9d4d0" active-text-color="#ffffff" @select="k => tab = k">
-        <el-menu-item v-for="m in menu" :key="m[0]" :index="m[0]">{{m[1]}}</el-menu-item>
-      </el-menu>
+      <div class="brand"><span class="mark">收</span><div>收银系统<small>后台管理</small></div></div>
+      <div class="nav">
+        <template v-for="g in groups" :key="g">
+          <div class="group">{{g}}</div>
+          <div v-for="m in menu.filter(x => x[4] === g)" :key="m[0]" class="item" :class="{on: tab === m[0]}" @click="tab = m[0]"><span class="ico">{{m[5]}}</span>{{m[1]}}</div>
+        </template>
+      </div>
     </div>
     <div class="main">
       <div class="topbar">
-        <b>{{ (menu.find(m => m[0] === tab) || [])[1] }}</b>
-        <div><a href="/web/store/" style="margin-right:16px">门店工作台</a><span class="muted">{{user.display_name || user.username}}（{{user.role_name}}）</span>
-          <el-button link @click="changePw">改密码</el-button><el-button link @click="logout">退出</el-button></div>
+        <div class="title">{{cur[1]}}<small>{{cur[6]}}</small></div>
+        <div class="who"><a href="/web/store/">门店工作台 →</a>
+          <el-dropdown @command="c => c === 'pw' ? changePw() : logout()">
+            <span style="display:flex;align-items:center;gap:8px;cursor:pointer"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span>{{user.display_name || user.username}}</span>
+            <template #dropdown><el-dropdown-menu><el-dropdown-item disabled>{{user.role_name}}</el-dropdown-item><el-dropdown-item command="pw">修改密码</el-dropdown-item><el-dropdown-item command="out" divided>退出登录</el-dropdown-item></el-dropdown-menu></template>
+          </el-dropdown></div>
       </div>
       <div class="content">
-        <el-empty v-if="!menu.length" description="当前账号没有后台权限，请使用门店工作台" />
-        <component v-else-if="ready" :is="tab" :meta="meta" :key="tab" />
+        <component v-if="ready" :is="tab" :meta="meta" v-bind="tab === 'dashboard' ? {go: k => tab = k} : {}" :key="tab" />
       </div>
     </div>
   </div>`,
   setup() {
-    const user = ref(null), lf = reactive({ username: '', password: '' }), busy = ref(false), tab = ref('products'), ready = ref(false);
+    const user = ref(null), lf = reactive({ username: '', password: '' }), busy = ref(false), tab = ref('dashboard'), ready = ref(false);
     const meta = reactive({ categories: [], suppliers: [], stockItems: [], stores: [] });
     const menu = computed(() => user.value ? MENU.filter(m => user.value.is_admin && user.value.permissions.includes(m[2])) : []);
+    const groups = computed(() => [...new Set(menu.value.map(m => m[4]))]);
+    const cur = computed(() => menu.value.find(m => m[0] === tab.value) || []);
+    const toStore = () => { location.href = '/web/store/'; };
     const loadMeta = async () => {
       const p = user.value.permissions, safe = (f) => f.catch(() => []);
       [meta.categories, meta.suppliers, meta.stockItems, meta.stores] = await Promise.all([
@@ -770,7 +843,7 @@ const App = {
     };
     window.onUnauthorized = () => { user.value = null; ready.value = false; };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await loadMeta(); } catch (e) {} } });
-    return { user, lf, busy, tab, menu, meta, ready, login, logout, changePw };
+    return { user, lf, busy, tab, menu, groups, cur, meta, ready, login, logout, changePw, toStore };
   },
 };
 
