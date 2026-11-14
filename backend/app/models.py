@@ -364,7 +364,8 @@ class PrintJob(Base):
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)  # 测试页为空
     kind: Mapped[str] = mapped_column(String(20))  # new_order 新订单 / pos 收银 / reprint 补打 / test 测试
-    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending / sent / done
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending / sent / done / failed
+    attempts: Mapped[int] = mapped_column(Integer, default=0)  # 已发给小助手的次数
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     done_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

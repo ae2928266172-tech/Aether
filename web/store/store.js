@@ -53,19 +53,31 @@ const PayDialog = {
     });
     const quote = async () => {
       try {
-        const r = await api.post('/api/pos/quote', { lines: props.lines, discount_rate: rate.value, payable: payableInput.value === '' ? null : toFen(payableInput.value) });
+        let payable = null;
+        if (String(payableInput.value == null ? '' : payableInput.value).trim() !== '') {
+          payable = Shouyin.parseMoney(payableInput.value);
+          if (payable === null) throw new Error('本次应收请填数字，例如 95 或 95.5');
+        }
+        if (rate.value !== null && !isFinite(rate.value)) throw new Error('折扣请填数字，例如 8.5');
+        const r = await api.post('/api/pos/quote', { lines: props.lines, discount_rate: rate.value, payable });
         Object.assign(q, r); qErr.value = '';
       } catch (e) { qErr.value = e.message; err(e); }
     };
     watch(rate, () => { rateInput.value = rate.value && ![95, 90, 88, 85, 80].includes(rate.value) ? rate.value / 10 : ''; payableInput.value = ''; quote(); });
     const reset = () => { rate.value = null; rateInput.value = ''; payableInput.value = ''; method.value = 'cash'; received.value = ''; quote(); };
     const roundDown = async (unit) => { payableInput.value = yuan(Math.floor(q.payable_amount / unit) * unit + (payableInput.value === '' ? 0 : 0)); await quote(); };
-    const change = computed(() => { const r = toFen(received.value); return r >= q.payable_amount ? yuan(r - q.payable_amount) : '0.00'; });
+    const change = computed(() => { const r = Shouyin.parseMoney(received.value); return r !== null && r >= q.payable_amount ? yuan(r - q.payable_amount) : '0.00'; });
     const quick = computed(() => { const p = q.payable_amount / 100; return [...new Set([p, Math.ceil(p / 10) * 10, Math.ceil(p / 50) * 50, Math.ceil(p / 100) * 100])].map(v => v.toFixed(2)).slice(0, 4); });
     const submit = async () => {
       if (qErr.value) return;
       const pay = { method: method.value, amount: q.payable_amount };
-      if (method.value === 'cash') { const r = received.value === '' ? q.payable_amount : toFen(received.value); if (r < q.payable_amount) return ElMessage.warning('实收不足'); pay.received = r; }
+      if (method.value === 'cash') {
+        const blank = String(received.value == null ? '' : received.value).trim() === '';
+        const r = blank ? q.payable_amount : Shouyin.parseMoney(received.value);
+        if (r === null) return ElMessage.warning('实收现金请填数字，例如 50 或 50.5');
+        if (r < q.payable_amount) return ElMessage.warning('实收不足');
+        pay.received = r;
+      }
       busy.value = true;
       try { await emit('pay', { payments: [pay], discount_rate: q.discount_rate, payable: q.payable_amount, change: pay.received ? pay.received - pay.amount : 0 }); }
       finally { busy.value = false; }
@@ -152,13 +164,18 @@ const Pos = {
     const total = computed(() => cart.value.reduce((a, l) => a + l.qty * l.price, 0));
     const lines = computed(() => cart.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
     const pay = async (p) => {
+      let o;
       try {
-        const o = await api.post('/api/pos/checkout', { store_id: props.storeId, lines: lines.value, payments: p.payments, discount_rate: p.discount_rate,
+        o = await api.post('/api/pos/checkout', { store_id: props.storeId, lines: lines.value, payments: p.payments, discount_rate: p.discount_rate,
           payable: p.payable, remark: remark.value, request_id: reqId });
-        reqId = rid(); last.value = o; lastChange.value = p.change; payDlg.value = false; doneDlg.value = true; clear();
-        if (props.settings.sound) { beep(1); speak('收款成功，' + yuan(o.payable_amount) + '元' + (p.change ? '，找零' + yuan(p.change) + '元' : '')); }
-        if (props.settings.autoPrintPos && !props.agent) printReceipt(await api.post('/api/orders/' + o.id + '/print', {}));
-      } catch (e) { err(e); }
+      } catch (e) { return err(e); }
+      // 到这里收款已经成功。后面的提示音、打印出错都不能让店员误以为没收到钱
+      reqId = rid(); last.value = o; lastChange.value = p.change; payDlg.value = false; doneDlg.value = true; clear();
+      if (props.settings.sound) { beep(1); speak('收款成功，' + yuan(o.payable_amount) + '元' + (p.change ? '，找零' + yuan(p.change) + '元' : '')); }
+      if (props.settings.autoPrintPos && !props.agent) {
+        try { printReceipt(await api.post('/api/orders/' + o.id + '/print', {})); }
+        catch (e) { ElMessage.warning({ message: '收款已成功，但小票没打出来：' + (e.message || e) + '。可以点“补打小票”，不要重新收款。', duration: 8000 }); }
+      }
     };
     const reprint = async () => { try { outPrint(await api.post('/api/orders/' + last.value.id + '/print', { reprint: true })); } catch (e) { err(e); } };
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); });
@@ -236,11 +253,12 @@ const Orders = {
         <el-form-item label="原因"><el-input v-model="rf.reason" /></el-form-item>
       </el-form>
       <div class="muted">退款金额按本单实收（含优惠分摊）自动计算。目前是记账，需线下把钱退给顾客。</div>
-      <template #footer><el-button @click="rDlg=false">取消</el-button><el-button type="warning" @click="doRefund">确认退款</el-button></template>
+      <template #footer><el-button link type="primary" style="float:left" @click="refundAll">全部退</el-button><el-button @click="rDlg=false">取消</el-button><el-button type="warning" :loading="rBusy" @click="doRefund">确认退款</el-button></template>
     </el-dialog>
   </div>`,
   setup(props) {
     const status = ref('pending'), source = ref(null), day = ref(''), kw = ref(''), rows = ref([]), drawer = ref(false), cur = ref(null), payDlg = ref(false);
+    const rBusy = ref(false);
     const rDlg = ref(false), rLines = ref([]), rf = reactive({ method: 'cash', restock: true, reason: '', rid: '' });
     const can = (p) => props.user.permissions.includes(p);
     const tagType = (o) => o.status === 'pending' ? 'danger' : o.status === 'cancelled' ? 'info' : o.pay_status === 'unpaid' ? 'warning' : o.pay_status === 'paid' ? 'success' : 'info';
@@ -261,7 +279,7 @@ const Orders = {
       try { await api.post('/api/orders/' + cur.value.id + '/cancel', { reason: reason || '' }); await refresh(); ElMessage.success('已取消，库存已退回'); } catch (e) { err(e); }
     };
     const openRefund = () => {
-      rLines.value = cur.value.items.map(i => ({ id: i.id, name: i.product_name + (i.sku_name !== '默认' ? '（' + i.sku_name + '）' : ''), max: i.qty - i.refunded_qty, qty: i.qty - i.refunded_qty })).filter(l => l.max > 0);
+      rLines.value = cur.value.items.map(i => ({ id: i.id, name: i.product_name + (i.sku_name !== '默认' ? '（' + i.sku_name + '）' : ''), max: i.qty - i.refunded_qty, qty: 0 })).filter(l => l.max > 0);
       const pay = cur.value.payments.find(p => p.kind === 'pay');
       Object.assign(rf, { method: pay ? pay.method : 'cash', restock: true, reason: '', rid: rid() });
       rDlg.value = true;
@@ -269,12 +287,15 @@ const Orders = {
     const doRefund = async () => {
       const lines = rLines.value.filter(l => l.qty > 0).map(l => ({ order_item_id: l.id, qty: l.qty }));
       if (!lines.length) return ElMessage.warning('请填写退货数量');
+      if (rBusy.value) return;
+      rBusy.value = true;
       try { const r = await api.post('/api/orders/' + cur.value.id + '/refund', { lines, method: rf.method, restock: rf.restock, reason: rf.reason, request_id: rf.rid });
-        rDlg.value = false; await refresh(); ElMessage.success('已退款 ¥' + yuan(r.refund.amount)); } catch (e) { err(e); }
+        rDlg.value = false; await refresh(); ElMessage.success('已退款 ¥' + yuan(r.refund.amount)); } catch (e) { err(e); } finally { rBusy.value = false; }
     };
+    const refundAll = () => rLines.value.forEach(l => { l.qty = l.max; });
     const print = async () => { try { outPrint(await api.post('/api/orders/' + cur.value.id + '/print', { reprint: cur.value.print_count > 0 })); await refresh(); } catch (e) { err(e); } };
     onMounted(load);
-    return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, print, yuan, methods: METHODS };
+    return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy, print, yuan, methods: METHODS };
   },
 };
 
@@ -398,14 +419,20 @@ const App = {
     const storeName = computed(() => cur.value.name || '门店工作台');
     const stockVisible = computed(() => can('inventory') || (can('stock_view') && cur.value.staff_can_view_stock));
     const stockEditable = computed(() => can('inventory') || (can('stock_edit') && cur.value.staff_can_edit_stock));
-    let lastId = 0, timer = null, printing = Promise.resolve();
+    let lastId = 0, timer = null, printing = Promise.resolve(), polling = false, primed = false, pollStore = null;
 
     const poll = async () => {
       if (!storeId.value || !can('orders')) return;
+      if (polling) return;  // 上一次还没返回就不再发，避免同一批订单响铃、打印两次
+      polling = true;
+      const sid = storeId.value;
       try {
-        const r = await api.get('/api/orders/new', { store_id: storeId.value, after_id: lastId });
+        const r = await api.get('/api/orders/new', { store_id: sid, after_id: lastId });
+        if (sid !== storeId.value || sid !== pollStore) return;  // 中途切换了门店，丢弃这次结果
         pending.value = r.pending_count;
-        const fresh = lastId ? r.orders.filter(o => o.status !== 'cancelled') : [];
+        // 第一次只记下当前最新单号（打开页面之前的订单不重复响铃打印，在“待接单”里处理）
+        const fresh = primed ? r.orders.filter(o => o.status !== 'cancelled') : [];
+        primed = true;
         lastId = r.last_id;
         if (fresh.length) {
           tick.value++;
@@ -415,9 +442,9 @@ const App = {
             for (const o of fresh) printing = printing.then(async () => { try { await printReceipt(await api.post('/api/orders/' + o.id + '/print', {})); } catch (e) { err(e); } });
           }
         }
-      } catch (e) {}
+      } catch (e) {} finally { polling = false; }
     };
-    const startPoll = () => { clearInterval(timer); lastId = 0; poll(); timer = setInterval(poll, 5000); };
+    const startPoll = () => { clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
     const afterLogin = async () => {
       stores.value = await api.get('/api/stores');
       const saved = pref('store', null);

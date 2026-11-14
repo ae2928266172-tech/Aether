@@ -311,7 +311,7 @@ def cancel(db: Session, order: Order, user: User | None, reason: str = "", by_cu
 def refund(db: Session, order: Order, user: User, lines: list[dict], restock: bool = True,
            method: str | None = None, reason: str = "", amount: int | None = None,
            request_id: str | None = None) -> Refund:
-    """退货退款。lines=[{order_item_id, qty}]；不传 amount 时按实收分摊自动计算。"""
+    """退货退款。lines=[{order_item_id, qty}]；金额按实收分摊自动计算，传 amount 只用于核对。"""
     exist = _by_request(db, Refund, request_id)
     if exist:
         return exist
@@ -343,16 +343,12 @@ def refund(db: Session, order: Order, user: User, lines: list[dict], restock: bo
         rlines.append((it, q, amt))
     if not rlines:
         raise HTTPException(400, "请选择退货商品和数量")
-    remaining = order.paid_amount - order.refunded_amount
-    if amount is None:
-        amount = calc_total
-    if amount < 0 or amount > remaining:
-        raise HTTPException(400, f"退款金额须在 0 到 {remaining / 100:.2f} 元之间")
-    if amount != calc_total:
-        # 自定义退款金额时，按比例重新分摊到各行，便于商品统计
-        fake = [OrderItem(amount=a) for _, _, a in rlines]
-        _allocate(fake, amount)
-        rlines = [(it, q, f.paid_share) for (it, q, _), f in zip(rlines, fake)]
+    # 退款金额必须等于本次退货商品的实收金额：否则会出现“件数退完、钱没退完”却被标成已全额退款
+    if amount is not None and amount != calc_total:
+        raise HTTPException(400, f"退款金额须等于本次退货金额 {calc_total / 100:.2f} 元")
+    amount = calc_total
+    if amount > order.paid_amount - order.refunded_amount:
+        raise HTTPException(400, "退款金额超过了本单剩余可退金额")
     if method is None:
         pays = [p for p in order.payments if p.kind == "pay"]
         method = pays[0].method if pays else "cash"

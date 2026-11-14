@@ -90,7 +90,6 @@ def test_online_rules(client, admin, world):
                                     "lines": [{"sku_id": p["skus"][0]["id"], "qty": 1}]}, expect=400)
     # 二维码重置后旧码失效
     admin.post(f"/api/areas/{w['a1']['id']}/reset-code")
-    client.get(f"/api/customer/area/{w['a1']['code']}").status_code == 404
     assert client.get(f"/api/customer/area/{w['a1']['code']}").status_code == 404
     # 同一请求号重复提交只生成一单
     body = {"area_code": w["a2"]["code"], "location_note": "3", "request_id": "w-1",

@@ -3,6 +3,8 @@ const { createApp, ref, reactive, computed, onMounted, watch } = Vue;
 const { api, yuan, toFen, rid, today, receiptHtml } = Shouyin;
 const { ElMessage, ElMessageBox } = ElementPlus;
 
+const money = Shouyin.parseMoney;  // 手填金额 → 分；不是合法数字返回 null
+const blank = (v) => String(v == null ? '' : v).trim() === '';
 const err = (e) => ElMessage.error(e.message || String(e));
 const ok = (m) => ElMessage.success(m || '已保存');
 
@@ -109,10 +111,23 @@ const Products = {
     const addSku = () => form.skus.push({ ...blankSku(), name: '' });
     const upload = async (ev) => { const f = ev.target.files[0]; if (!f) return; try { form.image = (await api.upload(f)).url; } catch (e) { err(e); } ev.target.value = ''; };
     const save = async () => {
+      if (!String(form.name || '').trim()) return ElMessage.warning('请填写商品名称');
       if (!form.skus.length) return ElMessage.warning('至少一个规格');
-      const body = { ...form, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: toFen(s.price_y),
-        cost: s.cost_y === '' || s.cost_y == null ? null : toFen(s.cost_y), stock_item_id: s.stock_item_id || null,
-        deduct_qty: s.deduct_qty || 1, active: s.active, sort: i })) };
+      // 价格、成本、扣减量必须是明确的数字：空着或填错不能悄悄当成 0
+      let zero = false;
+      for (const s of form.skus) {
+        const label = '规格“' + (s.name || '未命名') + '”';
+        const p = money(s.price_y);
+        if (p === null) return ElMessage.warning(label + '的售价请填数字，例如 12 或 12.5');
+        if (p === 0 && s.active) zero = true;
+        if (!blank(s.cost_y) && money(s.cost_y) === null) return ElMessage.warning(label + '的成本请填数字，或留空按库存品成本算');
+        const d = parseFloat(s.deduct_qty);
+        if (!isFinite(d) || d <= 0) return ElMessage.warning(label + '的扣减量必须大于 0');
+      }
+      if (zero) { try { await ElMessageBox.confirm('有规格的售价是 0 元，确定要保存吗？', '售价为 0', { type: 'warning' }); } catch (e) { return; } }
+      const body = { ...form, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: money(s.price_y),
+        cost: blank(s.cost_y) ? null : money(s.cost_y), stock_item_id: s.stock_item_id || null,
+        deduct_qty: parseFloat(s.deduct_qty), active: s.active, sort: i })) };
       saving.value = true;
       try { form.id ? await api.put('/api/products/' + form.id, body) : await api.post('/api/products', body); ok(); dlg.value = false; load(); }
       catch (e) { err(e); } finally { saving.value = false; }
@@ -150,7 +165,7 @@ function simpleCrud({ title, url, fields, columns, after }) {
       </el-dialog>
     </div>`,
     setup(props) {
-      const rows = ref([]), dlg = ref(false), form = reactive({});
+      const rows = ref([]), dlg = ref(false), form = reactive({}), saving = ref(false);
       const load = async () => { try { rows.value = await api.get(url); if (after) after(props.meta, rows.value); } catch (e) { err(e); } };
       const edit = (row) => {
         Object.keys(form).forEach(k => delete form[k]);
@@ -160,8 +175,16 @@ function simpleCrud({ title, url, fields, columns, after }) {
       };
       const save = async () => {
         const body = {};
-        fields.forEach(f => { let v = form[f.prop]; if (f.type === 'money') v = toFen(v); if (f.type === 'select' && v === '') v = null; body[f.prop] = v; });
-        try { form.id ? await api.put(url + '/' + form.id, body) : await api.post(url, body); ok(); dlg.value = false; load(); } catch (e) { err(e); }
+        for (const f of fields) {
+          let v = form[f.prop];
+          if (f.prop === 'name' && !String(v || '').trim()) return ElMessage.warning('请填写名称');
+          if (f.type === 'money') { v = money(v); if (v === null) return ElMessage.warning(f.label + '请填数字，例如 0 或 1.5'); }
+          if (f.type === 'select' && v === '') v = null;
+          body[f.prop] = v;
+        }
+        if (saving.value) return;
+        saving.value = true;
+        try { form.id ? await api.put(url + '/' + form.id, body) : await api.post(url, body); ok(); dlg.value = false; load(); } catch (e) { err(e); } finally { saving.value = false; }
       };
       onMounted(load);
       return { rows, dlg, form, edit, save, fields, columns };
@@ -270,6 +293,7 @@ const Stores = {
       <div style="font-weight:600;margin-bottom:6px">{{qArea.store_name}} · {{qArea.name}}</div>
       <img :src="qImg" />
       <div class="muted" style="font-size:12px;word-break:break-all;margin-top:6px">{{qUrl}}</div>
+      <el-alert v-if="qLocal" type="warning" :closable="false" style="margin-top:8px;text-align:left" title="这个二维码只能在本机或同一个局域网里扫开" description="正式张贴前，请先在“业务规则”里填好“顾客访问网址”（正式域名），再回来下载。" />
       <div class="muted" style="font-size:12px;margin-top:6px">小程序上线前先用网页版点单；小程序发布后这里改为小程序码。</div>
       <el-button type="primary" style="margin-top:10px" @click="downloadQr">下载图片</el-button>
     </div>
@@ -302,12 +326,15 @@ const Stores = {
       try { await api.post('/api/areas/' + r.id + '/reset-code'); ok('已生成新二维码'); loadAreas(); } catch (e) { err(e); }
     };
     const showQr = (r) => {
-      qArea.value = r; qUrl.value = location.origin + '/web/h5/?area=' + r.code;
+      const base = (publicUrl.value || location.origin).replace(/\/+$/, '');
+      qLocal.value = !publicUrl.value && /^https?:\/\/(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(location.origin);
+      qArea.value = r; qUrl.value = base + '/web/h5/?area=' + r.code;
       const q = qrcode(0, 'M'); q.addData(qUrl.value); q.make(); qImg.value = q.createDataURL(8, 16); qDlg.value = true;
     };
     const downloadQr = () => { const a = document.createElement('a'); a.href = qImg.value; a.download = qArea.value.store_name + '_' + qArea.value.name + '.gif'; a.click(); };
-    onMounted(loadAreas);
-    return { areas, sDlg, aDlg, qDlg, sForm, aForm, qArea, qImg, qUrl, editStore, saveStore, printer, origin, agentUrl, resetKey, testPrint, editArea, saveArea, resetCode, showQr, downloadQr };
+    const publicUrl = ref(''), qLocal = ref(false);
+    onMounted(async () => { loadAreas(); try { publicUrl.value = (await api.get('/api/settings/rules')).public_url || ''; } catch (e) {} });
+    return { qLocal, areas, sDlg, aDlg, qDlg, sForm, aForm, qArea, qImg, qUrl, editStore, saveStore, printer, origin, agentUrl, resetKey, testPrint, editArea, saveArea, resetCode, showQr, downloadQr };
   },
 };
 
@@ -719,8 +746,14 @@ const Accounts = {
       rDlg.value = true;
     };
     const saveRole = async () => {
+      if (!String(rForm.name || '').trim()) return ElMessage.warning('请填写角色名称');
+      // 折扣和调低上限：填错不能悄悄变成“不限”
+      const rate = Math.round(parseFloat(rForm.min_rate) * 10);
+      if (!isFinite(rate) || rate < 1 || rate > 100) return ElMessage.warning('最低折扣请填 0.1 到 10 之间的数（0.1 表示不限）');
+      const adj = blank(rForm.max_adj) ? null : money(rForm.max_adj);
+      if (!blank(rForm.max_adj) && adj === null) return ElMessage.warning('单笔最多调低请填金额，或留空表示不限');
       const body = { name: rForm.name, is_admin: rForm.is_admin, permissions: rForm.is_admin ? rForm.permissions : rForm.permissions.filter(p => !adminOnly.includes(p)),
-        min_discount_rate: Math.max(1, Math.round(rForm.min_rate * 10)), max_adjust_amount: rForm.max_adj === '' ? null : toFen(rForm.max_adj) };
+        min_discount_rate: rate, max_adjust_amount: adj };
       try { rForm.id ? await api.put('/api/roles/' + rForm.id, body) : await api.post('/api/roles', body); ok(); rDlg.value = false; load(); } catch (e) { err(e); }
     };
     const editUser = (u) => {
@@ -731,9 +764,15 @@ const Accounts = {
       uForm.password = ''; uDlg.value = true;
     };
     const saveUser = async () => {
+      if (!String(uForm.username || '').trim()) return ElMessage.warning('请填写账号');
+      let rate = null, adj = null;
+      if (!blank(uForm.min_rate)) {
+        rate = Math.round(parseFloat(uForm.min_rate) * 10);
+        if (!/^\d+(\.\d)?$/.test(String(uForm.min_rate).trim()) || rate < 1 || rate > 100) return ElMessage.warning('最低折扣请填 0.1 到 10 之间的数，或留空表示同角色');
+      }
+      if (!blank(uForm.max_adj)) { adj = money(uForm.max_adj); if (adj === null) return ElMessage.warning('单笔最多调低请填金额，或留空表示同角色'); }
       const body = { username: uForm.username, display_name: uForm.display_name, role_id: uForm.role_id, store_ids: uForm.store_ids, active: uForm.active,
-        password: uForm.password || null, min_discount_rate: uForm.min_rate === '' ? null : Math.round(parseFloat(uForm.min_rate) * 10),
-        max_adjust_amount: uForm.max_adj === '' ? null : toFen(uForm.max_adj) };
+        password: uForm.password || null, min_discount_rate: rate, max_adjust_amount: adj };
       try { uForm.id ? await api.put('/api/users/' + uForm.id, body) : await api.post('/api/users', body); ok(); uDlg.value = false; load(); } catch (e) { err(e); }
     };
     onMounted(load);
@@ -752,6 +791,8 @@ const Rules = {
       <el-form-item label="区域叫法"><el-input v-model="f.area_label" placeholder="如：病区、楼层" /></el-form-item>
       <el-form-item label="位置叫法"><el-input v-model="f.location_label" placeholder="如：床号、桌号" /></el-form-item>
       <el-form-item label="小程序下单必须填位置"><el-switch v-model="f.online_location_required" /></el-form-item>
+      <el-form-item label="顾客访问网址"><el-input v-model="f.public_url" placeholder="如 https://shop.example.com，上线后填正式域名" />
+        <div class="hint" style="margin-top:2px">区域二维码用这个网址生成。留空时用当前打开后台的地址，那样生成的码顾客在外面扫不开。</div></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button></el-form-item>
     </el-form>
   </div>`,

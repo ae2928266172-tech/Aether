@@ -21,6 +21,9 @@ DEFAULTS: dict[str, dict] = {
         "online_location_required": True,
         "location_label": "床号",
         "area_label": "病区",
+        # 顾客扫码打开的正式网址（如 https://shop.example.com）。留空时用当前打开后台的地址，
+        # 那样在本机或内网地址下生成的二维码，顾客在外面扫不开
+        "public_url": "",
     },
     "receipt": {
         "paper_width": 58,

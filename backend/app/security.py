@@ -39,7 +39,9 @@ def _secret() -> str:
     s = os.environ.get("SHOUYIN_SECRET")
     if s:
         return s
-    path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "secret.key")
+    # 登录签名密钥放在本机用户目录，不放项目文件夹（项目在 OneDrive 里，会被同步到云端）
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    path = os.path.join(base, "shouyin", "secret.key")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
         with open(path, "w") as f:

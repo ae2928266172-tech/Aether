@@ -18,11 +18,30 @@ class LoginIn(BaseModel):
     password: str
 
 
+# 登录失败限制：同一账号 10 分钟内错 5 次，锁 10 分钟（记在内存里，重启清零）
+_FAILS: dict[str, list[float]] = {}
+FAIL_LIMIT, FAIL_WINDOW = 5, 600
+
+
+def _check_locked(name: str):
+    import time
+    recent = [t for t in _FAILS.get(name, []) if t > time.time() - FAIL_WINDOW]
+    _FAILS[name] = recent
+    if len(recent) >= FAIL_LIMIT:
+        wait = int((recent[0] + FAIL_WINDOW - time.time()) // 60) + 1
+        raise HTTPException(429, f"密码错误次数过多，请 {wait} 分钟后再试")
+
+
 @router.post("/auth/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
+    import time
+    name = body.username.strip().lower()
+    _check_locked(name)
     u = db.scalar(select(User).where(User.username == body.username.strip()))
     if not u or not verify_password(body.password, u.password_hash):
+        _FAILS.setdefault(name, []).append(time.time())
         raise HTTPException(400, "账号或密码错误")
+    _FAILS.pop(name, None)
     if not u.active:
         raise HTTPException(400, "账号已停用")
     return {"token": make_token(str(u.id), "staff", u.token_version), "user": user_out(u)}

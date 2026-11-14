@@ -54,6 +54,8 @@
   // 金额：接口用“分”，界面用“元”
   const yuan = (fen) => ((fen || 0) / 100).toFixed(2);
   const toFen = (y) => Math.round(parseFloat(y || 0) * 100);
+  // 严格版：用于用户手填的金额。不是合法数字（或为负数）时返回 null，调用处必须拦住，不能当 0 处理
+  const parseMoney = (y) => { const s = String(y == null ? '' : y).trim(); if (!/^\d+(\.\d{1,2})?$/.test(s)) return null; return Math.round(parseFloat(s) * 100); };
   const rid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
   const today = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 
@@ -166,5 +168,5 @@
   };
   const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ''}</svg>`;
 
-  window.Shouyin = { api, yuan, toFen, rid, today, esc, receiptHtml, printReceipt, beep, speak, icon };
+  window.Shouyin = { api, yuan, toFen, parseMoney, rid, today, esc, receiptHtml, printReceipt, beep, speak, icon };
 })();

@@ -39,6 +39,8 @@ class Api:
 
 @pytest.fixture
 def client():
+    from app.routers import auth as auth_router
+    auth_router._FAILS.clear()
     Base.metadata.drop_all(dbmod.engine)
     Base.metadata.create_all(dbmod.engine)
     with dbmod.SessionLocal() as db:

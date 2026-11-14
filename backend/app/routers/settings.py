@@ -78,6 +78,10 @@ def get_rules(db: Session = Depends(get_db), _: User = Depends(current_user)):
 def put_rules(body: dict, db: Session = Depends(get_db), _: User = Depends(require("stores"))):
     if "online_deduct_on" in body and body["online_deduct_on"] not in ("create", "accept"):
         raise HTTPException(400, "扣库存时机只能是下单时或接单时")
+    if "public_url" in body:
+        body["public_url"] = str(body["public_url"] or "").strip().rstrip("/")
+        if body["public_url"] and not body["public_url"].startswith(("http://", "https://")):
+            raise HTTPException(400, "顾客访问网址要以 http:// 或 https:// 开头")
     v = set_setting(db, "rules", body)
     db.commit()
     return v

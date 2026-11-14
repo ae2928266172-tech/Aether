@@ -6,5 +6,7 @@ python-multipart>=0.0.9
 pyjwt>=2.8
 openpyxl>=3.1
 pillow>=10.0
+# 上线用 PostgreSQL 时需要：DATABASE_URL=postgresql+psycopg://用户:密码@主机:5432/库名
+psycopg[binary]>=3.1
 httpx>=0.27
 pytest>=8.0

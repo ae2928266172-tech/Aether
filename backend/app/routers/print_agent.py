@@ -22,6 +22,7 @@ from ..settings_store import get_setting
 
 router = APIRouter(prefix="/api", tags=["打印小助手"])
 RESEND_AFTER = timedelta(seconds=90)  # 发出后这么久没回报完成，就认为小助手中途断了，重新发
+MAX_ATTEMPTS = 3  # 同一张最多发 3 次，仍没回报完成就标记失败，避免无限重复出票
 
 
 def _store_by_key(db: Session, key: str) -> Store:
@@ -35,29 +36,49 @@ def _store_by_key(db: Session, key: str) -> Store:
 def next_job(key: str, db: Session = Depends(get_db)):
     store = _store_by_key(db, key)
     store.agent_seen_at = now()
-    job = db.scalar(select(PrintJob).where(PrintJob.store_id == store.id, PrintJob.status == "pending")
-                    .order_by(PrintJob.id).with_for_update())
-    if not job:
-        job = db.scalar(select(PrintJob).where(PrintJob.store_id == store.id, PrintJob.status == "sent",
-                                               PrintJob.sent_at < now() - RESEND_AFTER).order_by(PrintJob.id))
-    if not job:
+    # 最多试几张：某一张小票生成失败时标记为失败并跳过，不让一个坏任务卡住后面的
+    for _ in range(5):
+        job = db.scalar(select(PrintJob).where(PrintJob.store_id == store.id, PrintJob.status == "pending")
+                        .order_by(PrintJob.id).with_for_update())
+        if not job:
+            job = db.scalar(select(PrintJob).where(PrintJob.store_id == store.id, PrintJob.status == "sent",
+                                                   PrintJob.sent_at < now() - RESEND_AFTER).order_by(PrintJob.id))
+        if not job:
+            db.commit()
+            return Response(status_code=204)
+        if job.attempts >= MAX_ATTEMPTS:
+            job.status = "failed"
+            db.commit()
+            continue
+        try:
+            if job.order_id:
+                o = db.get(Order, job.order_id)
+                who = _job_user(db, job, o)
+                # 是否补打按“已经成功打印过几次”判断；打印次数和日志在小助手回报完成时才记
+                reprint = job.kind == "reprint" or o.print_count > 0
+                data = escpos.build(build_receipt(db, o, who, reprint=reprint))
+            else:
+                data = escpos.test_page(store.name, int(get_setting(db, "receipt").get("paper_width", 58)))
+        except Exception:
+            db.rollback()
+            job = db.get(PrintJob, job.id)
+            job.status = "failed"
+            store = _store_by_key(db, key)
+            store.agent_seen_at = now()
+            db.commit()
+            continue
+        job.status, job.sent_at, job.attempts = "sent", now(), job.attempts + 1
         db.commit()
-        return Response(status_code=204)
-    if job.order_id:
-        o = db.get(Order, job.order_id)
-        o.print_count += 1
-        uid = job.created_by or o.accepted_by or o.created_by
-        who = db.get(User, uid) if uid else None
-        reprint = job.kind == "reprint" or o.print_count > 1
-        log(db, o, "补打小票" if reprint else "打印小票", "打印小助手", who)
-        data = escpos.build(build_receipt(db, o, who, reprint=reprint))
-    else:
-        data = escpos.test_page(store.name, int(get_setting(db, "receipt").get("paper_width", 58)))
-    job.status, job.sent_at = "sent", now()
+        return Response(content=data, media_type="application/octet-stream",
+                        headers={"X-Job-Id": str(job.id), "X-Job-Kind": job.kind,
+                                 "X-Beep": "1" if job.kind == "new_order" and job.attempts == 1 else "0"})
     db.commit()
-    return Response(content=data, media_type="application/octet-stream",
-                    headers={"X-Job-Id": str(job.id), "X-Job-Kind": job.kind,
-                             "X-Beep": "1" if job.kind == "new_order" else "0"})
+    return Response(status_code=204)
+
+
+def _job_user(db: Session, job: PrintJob, o: Order) -> User | None:
+    uid = job.created_by or o.accepted_by or o.created_by
+    return db.get(User, uid) if uid else None
 
 
 @router.post("/print-agent/done/{job_id}")
@@ -66,7 +87,13 @@ def job_done(job_id: int, key: str, db: Session = Depends(get_db)):
     job = db.get(PrintJob, job_id)
     if not job or job.store_id != store.id:
         raise HTTPException(404, "任务不存在")
-    job.status, job.done_at = "done", now()
+    if job.status != "done":  # 重复回报只记一次
+        if job.order_id:
+            o = db.get(Order, job.order_id)
+            o.print_count += 1
+            log(db, o, "补打小票" if (job.kind == "reprint" or o.print_count > 1) else "打印小票", "打印小助手",
+                _job_user(db, job, o))
+        job.status, job.done_at = "done", now()
     db.commit()
     return {"ok": True}
 
@@ -99,7 +126,8 @@ def download_agent():
 # ---------------- 后台：密钥、测试页、队列状态 ----------------
 
 def _status(db: Session, store: Store) -> dict:
-    pending = db.scalar(select(PrintJob.id).where(PrintJob.store_id == store.id, PrintJob.status != "done").limit(1))
+    pending = db.scalar(select(PrintJob.id).where(PrintJob.store_id == store.id,
+                                                  PrintJob.status.in_(("pending", "sent"))).limit(1))
     online = bool(store.agent_seen_at and store.agent_seen_at > now() - timedelta(seconds=30))
     return {"print_mode": store.print_mode, "has_key": bool(store.print_key), "agent_online": online,
             "agent_seen_at": store.agent_seen_at.strftime("%Y-%m-%d %H:%M:%S") if store.agent_seen_at else None,

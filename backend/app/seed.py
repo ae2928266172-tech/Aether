@@ -27,7 +27,10 @@ def _add_missing_columns(engine):
                 default = col.default.arg if col.default is not None and not callable(col.default.arg) else None
                 sql = f'ALTER TABLE {table.name} ADD COLUMN {col.name} {ddl}'
                 if isinstance(default, bool):
-                    sql += " DEFAULT " + ("TRUE" if default else "FALSE") if engine.dialect.name != "sqlite" else f" DEFAULT {int(default)}"
+                    if engine.dialect.name == "sqlite":
+                        sql += f" DEFAULT {int(default)}"
+                    else:
+                        sql += " DEFAULT " + ("TRUE" if default else "FALSE")
                 elif isinstance(default, (int, float)):
                     sql += f" DEFAULT {default}"
                 elif isinstance(default, str):

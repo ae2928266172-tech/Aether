@@ -87,7 +87,7 @@ def test_receipt_print_and_reprint(admin, client, world):
 
 def test_auth(client, admin, world):
     from conftest import login
-    client.post("/api/auth/login", json={"username": "admin", "password": "bad"}).status_code == 400
+    assert client.post("/api/auth/login", json={"username": "admin", "password": "bad"}).status_code == 400
     assert client.get("/api/auth/me").status_code == 401
     me = world["clerk"].get("/api/auth/me")
     assert me["stores"] == [{"id": world["s1"]["id"], "name": "一号店"}] and not me["is_admin"]

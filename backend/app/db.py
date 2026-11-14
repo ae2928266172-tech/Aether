@@ -22,7 +22,8 @@ def make_engine(url: str | None = None):
         os.path.dirname(os.path.dirname(__file__)), "data", "shouyin.db")
     kwargs = {}
     if url.startswith("sqlite"):
-        kwargs["connect_args"] = {"check_same_thread": False}
+        # timeout：另一台设备正在写库时最多等 30 秒，而不是立刻报“database is locked”
+        kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
         if url.startswith("sqlite:///") and ":memory:" not in url:
             os.makedirs(os.path.dirname(url[len("sqlite:///"):]) or ".", exist_ok=True)
         else:
