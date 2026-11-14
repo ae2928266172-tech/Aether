@@ -34,7 +34,7 @@ const PayDialog = {
     <div v-if="method==='cash'">
       <el-input v-model="received" size="large" placeholder="不填按应收" @keyup.enter="submit"><template #prepend>实收现金</template><template #append>元</template></el-input>
       <div class="quickcash"><el-button v-for="v in quick" :key="v" @click="received = v">¥{{v}}</el-button></div>
-      <div class="change"><span>找零</span><b class="money" style="color:#0f766e">¥{{change}}</b></div>
+      <div class="change"><span>找零</span><b class="money" style="color:#4f46e5">¥{{change}}</b></div>
     </div>
     <div v-else class="hint" style="font-size:13px">请确认顾客已通过{{methods[method]}}付款，再点“确认收款”。目前是店员确认后记账，不是在线支付。</div>
     <template #footer><el-button size="large" @click="$emit('update:modelValue', false)">取消</el-button>
@@ -118,7 +118,7 @@ const Pos = {
       </div>
     </el-dialog>
     <el-dialog v-model="doneDlg" title="收款成功" width="380px">
-      <div style="text-align:center;font-size:18px">应收 ¥{{yuan(last.payable_amount)}}<div v-if="lastChange" style="margin-top:6px;color:#0f766e;font-size:24px">找零 ¥{{yuan(lastChange)}}</div></div>
+      <div style="text-align:center;font-size:18px">应收 ¥{{yuan(last.payable_amount)}}<div v-if="lastChange" style="margin-top:6px;color:#4f46e5;font-size:24px">找零 ¥{{yuan(lastChange)}}</div></div>
       <template #footer><el-button @click="reprint">补打小票</el-button><el-button type="primary" @click="doneDlg=false">继续收银</el-button></template>
     </el-dialog>
   </div>`,
@@ -292,7 +292,7 @@ const Shift = {
         <el-table-column label="退款"><template #default="{row}">{{yuan(row.refund)}}</template></el-table-column>
         <el-table-column label="净额"><template #default="{row}"><b>{{yuan(row.pay - row.refund)}}</b></template></el-table-column>
       </el-table>
-      <div style="margin-top:14px;font-size:18px">合计净收 <b style="color:#0f766e">¥{{yuan(net)}}</b></div>
+      <div style="margin-top:14px;font-size:18px">合计净收 <b style="color:#4f46e5">¥{{yuan(net)}}</b></div>
     </div>
   </div></div>`,
   setup(props) {
@@ -359,13 +359,13 @@ const App = {
         <span v-if="stores.length <= 1">{{storeName}}</span>
         <el-select v-else v-model="storeId" @change="switchStore"><el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id" /></el-select></div>
       <div class="tabs">
-        <div v-if="can('pos')" class="tab" :class="{on: tab==='pos'}" @click="tab='pos'">收银</div>
-        <div v-if="can('orders') || can('pos')" class="tab" :class="{on: tab==='orders'}" @click="tab='orders'">订单<span v-if="pending" class="badge">{{pending}}</span></div>
-        <div v-if="can('pos')" class="tab" :class="{on: tab==='shift'}" @click="tab='shift'">交班</div>
-        <div v-if="stockVisible" class="tab" :class="{on: tab==='stock'}" @click="tab='stock'">库存</div>
+        <div v-if="can('pos')" class="tab" :class="{on: tab==='pos'}" @click="tab='pos'"><span class="ico" v-html="icon('cart')"></span>收银</div>
+        <div v-if="can('orders') || can('pos')" class="tab" :class="{on: tab==='orders'}" @click="tab='orders'"><span class="ico" v-html="icon('list')"></span>订单<span v-if="pending" class="badge">{{pending}}</span></div>
+        <div v-if="can('pos')" class="tab" :class="{on: tab==='shift'}" @click="tab='shift'"><span class="ico" v-html="icon('clock')"></span>交班</div>
+        <div v-if="stockVisible" class="tab" :class="{on: tab==='stock'}" @click="tab='stock'"><span class="ico" v-html="icon('box')"></span>库存</div>
       </div>
       <span class="grow"></span>
-      <span class="clock">{{clock}}</span>
+      <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
       <el-popover placement="bottom" :width="280" trigger="click">
         <template #reference><el-button class="ghost">本机设置</el-button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
@@ -374,9 +374,9 @@ const App = {
         <div><el-checkbox v-model="settings.autoPrintPos">收银后自动打印小票</el-checkbox></div>
         <div class="muted" style="font-size:12px;margin-top:6px">本设置只对这台电脑生效。想要不弹打印框直接出票：Chrome 快捷方式“目标”末尾加 --kiosk-printing，并把小票机设为默认打印机。</div>
       </el-popover>
-      <a v-if="user.is_admin" href="/web/admin/" style="color:#9fc3be">后台 →</a>
+      <a v-if="user.is_admin" class="link" href="/web/admin/">后台管理</a>
       <div class="who"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span>{{user.display_name || user.username}}</span></div>
-      <el-button link style="color:#9fc3be" @click="logout">退出</el-button>
+      <el-button link @click="logout">退出</el-button>
     </div>
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
     <template v-else>
@@ -434,7 +434,7 @@ const App = {
     window.onUnauthorized = () => { user.value = null; clearInterval(timer); };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); });
-    return { user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, switchStore };
+    return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, switchStore };
   },
 };
 

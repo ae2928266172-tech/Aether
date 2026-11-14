@@ -5,16 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
   <title>扫码点单</title>
   <style>
-    :root { --p: #0f766e; --bg: #f5f6f8; --b: #e5e7eb; --m: #8a8f99; }
+    :root { --p: #4f46e5; --bg: #f5f6fa; --b: #e9ebf2; --m: #94a3b8; }
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f2329; }
-    header { background: linear-gradient(135deg, #0c1f1d, #0f766e); color: #fff; padding: 16px 16px 14px; display: flex; align-items: center; gap: 12px; height: 70px; }
+    header { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; padding: 16px 16px 14px; display: flex; align-items: center; gap: 12px; height: 70px; }
     header .mk { width: 38px; height: 38px; border-radius: 11px; background: rgba(255,255,255,.16); display: flex; align-items: center; justify-content: center; font-weight: 700; }
     header .t { flex: 1; font-weight: 600; font-size: 17px; }
     header .s { opacity: .8; font-size: 13px; margin-top: 2px; font-weight: 400; }
     header .mine { background: rgba(255,255,255,.16); color: #fff; border: 0; border-radius: 16px; padding: 7px 12px; font-size: 13px; }
     .wrap { display: flex; height: calc(100vh - 70px - 64px); }
-    .item .img { display: flex; align-items: center; justify-content: center; color: var(--p); font-size: 24px; font-weight: 700; background-color: #e6f4f2; }
+    .item .img { display: flex; align-items: center; justify-content: center; color: var(--p); font-size: 24px; font-weight: 700; background-color: #eef0ff; }
     .bar { box-shadow: 0 -4px 16px rgba(0,0,0,.05); }
     .bar .cart { width: 44px; height: 44px; border-radius: 50%; background: var(--p); color: #fff; display: flex; align-items: center; justify-content: center; position: relative; font-weight: 700; }
     .bar .cart i { position: absolute; top: -4px; right: -4px; background: #ef4444; font-style: normal; font-size: 11px; border-radius: 9px; padding: 0 5px; line-height: 18px; }
@@ -22,7 +22,7 @@
     .cats div { padding: 14px 8px; font-size: 14px; text-align: center; border-left: 3px solid transparent; }
     .cats div.on { background: var(--bg); border-left-color: var(--p); font-weight: 600; }
     .list { flex: 1; overflow: auto; padding: 8px 12px 20px; }
-    .item { background: #fff; border-radius: 10px; padding: 10px; margin-bottom: 10px; display: flex; gap: 10px; }
+    .item { background: #fff; border-radius: 16px; padding: 10px; margin-bottom: 10px; display: flex; gap: 10px; }
     .item .img { width: 72px; height: 72px; border-radius: 8px; background: #eef3f2 center/cover no-repeat; flex-shrink: 0; }
     .item .info { flex: 1; min-width: 0; }
     .item .n { font-weight: 600; }
@@ -33,9 +33,9 @@
     .qty button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--p); background: #fff; color: var(--p); font-size: 18px; line-height: 1; }
     .qty button.add { background: var(--p); color: #fff; }
     .bar { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; background: #fff; border-top: 1px solid var(--b); display: flex; align-items: center; padding: 0 16px; gap: 12px; }
-    .bar .t { flex: 1; font-size: 18px; font-weight: 700; color: var(--p); }
-    .btn { background: var(--p); color: #fff; border: 0; border-radius: 22px; padding: 12px 24px; font-size: 16px; }
-    .btn:disabled { background: #b8c7c5; }
+    .bar .t { flex: 1; font-size: 20px; font-weight: 800; color: #0f172a; }
+    .btn { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: #fff; border: 0; border-radius: 22px; box-shadow: 0 6px 16px rgba(79,70,229,.3); padding: 12px 24px; font-size: 16px; }
+    .btn:disabled { background: #c7cbe0; box-shadow: none; }
     .mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; z-index: 9; }
     .sheet { background: #fff; width: 100%; border-radius: 14px 14px 0 0; padding: 16px; max-height: 85vh; overflow: auto; }
     .sheet h3 { margin: 0 0 12px; }
@@ -92,7 +92,7 @@
 </div>
 <script>window.APP_KIND = 'customer';</script>
 <script src="../vendor/vue.global.prod.js"></script>
-<script src="../common/api.js?v=2"></script>
+<script src="../common/api.js?v=5"></script>
 <script>
 const { createApp, ref, reactive, computed, onMounted } = Vue;
 const { api, yuan, rid } = Shouyin;

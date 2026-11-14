@@ -813,19 +813,19 @@ const Dashboard = {
 // ---------------- 主框架 ----------------
 // [键, 名称, 权限, 组件, 分组, 图标, 说明]
 const MENU = [
-  ['dashboard', '经营概览', 'reports', Dashboard, '经营', '◎', '今天和本月的营收、待处理订单'],
-  ['orders', '订单', 'reports', Orders, '经营', '☰', '所有门店的收银单和小程序订单'],
-  ['revenue', '营收报表', 'reports', Revenue, '经营', '↗', '按门店、日 / 周 / 月统计，可导出'],
-  ['productSales', '商品销售核对', 'reports', ProductSales, '经营', '✓', '某商品卖了多少件，展开看逐单明细'],
-  ['products', '商品', 'catalog', Products, '商品资料', '▦', '名称、规格、售价、图片、医疗器械资料'],
-  ['categories', '商品分类', 'catalog', Categories, '商品资料', '◫', '大类、小类'],
-  ['stockItems', '库存品', 'catalog', StockItems, '商品资料', '◆', '实际占库存的东西，多个规格可共用'],
-  ['suppliers', '供应商', 'catalog', Suppliers, '商品资料', '⌂', ''],
-  ['inventory', '仓库与库存', 'inventory', Inventory, '库存', '▤', '入库、出库、调拨到门店、盘点、台账'],
-  ['stores', '门店与区域', 'stores', Stores, '门店', '⌖', '门店设置、区域二维码'],
-  ['receipt', '小票设置', 'receipt_config', ReceiptSettings, '门店', '▭', '小票文字、字段、底部图片'],
-  ['rules', '业务规则', 'stores', Rules, '门店', '⚙', '扣库存时机、库存不够能否卖'],
-  ['accounts', '账号与权限', 'users', Accounts, '系统', '☺', '角色权限、优惠上限、门店分配'],
+  ['dashboard', '经营概览', 'reports', Dashboard, '经营', 'home', '今天和本月的营收、待处理订单'],
+  ['orders', '订单', 'reports', Orders, '经营', 'receipt', '所有门店的收银单和小程序订单'],
+  ['revenue', '营收报表', 'reports', Revenue, '经营', 'chart', '按门店、日 / 周 / 月统计，可导出'],
+  ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '某商品卖了多少件，展开看逐单明细'],
+  ['products', '商品', 'catalog', Products, '商品资料', 'package', '名称、规格、售价、图片、医疗器械资料'],
+  ['categories', '商品分类', 'catalog', Categories, '商品资料', 'tag', '大类、小类'],
+  ['stockItems', '库存品', 'catalog', StockItems, '商品资料', 'layers', '实际占库存的东西，多个规格可共用'],
+  ['suppliers', '供应商', 'catalog', Suppliers, '商品资料', 'truck', ''],
+  ['inventory', '仓库与库存', 'inventory', Inventory, '库存', 'warehouse', '入库、出库、调拨到门店、盘点、台账'],
+  ['stores', '门店与区域', 'stores', Stores, '门店', 'store', '门店设置、区域二维码、出票方式'],
+  ['receipt', '小票设置', 'receipt_config', ReceiptSettings, '门店', 'printer', '小票文字、字段、排版、底部图片'],
+  ['rules', '业务规则', 'stores', Rules, '门店', 'sliders', '扣库存时机、库存不够能否卖'],
+  ['accounts', '账号与权限', 'users', Accounts, '系统', 'users', '角色权限、优惠上限、门店分配'],
 ];
 
 const App = {
@@ -856,14 +856,14 @@ const App = {
       <div class="nav">
         <template v-for="g in groups" :key="g">
           <div class="group">{{g}}</div>
-          <div v-for="m in menu.filter(x => x[4] === g)" :key="m[0]" class="item" :class="{on: tab === m[0]}" @click="tab = m[0]"><span class="ico">{{m[5]}}</span>{{m[1]}}</div>
+          <div v-for="m in menu.filter(x => x[4] === g)" :key="m[0]" class="item" :class="{on: tab === m[0]}" @click="tab = m[0]"><span class="ico" v-html="icon(m[5])"></span>{{m[1]}}</div>
         </template>
       </div>
     </div>
     <div class="main">
       <div class="topbar">
         <div class="title">{{cur[1]}}<small>{{cur[6]}}</small></div>
-        <div class="who"><a href="/web/store/">门店工作台 →</a>
+        <div class="who"><a class="pill" href="/web/store/"><span class="ico" v-html="icon('cart')"></span>门店工作台</a>
           <el-dropdown @command="c => c === 'pw' ? changePw() : logout()">
             <span style="display:flex;align-items:center;gap:8px;cursor:pointer"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span>{{user.display_name || user.username}}</span>
             <template #dropdown><el-dropdown-menu><el-dropdown-item disabled>{{user.role_name}}</el-dropdown-item><el-dropdown-item command="pw">修改密码</el-dropdown-item><el-dropdown-item command="out" divided>退出登录</el-dropdown-item></el-dropdown-menu></template>
@@ -901,7 +901,7 @@ const App = {
     };
     window.onUnauthorized = () => { user.value = null; ready.value = false; };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await loadMeta(); } catch (e) {} } });
-    return { user, lf, busy, tab, menu, groups, cur, meta, ready, login, logout, changePw, toStore };
+    return { user, lf, busy, tab, menu, groups, cur, meta, ready, login, logout, changePw, toStore, icon: Shouyin.icon };
   },
 };
 
