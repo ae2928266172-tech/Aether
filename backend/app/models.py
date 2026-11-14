@@ -28,6 +28,9 @@ class Role(Base, TimestampMixin):
     # 后台角色可以访问后台；门店角色只能进门店工作台
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     permissions: Mapped[list] = mapped_column(JSON, default=list)
+    # 优惠上限：最低折扣（如 80 表示最低 8 折，本单应收不能低于原价的 80%）；单笔最多调低金额（分），为空不限
+    min_discount_rate: Mapped[int] = mapped_column(Integer, default=1)
+    max_adjust_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class User(Base, TimestampMixin):
@@ -40,6 +43,9 @@ class User(Base, TimestampMixin):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     # 每次改密码或停用时 +1，使旧登录失效
     token_version: Mapped[int] = mapped_column(Integer, default=0)
+    # 账号单独的优惠上限，为空时用角色的设置
+    min_discount_rate: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_adjust_amount: Mapped[int | None] = mapped_column(Integer, nullable=True)
     role: Mapped[Role] = relationship(lazy="joined")
     stores: Mapped[list["Store"]] = relationship(secondary="user_stores", lazy="selectin")
 

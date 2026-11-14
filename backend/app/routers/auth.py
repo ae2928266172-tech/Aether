@@ -60,10 +60,13 @@ class RoleIn(BaseModel):
     name: str
     is_admin: bool = False
     permissions: list[str] = []
+    min_discount_rate: int = Field(1, ge=1, le=100)  # 最低折扣，80 = 最低 8 折；1 = 不限
+    max_adjust_amount: int | None = Field(None, ge=0)  # 单笔最多调低（分），为空不限
 
 
 def _role_out(r: Role):
-    return {"id": r.id, "name": r.name, "is_admin": r.is_admin, "permissions": r.permissions or []}
+    return {"id": r.id, "name": r.name, "is_admin": r.is_admin, "permissions": r.permissions or [],
+            "min_discount_rate": r.min_discount_rate, "max_adjust_amount": r.max_adjust_amount}
 
 
 @router.get("/roles")
@@ -85,7 +88,7 @@ def create_role(body: RoleIn, db: Session = Depends(get_db), _: User = Depends(r
     _check_role(body)
     if db.scalar(select(Role).where(Role.name == body.name)):
         raise HTTPException(400, "角色名已存在")
-    r = Role(name=body.name, is_admin=body.is_admin, permissions=body.permissions)
+    r = Role(**body.model_dump())
     db.add(r)
     db.commit()
     return _role_out(r)
@@ -99,7 +102,8 @@ def update_role(rid: int, body: RoleIn, db: Session = Depends(get_db), me_: User
         raise HTTPException(404, "角色不存在")
     if r.id == me_.role_id and "users" not in body.permissions:
         raise HTTPException(400, "不能去掉自己角色的账号管理权限")
-    r.name, r.is_admin, r.permissions = body.name, body.is_admin, list(body.permissions)
+    for k, v in body.model_dump().items():
+        setattr(r, k, v)
     db.commit()
     return _role_out(r)
 
@@ -113,6 +117,8 @@ class UserIn(BaseModel):
     store_ids: list[int] = []
     active: bool = True
     password: str | None = None
+    min_discount_rate: int | None = Field(None, ge=1, le=100)  # 为空时用角色设置
+    max_adjust_amount: int | None = Field(None, ge=0)
 
 
 @router.get("/users")
@@ -124,6 +130,7 @@ def _apply_user(db: Session, u: User, body: UserIn):
     if not db.get(Role, body.role_id):
         raise HTTPException(400, "角色不存在")
     u.username, u.display_name, u.role_id = body.username.strip(), body.display_name, body.role_id
+    u.min_discount_rate, u.max_adjust_amount = body.min_discount_rate, body.max_adjust_amount
     stores = [db.get(Store, i) for i in body.store_ids]
     if any(s is None for s in stores):
         raise HTTPException(400, "门店不存在")

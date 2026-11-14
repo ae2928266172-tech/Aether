@@ -19,7 +19,9 @@ def dt(v):
 def user_out(u: User) -> dict:
     return {"id": u.id, "username": u.username, "display_name": u.display_name, "role_id": u.role_id,
             "role_name": u.role.name, "is_admin": u.role.is_admin, "permissions": u.role.permissions or [],
-            "active": u.active, "stores": [{"id": s.id, "name": s.name} for s in u.stores]}
+            "active": u.active, "min_discount_rate": u.min_discount_rate, "max_adjust_amount": u.max_adjust_amount,
+            "role_min_discount_rate": u.role.min_discount_rate, "role_max_adjust_amount": u.role.max_adjust_amount,
+            "stores": [{"id": s.id, "name": s.name} for s in u.stores]}
 
 
 def store_out(s: Store) -> dict:

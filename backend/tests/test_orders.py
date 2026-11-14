@@ -77,9 +77,12 @@ def test_online_rules(client, admin, world):
     c = customer(client)
     c.post("/api/customer/orders", {"area_code": w["a1"]["code"], "lines": [{"sku_id": w["small"]["id"], "qty": 1}]},
            expect=400)
-    # 小程序默认不允许超卖
-    c.post("/api/customer/orders", {"area_code": w["a1"]["code"], "location_note": "1",
-                                    "lines": [{"sku_id": w["big"]["id"], "qty": 51}]}, expect=409)
+    # 默认库存不够也可以下单；后台关掉后不允许超卖
+    over = {"area_code": w["a1"]["code"], "location_note": "1", "lines": [{"sku_id": w["big"]["id"], "qty": 51}]}
+    o = c.post("/api/customer/orders", over)
+    c.post(f"/api/customer/orders/{o['id']}/cancel")
+    admin.put("/api/settings/rules", {"online_allow_negative": False})
+    c.post("/api/customer/orders", over, expect=409)
     # 顾客端不可见的商品不能下单
     p = w["ice"]
     admin.put(f"/api/products/{p['id']}", {"name": p["name"], "online_visible": False, "skus": p["skus"]})

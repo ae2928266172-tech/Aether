@@ -70,6 +70,13 @@ def build_items(db: Session, lines: list[dict], online: bool) -> list[OrderItem]
     return items
 
 
+def discount_limits(user: User) -> tuple[int, int | None]:
+    """（最低折扣，单笔最多调低金额）。账号单独设置优先，否则用角色设置。"""
+    rate = user.min_discount_rate if user.min_discount_rate is not None else (user.role.min_discount_rate or 1)
+    adj = user.max_adjust_amount if user.max_adjust_amount is not None else user.role.max_adjust_amount
+    return rate, adj
+
+
 def apply_pricing(order: Order, user: User | None, discount_rate: int | None, payable: int | None):
     """计算本次应收。discount_rate 如 95 表示 9.5 折；payable 为直接改后的应收（分）。"""
     original = sum(i.amount for i in order.items)
@@ -90,7 +97,15 @@ def apply_pricing(order: Order, user: User | None, discount_rate: int | None, pa
             raise HTTPException(400, "只能调低应收金额，不能高于" + ("折后金额" if order.discount_rate else "商品金额"))
         if payable < 0:
             raise HTTPException(400, "应收金额不能为负数")
+        max_adjust = discount_limits(user)[1]
+        if max_adjust is not None and target - payable > max_adjust:
+            raise HTTPException(403, f"你的权限单笔最多调低 {max_adjust / 100:.2f} 元")
         target = payable
+    if user is not None and target < original:
+        min_rate = discount_limits(user)[0]
+        floor = -(-original * min_rate // 100)  # 向上取整
+        if target < floor:
+            raise HTTPException(403, f"你的权限最低只能打 {min_rate / 10:g} 折，本单应收不能低于 {floor / 100:.2f} 元")
     order.payable_amount = target
     _allocate(order.items, target)
 

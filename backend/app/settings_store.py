@@ -1,6 +1,7 @@
 """业务规则和小票模板的默认值。存于 settings 表，后台可修改。
 
-带“待确认”的规则是向 Aether 确认中的默认建议，改这里或后台设置即可，不需要改代码。
+以下默认值已于 2026-11-14 经 Aether 确认：下单就扣库存、库存不够也可以卖（收银和小程序都允许）。
+后台“业务规则”可以改，不需要改代码。
 """
 import copy
 
@@ -10,12 +11,12 @@ from .models import Setting
 
 DEFAULTS: dict[str, dict] = {
     "rules": {
-        # 待确认：小程序订单在下单时扣库存（create），或接单时扣（accept）
+        # 小程序订单在下单时扣库存（create），或接单时扣（accept）
         "online_deduct_on": "create",
-        # 待确认：门店收银库存不足时是否允许卖成负数
+        # 门店收银库存不足时是否允许卖成负数
         "pos_allow_negative": True,
-        # 待确认：小程序订单库存不足时是否允许下单
-        "online_allow_negative": False,
+        # 小程序订单库存不足时是否允许下单
+        "online_allow_negative": True,
         # 小程序下单是否必须填写位置（床号、桌号等）
         "online_location_required": True,
         "location_label": "床号",

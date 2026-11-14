@@ -58,6 +58,35 @@ def test_discount_permission(admin, client, world):
     assert roles
 
 
+def test_discount_limits(admin, client, world):
+    """角色设最低 8 折、单笔最多抹 5 元；账号单独设置优先于角色。"""
+    w = world
+    role = w["store_role"]
+    admin.put(f"/api/roles/{role['id']}", {"name": role["name"], "permissions": role["permissions"],
+                                            "min_discount_rate": 80, "max_adjust_amount": 500})
+    clerk = w["clerk"]
+    lines = [{"sku_id": w["small"]["id"], "qty": 10}]  # 原价 100 元
+    clerk.post("/api/pos/quote", {"lines": lines, "discount_rate": 80})
+    clerk.post("/api/pos/quote", {"lines": lines, "discount_rate": 79}, expect=403)
+    clerk.post("/api/pos/quote", {"lines": lines, "payable": 9500})
+    clerk.post("/api/pos/quote", {"lines": lines, "payable": 9499}, expect=403)
+    # 8 折后再抹零也不能低于 8 折
+    clerk.post("/api/pos/quote", {"lines": lines, "discount_rate": 80, "payable": 7999}, expect=403)
+    # 小程序订单收款时同样受限
+    from conftest import customer
+    c = customer(client)
+    o = c.post("/api/customer/orders", {"area_code": w["a1"]["code"], "location_note": "1", "lines": lines})
+    clerk.post(f"/api/orders/{o['id']}/collect", {"payments": [{"method": "cash", "amount": 7000}], "discount_rate": 70},
+               expect=403)
+    # 给这个账号单独放宽到 7 折
+    u = next(x for x in admin.get("/api/users") if x["username"] == "clerk1")
+    admin.put(f"/api/users/{u['id']}", {"username": "clerk1", "role_id": u["role_id"], "store_ids": [w["s1"]["id"]],
+                                        "min_discount_rate": 70})
+    clerk.post(f"/api/orders/{o['id']}/collect", {"payments": [{"method": "cash", "amount": 7000}], "discount_rate": 70})
+    # 管理员默认不限
+    admin.post("/api/pos/quote", {"lines": lines, "discount_rate": 10})
+
+
 def test_idempotent_and_payment_checks(admin, world):
     w, clerk = world, world["clerk"]
     lines = [{"sku_id": w["small"]["id"], "qty": 1}]
