@@ -610,12 +610,37 @@ const ReceiptSettings = {
           <el-checkbox value="registrant">注册人</el-checkbox><el-checkbox value="production_address">生产地址</el-checkbox></el-checkbox-group>
       </el-form-item>
       <el-form-item label="打印份数"><el-input-number v-model="f.copies" :min="1" :max="3" /></el-form-item>
+      <div class="form-section">排版<small>字号：正常 / 加高（字变高）/ 加大（宽高都放大，一行字数减半）</small></div>
+      <el-table :data="parts" size="small" border style="margin-bottom:14px">
+        <el-table-column prop="label" label="部分" width="120" />
+        <el-table-column label="字号" width="230"><template #default="{row}">
+          <el-radio-group v-model="f[row.k + '_size']" size="small"><el-radio-button value="s">正常</el-radio-button><el-radio-button value="m">加高</el-radio-button><el-radio-button value="l">加大</el-radio-button></el-radio-group></template></el-table-column>
+        <el-table-column label="加粗" width="70"><template #default="{row}"><el-checkbox v-if="row.bold" v-model="f[row.k + '_bold']" /></template></el-table-column>
+        <el-table-column label="对齐"><template #default="{row}">
+          <el-radio-group v-if="row.align" v-model="f[row.align + '_align']" size="small"><el-radio-button value="left">左</el-radio-button><el-radio-button value="center">中</el-radio-button><el-radio-button value="right">右</el-radio-button></el-radio-group>
+          <span v-else-if="row.alignNote" class="muted" style="font-size:12px">{{row.alignNote}}</span></template></el-table-column>
+      </el-table>
+      <el-form-item label="分隔线"><el-radio-group v-model="f.separator"><el-radio-button value="-">- - -</el-radio-button><el-radio-button value="=">= = =</el-radio-button><el-radio-button value="*">* * *</el-radio-button><el-radio-button value=".">· · ·</el-radio-button><el-radio-button value="_">——</el-radio-button><el-radio-button value=" ">空行</el-radio-button></el-radio-group></el-form-item>
+      <el-form-item label="行距"><el-radio-group v-model="f.line_spacing"><el-radio-button value="compact">紧凑</el-radio-button><el-radio-button value="normal">正常</el-radio-button><el-radio-button value="loose">宽松</el-radio-button></el-radio-group></el-form-item>
+      <el-form-item label="底部图片大小"><el-slider v-model="f.image_width" :min="20" :max="100" :step="5" style="width:260px" :format-tooltip="v => v + '% 纸宽'" /></el-form-item>
+      <el-form-item label="顶部留白"><el-input-number v-model="f.top_blank" :min="0" :max="10" /> <span class="muted">&nbsp;行</span></el-form-item>
+      <el-form-item label="底部走纸"><el-input-number v-model="f.bottom_blank" :min="0" :max="10" /> <span class="muted">&nbsp;行（方便撕纸）</span></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button><el-button @click="testPrint">打印测试页</el-button></el-form-item>
     </el-form>
     <div><div class="muted" style="margin-bottom:6px">预览（示例订单）</div><div class="receipt-preview"><iframe :srcdoc="html"></iframe></div></div>
   </div>`,
   setup() {
     const f = reactive({ medical_fields: [] }), html = ref(''), last = ref(null);
+    const parts = [
+      { k: 'title', label: '标题', bold: true, align: 'title' },
+      { k: 'store', label: '门店名', bold: true, alignNote: '同标题' },
+      { k: 'header', label: '抬头文字', align: 'header' },
+      { k: 'info', label: '单号 / 时间等' },
+      { k: 'item', label: '商品名称', bold: true },
+      { k: 'medical', label: '医疗器械资料' },
+      { k: 'total', label: '应收金额', bold: true },
+      { k: 'footer', label: '底部文字', align: 'footer' },
+    ];
     const toggles = { show_store: '门店名', show_order_no: '单号', show_time: '时间', show_area: '区域 / 位置', show_cashier: '操作员',
       show_sku: '规格', show_unit_price: '单价', show_discount: '优惠', show_payment: '收款方式', show_remark: '备注' };
     let timer = null;
@@ -625,7 +650,7 @@ const ReceiptSettings = {
     const save = async () => { try { await api.put('/api/settings/receipt', { ...f }); ok(); } catch (e) { err(e); } };
     const testPrint = () => last.value && Shouyin.printReceipt(last.value);
     onMounted(async () => { try { Object.assign(f, await api.get('/api/settings/receipt')); } catch (e) { err(e); } });
-    return { f, html, toggles, upload, save, testPrint };
+    return { f, html, toggles, parts, upload, save, testPrint };
   },
 };
 

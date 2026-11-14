@@ -71,6 +71,28 @@ def test_test_page_and_status(client, admin, world):
     w["clerk"].get(f"/api/stores/{sid}/printer", expect=403)
 
 
+def test_receipt_style(client, admin, world):
+    key = _agent_mode(admin, world)
+    admin.put("/api/settings/receipt", {"title": "我的小店", "title_size": "s", "item_size": "l", "footer_align": "right",
+                                        "footer": "谢谢", "separator": "=", "line_spacing": "loose", "bottom_blank": 6})
+    admin.put("/api/settings/receipt", {"title_size": "huge"}, expect=400)
+    admin.put("/api/settings/receipt", {"image_width": 5}, expect=400)
+    c = customer(client)
+    c.post("/api/customer/orders", {"area_code": world["a1"]["code"], "location_note": "1",
+                                    "lines": [{"sku_id": world["small"]["id"], "qty": 1}]})
+    data = _next(client, key).content
+    title = "我的小店".encode("gb18030")
+    i = data.index(title)
+    assert data[i - 6:i].endswith(b"\x1d!\x00\x1bE\x01")          # 标题：正常字号、加粗
+    j = data.index("杯装水".encode("gb18030"))
+    assert b"\x1d!\x11" in data[j - 8:j]                              # 商品名：加大
+    k = data.index("谢谢".encode("gb18030"))
+    assert b"\x1ba\x02" in data[k - 8:k]                              # 底部文字：右对齐
+    assert b"=" * 32 in data and b"\x1b3\x50" in data and b"\x1bd\x06\x1dVB\x00" in data
+    pv = admin.post("/api/settings/receipt/preview", {"item_size": "m"})
+    assert pv["style"]["item_size"] == "m" and pv["title"] == "我的小店"
+
+
 def test_download_agent(client):
     import io
     import zipfile

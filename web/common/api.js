@@ -60,33 +60,48 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
   // 小票：把接口返回的结构排成 58mm / 80mm 网页，在隐藏框架里调用打印
+  // 按后台“小票设置 → 排版”生成网页小票（与小票机直连出票的排版一致）
   function receiptHtml(r) {
     const w = r.paper_width === 80 ? 72 : 48; // 可打印宽度 mm
+    const st = r.style || {};
+    const px = { s: 12, m: 16, l: 22 };
+    const fs = (k) => px[st[k] || 's'] || 12;
+    const sty = (sizeKey, bold, align) => `font-size:${fs(sizeKey)}px;${bold ? 'font-weight:bold;' : ''}${align ? 'text-align:' + align + ';' : ''}`;
+    const sepChar = (st.separator || '-');
+    const hr = sepChar === ' ' ? '<div style="height:8px"></div>' : `<div class="hr" style="border-top:1px ${sepChar === '=' ? 'double' : (sepChar === '.' || sepChar === '*' ? 'dotted' : (sepChar === '_' ? 'solid' : 'dashed'))} #000"></div>`;
     const rows = [];
-    r.head.forEach((h, i) => rows.push(`<div class="c ${i === 0 ? 'b big' : ''}">${esc(h)}</div>`));
-    rows.push('<div class="hr"></div>');
-    r.info.forEach(([k, v]) => rows.push(`<div>${k ? esc(k) + '：' : ''}${esc(v)}</div>`));
-    rows.push('<div class="hr"></div>');
+    for (let i = 0; i < (st.top_blank || 0); i++) rows.push('<div>&nbsp;</div>');
+    const head = r.title !== undefined ? null : r.head;
+    if (head) head.forEach((h, i) => rows.push(`<div style="${sty(i === 0 ? 'title_size' : 'header_size', i === 0, 'center')}">${esc(h)}</div>`));
+    if (r.title) rows.push(`<div style="${sty('title_size', st.title_bold, st.title_align || 'center')}">${esc(r.title)}</div>`);
+    if (r.store_line) rows.push(`<div style="${sty('store_size', st.store_bold, st.title_align || 'center')}">${esc(r.store_line)}</div>`);
+    (r.header_lines || []).forEach(h => rows.push(`<div style="${sty('header_size', false, st.header_align || 'center')}">${esc(h)}</div>`));
+    rows.push(hr);
+    r.info.forEach(([k, v]) => rows.push(k ? `<div style="${sty('info_size')}">${esc(k)}：${esc(v)}</div>` : `<div style="${sty('info_size', true, 'center')}">${esc(v)}</div>`));
+    rows.push(hr);
     r.items.forEach(it => {
-      rows.push(`<div class="b">${esc(it.name)}</div>`);
-      rows.push(`<div class="lr"><span>&nbsp;&nbsp;${it.qty}${esc(it.unit)}${it.unit_price ? ' × ' + it.unit_price : ''}</span><span>${it.amount}</span></div>`);
-      (it.medical || []).forEach(([k, v]) => rows.push(`<div class="s">&nbsp;&nbsp;${esc(k)}：${esc(v)}</div>`));
-      if (it.refunded_qty) rows.push(`<div class="s">&nbsp;&nbsp;已退 ${it.refunded_qty}</div>`);
+      rows.push(`<div style="${sty('item_size', st.item_bold)}">${esc(it.name)}</div>`);
+      rows.push(`<div class="lr" style="${sty('item_size')}"><span>&nbsp;&nbsp;${it.qty}${esc(it.unit)}${it.unit_price ? ' × ' + it.unit_price : ''}</span><span>${it.amount}</span></div>`);
+      (it.medical || []).forEach(([k, v]) => rows.push(`<div style="${sty('medical_size')}">&nbsp;&nbsp;${esc(k)}：${esc(v)}</div>`));
+      if (it.refunded_qty) rows.push(`<div>&nbsp;&nbsp;已退 ${it.refunded_qty}</div>`);
     });
-    rows.push('<div class="hr"></div>');
-    r.totals.forEach(([k, v]) => rows.push(`<div class="lr ${k === '应收' ? 'b' : ''}"><span>${esc(k)}</span><span>${esc(v)}</span></div>`));
-    if (r.remark) rows.push(`<div>备注：${esc(r.remark)}</div>`);
-    rows.push('<div class="hr"></div>');
-    r.footer.forEach(f => rows.push(`<div class="c">${esc(f)}</div>`));
-    if (r.footer_image) rows.push(`<div class="c"><img src="${esc(r.footer_image)}" style="width:${Math.round(w * 0.6)}mm"></div>`);
+    rows.push(hr);
+    r.totals.forEach(([k, v]) => rows.push(k === '应收'
+      ? `<div class="lr" style="${sty('total_size', st.total_bold)}"><span>${esc(k)}</span><span>${esc(v)}</span></div>`
+      : `<div class="lr"><span>${esc(k)}</span><span>${esc(v)}</span></div>`));
+    if (r.remark) rows.push(`<div style="${sty('info_size')}">备注：${esc(r.remark)}</div>`);
+    rows.push(hr);
+    r.footer.forEach(f => rows.push(`<div style="${sty('footer_size', false, st.footer_align || 'center')}">${esc(f)}</div>`));
+    if (r.footer_image) rows.push(`<div style="text-align:${st.footer_align || 'center'}"><img src="${esc(r.footer_image)}" style="width:${Math.round(w * (st.image_width || 60) / 100)}mm"></div>`);
+    for (let i = 0; i < (st.bottom_blank == null ? 4 : st.bottom_blank); i++) rows.push('<div>&nbsp;</div>');
+    const lh = { compact: 1.25, normal: 1.5, loose: 1.9 }[st.line_spacing || 'normal'];
     const page = `<div class="page">${rows.join('')}</div>`;
     return `<!doctype html><html><head><meta charset="utf-8"><style>
       @page { size: ${r.paper_width}mm auto; margin: 0; }
-      body { margin: 0; font-family: "Microsoft YaHei", "SimHei", sans-serif; font-size: 12px; color: #000; }
-      .page { width: ${w}mm; padding: 2mm ${(r.paper_width - w) / 2}mm 6mm; page-break-after: always; }
-      .c { text-align: center; } .b { font-weight: bold; } .big { font-size: 15px; } .s { font-size: 10px; }
+      body { margin: 0; font-family: "Microsoft YaHei", "SimHei", sans-serif; font-size: 12px; color: #000; line-height: ${lh}; }
+      .page { width: ${w}mm; padding: 2mm ${(r.paper_width - w) / 2}mm 2mm; page-break-after: always; }
       .lr { display: flex; justify-content: space-between; gap: 4px; }
-      .hr { border-top: 1px dashed #000; margin: 3px 0; }
+      .hr { margin: 3px 0; }
       img { display: inline-block; margin-top: 4px; }
     </style></head><body>${page.repeat(Math.max(1, r.copies || 1))}</body></html>`;
   }

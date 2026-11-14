@@ -75,61 +75,83 @@ def raster(path: str, dots: int) -> bytes:
     return bytes(data)
 
 
+SIZES = {"s": b"\x00", "m": b"\x01", "l": b"\x11"}  # 正常 / 加高 / 宽高都放大
+ALIGNS = {"left": b"\x00", "center": b"\x01", "right": b"\x02"}
+SPACING = {"compact": ESC + b"3\x18", "normal": ESC + b"2", "loose": ESC + b"3\x50"}
+
+
 def build(r: dict) -> bytes:
-    """r 为 services.receipt.build_receipt 的返回值。"""
+    """r 为 services.receipt.build_receipt 的返回值，按其中 style 排版。"""
+    from .receipt import DEFAULT_STYLE
+    st = {**DEFAULT_STYLE, **(r.get("style") or {})}
     width = 32 if r.get("paper_width", 58) == 58 else 48
     dots = 384 if width == 32 else 576
-    sep = line("-" * width)
-    one = bytearray(INIT)
-    one += CENTER
-    for i, h in enumerate(r["head"]):
-        if i == 0:
-            one += SIZE_DOUBLE + BOLD_ON
-            for part in wrap(h, width // 2):
-                one += line(part)
-            one += SIZE_NORMAL + BOLD_OFF
-        else:
-            for part in wrap(h, width):
-                one += line(part)
-    one += LEFT + sep
+
+    def size(key):  # 返回（指令，该字号下每行可容纳的半角字符数）
+        s = st.get(key, "s")
+        return GS + b"!" + SIZES.get(s, b"\x00"), (width // 2 if s == "l" else width)
+
+    def align(a):
+        return ESC + b"a" + ALIGNS.get(a, b"\x00")
+
+    def block(texts, size_key, bold=False, al="left"):
+        cmd, w = size(size_key)
+        out = bytearray(align(al) + cmd + (BOLD_ON if bold else b""))
+        for t in texts:
+            for part in wrap(t, w):
+                out += line(part)
+        out += SIZE_NORMAL + BOLD_OFF + LEFT
+        return bytes(out)
+
+    def lr(left, right, size_key, bold=False):
+        cmd, w = size(size_key)
+        return cmd + (BOLD_ON if bold else b"") + line(_lr(left, right, w)) + SIZE_NORMAL + BOLD_OFF
+
+    sep_char = (st.get("separator") or "-")[:1]
+    sep = line(sep_char * width)
+    one = bytearray(INIT + SPACING.get(st.get("line_spacing"), b""))
+    one += b"\n" * int(st.get("top_blank", 0))
+    if r.get("title"):
+        one += block([r["title"]], "title_size", st.get("title_bold"), st.get("title_align", "center"))
+    if r.get("store_line"):
+        one += block([r["store_line"]], "store_size", st.get("store_bold"), st.get("title_align", "center"))
+    if r.get("header_lines"):
+        one += block(r["header_lines"], "header_size", False, st.get("header_align", "center"))
+    if not r.get("title") and not r.get("store_line") and not r.get("header_lines") and r.get("head"):
+        one += block(r["head"], "header_size", False, "center")  # 兼容旧结构
+    one += sep
     for k, v in r["info"]:
-        text = f"{k}：{v}" if k else v
         if not k:  # 【补打】
-            one += CENTER + BOLD_ON + line(text) + BOLD_OFF + LEFT
-            continue
-        for part in wrap(text, width):
-            one += line(part)
+            one += block([v], "info_size", True, "center")
+        else:
+            one += block([f"{k}：{v}"], "info_size")
     one += sep
     for it in r["items"]:
-        one += BOLD_ON
-        for part in wrap(it["name"], width):
-            one += line(part)
-        one += BOLD_OFF
+        one += block([it["name"]], "item_size", st.get("item_bold"))
         left = f"  {it['qty']}{it['unit']}" + (f" x {it['unit_price']}" if it.get("unit_price") else "")
-        one += line(_lr(left, it["amount"], width))
-        for k, v in it.get("medical", []):
-            for part in wrap(f"  {k}：{v}", width):
-                one += line(part)
+        one += lr(left, it["amount"], "item_size")
+        if it.get("medical"):
+            one += block([f"  {k}：{v}" for k, v in it["medical"]], "medical_size")
         if it.get("refunded_qty"):
             one += line(f"  已退 {it['refunded_qty']}")
     one += sep
     for k, v in r["totals"]:
         if k == "应收":
-            one += BOLD_ON + SIZE_TALL + line(_lr(k, v, width)) + SIZE_NORMAL + BOLD_OFF
+            one += lr(k, v, "total_size", st.get("total_bold"))
         else:
             one += line(_lr(k, v, width))
     if r.get("remark"):
-        for part in wrap("备注：" + r["remark"], width):
-            one += line(part)
-    one += sep + CENTER
-    for f in r["footer"]:
-        for part in wrap(f, width):
-            one += line(part)
+        one += block(["备注：" + r["remark"]], "info_size")
+    one += sep
+    if r.get("footer"):
+        one += block(r["footer"], "footer_size", False, st.get("footer_align", "center"))
     img = r.get("footer_image") or ""
     if img.startswith("/media/"):
-        one += raster(os.path.join(_media_dir(), os.path.basename(img)), int(dots * 0.6))
-        one += b"\n"
-    one += LEFT + CUT
+        pct = max(20, min(100, int(st.get("image_width", 60))))
+        one += align(st.get("footer_align", "center"))
+        one += raster(os.path.join(_media_dir(), os.path.basename(img)), int(dots * pct / 100))
+        one += b"\n" + LEFT
+    one += ESC + b"d" + bytes([max(0, min(10, int(st.get("bottom_blank", 4))))]) + GS + b"V\x42\x00"
     return bytes(one) * max(1, int(r.get("copies", 1)))
 
 

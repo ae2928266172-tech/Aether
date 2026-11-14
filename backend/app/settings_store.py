@@ -41,6 +41,20 @@ DEFAULTS: dict[str, dict] = {
         "show_medical": False,
         "medical_fields": ["reg_cert_no", "production_license_no", "registrant", "production_address"],
         "copies": 1,
+        # 排版（含义见 services/receipt.py 的 DEFAULT_STYLE）
+        "title_size": "l", "title_bold": True, "title_align": "center",
+        "store_size": "s", "store_bold": False,
+        "header_size": "s", "header_align": "center",
+        "info_size": "s",
+        "item_size": "s", "item_bold": True,
+        "medical_size": "s",
+        "total_size": "m", "total_bold": True,
+        "footer_size": "s", "footer_align": "center",
+        "separator": "-",
+        "line_spacing": "normal",
+        "image_width": 60,
+        "top_blank": 0,
+        "bottom_blank": 4,
     },
 }
 
