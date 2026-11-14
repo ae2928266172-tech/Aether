@@ -1,0 +1,64 @@
+"""后台设置：小票模板、业务规则。"""
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from ..db import get_db
+from ..models import Order, OrderItem, Store, User
+from ..security import current_user, require
+from ..services.receipt import build_receipt
+from ..settings_store import get_setting, set_setting
+
+router = APIRouter(prefix="/api/settings", tags=["设置"])
+
+
+@router.get("/receipt")
+def get_receipt(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return get_setting(db, "receipt")
+
+
+@router.put("/receipt")
+def put_receipt(body: dict, db: Session = Depends(get_db), _: User = Depends(require("receipt_config"))):
+    if "paper_width" in body and int(body["paper_width"]) not in (58, 80):
+        raise HTTPException(400, "纸宽只能是 58 或 80")
+    if "copies" in body and not (1 <= int(body["copies"]) <= 3):
+        raise HTTPException(400, "打印份数为 1 到 3")
+    v = set_setting(db, "receipt", body)
+    db.commit()
+    return v
+
+
+@router.post("/receipt/preview")
+def preview(body: dict, db: Session = Depends(get_db), user: User = Depends(require("receipt_config"))):
+    """用示例订单预览小票（不保存设置、不写数据库）。"""
+    set_setting(db, "receipt", body)
+    store = Store(name="示例门店")
+    o = Order(no="S202611140001", source="online", store=store, area_name="一病区", location_note="12 床",
+              status="completed", pay_status="paid", original_amount=3000, payable_amount=2850, discount_rate=95,
+              paid_amount=2850, refunded_amount=0, remark="", print_count=0)
+    from ..db import now
+    o.created_at = now()
+    o.items = [OrderItem(product_name="一次性护理垫", sku_name="大号", unit="包", qty=2, unit_price=1000, amount=2000,
+                         paid_share=1900, refunded_qty=0,
+                         medical_info={"reg_cert_no": "苏械注准20230000000", "production_license_no": "苏食药监械生产许00000000号",
+                                       "registrant": "示例医疗用品有限公司", "production_address": "江苏省南京市示例路 1 号"}),
+               OrderItem(product_name="纸杯", sku_name="默认", unit="个", qty=10, unit_price=100, amount=1000,
+                         paid_share=950, refunded_qty=0, medical_info={})]
+    from ..models import Payment
+    o.payments = [Payment(kind="pay", method="cash", amount=2850, received=3000, change=150)]
+    r = build_receipt(db, o, user)
+    db.rollback()
+    return r
+
+
+@router.get("/rules")
+def get_rules(db: Session = Depends(get_db), _: User = Depends(current_user)):
+    return get_setting(db, "rules")
+
+
+@router.put("/rules")
+def put_rules(body: dict, db: Session = Depends(get_db), _: User = Depends(require("stores"))):
+    if "online_deduct_on" in body and body["online_deduct_on"] not in ("create", "accept"):
+        raise HTTPException(400, "扣库存时机只能是下单时或接单时")
+    v = set_setting(db, "rules", body)
+    db.commit()
+    return v
