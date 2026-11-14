@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <title>扫码点单</title>
+  <style>
+    :root { --p: #0f766e; --bg: #f5f6f8; --b: #e5e7eb; --m: #8a8f99; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f2329; }
+    header { background: var(--p); color: #fff; padding: 14px 16px; }
+    header .s { opacity: .85; font-size: 13px; margin-top: 2px; }
+    .wrap { display: flex; height: calc(100vh - 62px - 64px); }
+    .cats { width: 88px; background: #fff; overflow: auto; flex-shrink: 0; }
+    .cats div { padding: 14px 8px; font-size: 14px; text-align: center; border-left: 3px solid transparent; }
+    .cats div.on { background: var(--bg); border-left-color: var(--p); font-weight: 600; }
+    .list { flex: 1; overflow: auto; padding: 8px 12px 20px; }
+    .item { background: #fff; border-radius: 10px; padding: 10px; margin-bottom: 10px; display: flex; gap: 10px; }
+    .item .img { width: 72px; height: 72px; border-radius: 8px; background: #eef3f2 center/cover no-repeat; flex-shrink: 0; }
+    .item .info { flex: 1; min-width: 0; }
+    .item .n { font-weight: 600; }
+    .item .d { color: var(--m); font-size: 12px; margin: 2px 0 6px; }
+    .sku { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .sku .pr { color: var(--p); font-weight: 600; }
+    .qty { display: flex; align-items: center; gap: 8px; }
+    .qty button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--p); background: #fff; color: var(--p); font-size: 18px; line-height: 1; }
+    .qty button.add { background: var(--p); color: #fff; }
+    .bar { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; background: #fff; border-top: 1px solid var(--b); display: flex; align-items: center; padding: 0 16px; gap: 12px; }
+    .bar .t { flex: 1; font-size: 18px; font-weight: 700; color: var(--p); }
+    .btn { background: var(--p); color: #fff; border: 0; border-radius: 22px; padding: 12px 24px; font-size: 16px; }
+    .btn:disabled { background: #b8c7c5; }
+    .mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; z-index: 9; }
+    .sheet { background: #fff; width: 100%; border-radius: 14px 14px 0 0; padding: 16px; max-height: 85vh; overflow: auto; }
+    .sheet h3 { margin: 0 0 12px; }
+    .row { display: flex; justify-content: space-between; padding: 6px 0; }
+    input, textarea { width: 100%; padding: 10px; border: 1px solid var(--b); border-radius: 8px; font-size: 15px; margin: 4px 0 10px; }
+    .muted { color: var(--m); font-size: 13px; }
+    .err { padding: 40px 20px; text-align: center; color: var(--m); }
+    .ord { background: #fff; border-radius: 10px; padding: 12px; margin: 10px 12px; }
+    .link { color: var(--p); background: none; border: 0; font-size: 14px; }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div v-if="error" class="err">{{error}}</div>
+  <template v-else-if="area">
+    <header><div>{{area.store_name}}</div><div class="s">{{area.area_label}}：{{area.area_name}}　<button class="link" style="color:#fff" @click="showOrders">我的订单</button></div></header>
+    <div class="wrap">
+      <div class="cats"><div :class="{on:!cat}" @click="cat=null">全部</div><div v-for="c in topCats" :key="c.id" :class="{on:cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
+      <div class="list">
+        <div v-for="p in shown" :key="p.id" class="item">
+          <div class="img" :style="p.image ? {backgroundImage:'url('+p.image+')'} : {}"></div>
+          <div class="info">
+            <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div>
+            <div v-for="s in p.skus" :key="s.id" class="sku">
+              <span>{{s.name !== '默认' ? s.name + '　' : ''}}<span class="pr">¥{{yuan(s.price)}}</span></span>
+              <span class="qty"><button v-if="qty[s.id]" @click="dec(s.id)">−</button><span v-if="qty[s.id]">{{qty[s.id]}}</span><button class="add" @click="inc(s.id)">＋</button></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="bar"><div class="t">¥{{yuan(total)}}<span class="muted" style="font-weight:400"> 共 {{count}} 件</span></div><button class="btn" :disabled="!count" @click="sheet=true">去下单</button></div>
+    <div v-if="sheet" class="mask" @click.self="sheet=false"><div class="sheet">
+      <h3>确认订单</h3>
+      <div v-for="l in lines" :key="l.sku_id" class="row"><span>{{l.name}} × {{l.qty}}</span><span>¥{{yuan(l.price*l.qty)}}</span></div>
+      <div class="row"><b>合计</b><b>¥{{yuan(total)}}</b></div>
+      <label>{{area.location_label}}<span v-if="area.location_required">（必填）</span></label><input v-model="loc" :placeholder="'请输入' + area.location_label">
+      <label>联系电话（可选）</label><input v-model="phone" type="tel">
+      <label>备注（可选）</label><textarea v-model="remark" rows="2"></textarea>
+      <div class="muted" style="margin-bottom:10px">提交后由门店接单并配送，付款方式请听从门店工作人员安排。</div>
+      <button class="btn" style="width:100%" :disabled="busy" @click="submit">提交订单</button>
+    </div></div>
+    <div v-if="ordersOpen" class="mask" @click.self="ordersOpen=false"><div class="sheet" style="background:var(--bg)">
+      <h3>我的订单</h3>
+      <div v-if="!orders.length" class="muted">还没有订单</div>
+      <div v-for="o in orders" :key="o.id" class="ord">
+        <div class="row"><b>{{o.status_text}}</b><span class="muted">{{o.created_at}}</span></div>
+        <div>{{o.items.map(i => i.product_name + (i.sku_name!=='默认' ? '('+i.sku_name+')' : '') + '×' + i.qty).join('，')}}</div>
+        <div class="row"><span>¥{{yuan(o.payable_amount)}} · {{o.pay_status_text}}</span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
+      </div>
+    </div></div>
+  </template>
+  <div v-else class="err">加载中…</div>
+</div>
+<script>window.APP_KIND = 'customer';</script>
+<script src="../vendor/vue.global.prod.js"></script>
+<script src="../common/api.js"></script>
+<script>
+const { createApp, ref, reactive, computed, onMounted } = Vue;
+const { api, yuan, rid } = Shouyin;
+createApp({
+  setup() {
+    const code = new URLSearchParams(location.search).get('area') || '';
+    const area = ref(null), error = ref(''), cats = ref([]), products = ref([]), cat = ref(null), qty = reactive({});
+    const sheet = ref(false), loc = ref(''), phone = ref(''), remark = ref(''), busy = ref(false), ordersOpen = ref(false), orders = ref([]);
+    let reqId = rid();
+    const topCats = computed(() => cats.value.filter(c => !c.parent_id && products.value.some(p => p.category_id === c.id || cats.value.some(s => s.parent_id === c.id && s.id === p.category_id))));
+    const shown = computed(() => { if (!cat.value) return products.value; const ids = new Set([cat.value, ...cats.value.filter(c => c.parent_id === cat.value).map(c => c.id)]); return products.value.filter(p => ids.has(p.category_id)); });
+    const skuMap = computed(() => { const m = {}; products.value.forEach(p => p.skus.forEach(s => m[s.id] = { name: p.name + (s.name !== '默认' ? '(' + s.name + ')' : ''), price: s.price })); return m; });
+    const lines = computed(() => Object.entries(qty).filter(([, q]) => q > 0).map(([id, q]) => ({ sku_id: +id, qty: q, ...skuMap.value[id] })));
+    const count = computed(() => lines.value.reduce((a, l) => a + l.qty, 0));
+    const total = computed(() => lines.value.reduce((a, l) => a + l.qty * l.price, 0));
+    const inc = (id) => qty[id] = (qty[id] || 0) + 1;
+    const dec = (id) => qty[id] = Math.max(0, (qty[id] || 0) - 1);
+    const ensureLogin = async () => {
+      if (api.token()) return;
+      // 小程序上线前的网页版：用本机随机标识免注册登录；小程序里改为 wx.login 的 code
+      let dev; try { dev = localStorage.getItem('shouyin_device') || rid(); localStorage.setItem('shouyin_device', dev); } catch (e) { dev = rid(); }
+      const r = await api.post('/api/customer/login', { code: dev }); api.setToken(r.token);
+    };
+    window.onUnauthorized = () => { api.setToken(''); };
+    const submit = async () => {
+      if (area.value.location_required && !loc.value.trim()) return alert('请填写' + area.value.location_label);
+      busy.value = true;
+      try {
+        await ensureLogin();
+        await api.post('/api/customer/orders', { area_code: code, lines: lines.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })), location_note: loc.value, contact_phone: phone.value, remark: remark.value, request_id: reqId });
+        reqId = rid(); Object.keys(qty).forEach(k => delete qty[k]); sheet.value = false; alert('下单成功，门店会尽快处理'); showOrders();
+      } catch (e) { alert(e.message); } finally { busy.value = false; }
+    };
+    const showOrders = async () => { try { await ensureLogin(); orders.value = await api.get('/api/customer/orders'); ordersOpen.value = true; } catch (e) { alert(e.message); } };
+    const cancel = async (o) => { if (!confirm('确定取消这个订单？')) return; try { await api.post('/api/customer/orders/' + o.id + '/cancel'); showOrders(); } catch (e) { alert(e.message); } };
+    onMounted(async () => {
+      if (!code) { error.value = '请扫描区域二维码进入'; return; }
+      try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; document.title = area.value.store_name; }
+      catch (e) { error.value = e.message; }
+    });
+    return { area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+  },
+}).mount('#app');
+</script>
+</body>
+</html>
