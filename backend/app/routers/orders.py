@@ -90,12 +90,8 @@ def list_orders(store_id: int | None = None, status: str | None = None, source: 
         q = q.where(Order.store_id == store_id)
     elif not user.role.is_admin:
         q = q.where(Order.store_id.in_([s.id for s in user.stores]))
-    if status:
-        q = q.where(Order.status.in_(status.split(",")))
     if source:
         q = q.where(Order.source == source)
-    if pay_status:
-        q = q.where(Order.pay_status.in_(pay_status.split(",")))
     if area_id:
         q = q.where(Order.area_id == area_id)
     if begin:
@@ -105,10 +101,31 @@ def list_orders(store_id: int | None = None, status: str | None = None, source: 
     if keyword:
         q = q.where(Order.no.contains(keyword) | Order.location_note.contains(keyword)
                     | Order.contact_phone.contains(keyword))
+    # 各状态数量（不受状态筛选影响，用于页面上的快捷筛选）
+    base = q.subquery()
+    counts = {"all": 0, "pending": 0, "unpaid": 0, "completed": 0, "cancelled": 0, "refund": 0}
+    for st, ps, n in db.execute(select(base.c.status, base.c.pay_status, func.count()).group_by(base.c.status, base.c.pay_status)):
+        counts["all"] += n
+        if st == "pending":
+            counts["pending"] += n
+        if st == "accepted" and ps == "unpaid":
+            counts["unpaid"] += n
+        if st == "completed":
+            counts["completed"] += n
+        if st == "cancelled":
+            counts["cancelled"] += n
+        if ps in ("partial_refunded", "refunded"):
+            counts["refund"] += n
+    if status:
+        q = q.where(Order.status.in_(status.split(",")))
+    if pay_status:
+        q = q.where(Order.pay_status.in_(pay_status.split(",")))
     total = db.scalar(select(func.count()).select_from(q.subquery()))
+    sum_payable = db.scalar(select(func.coalesce(func.sum(q.subquery().c.payable_amount), 0)))
     size = max(1, min(size, 200))
     rows = db.scalars(q.order_by(Order.id.desc()).offset((page - 1) * size).limit(size)).all()
-    return {"total": total, "items": [order_out(o, detail=True) for o in rows]}
+    return {"total": total, "counts": counts, "sum_payable": int(sum_payable or 0),
+            "items": [order_out(o, detail=True) for o in rows]}
 
 
 @router.get("/orders/new")

@@ -6,6 +6,7 @@ const { ElMessage, ElMessageBox } = ElementPlus;
 const money = Shouyin.parseMoney;  // 手填金额 → 分；不是合法数字返回 null
 const blank = (v) => String(v == null ? '' : v).trim() === '';
 const err = (e) => ElMessage.error(e.message || String(e));
+const daysAgo = (n) => { const d = new Date(Date.now() - n * 86400000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const ok = (m) => ElMessage.success(m || '已保存');
 
 // ---------------- 商品 ----------------
@@ -23,24 +24,33 @@ const Products = {
       <span class="grow"></span>
       <el-button type="primary" @click="edit()">新增商品</el-button>
     </div>
-    <el-table :data="rows" border stripe>
-      <el-table-column label="" width="66"><template #default="{row}"><div class="thumb"><img v-if="row.image" :src="row.image"><span v-else>{{row.name.slice(0,1)}}</span></div></template></el-table-column>
-      <el-table-column prop="name" label="商品名称" min-width="140" />
-      <el-table-column prop="code" label="货号" width="100" />
-      <el-table-column prop="category_name" label="分类" width="100" />
-      <el-table-column label="规格 / 售价 / 库存品 × 扣减量" min-width="300">
-        <template #default="{row}">
-          <div v-for="s in row.skus.filter(x=>x.active)" :key="s.id">
-            {{s.name}}　¥{{yuan(s.price)}}　<span class="muted">{{s.stock_item_name ? s.stock_item_name + ' × ' + s.deduct_qty : '不扣库存'}}{{s.barcode ? '　条码 ' + s.barcode : ''}}</span>
-          </div>
-        </template>
-      </el-table-column>
-      <el-table-column prop="supplier_name" label="供应商" width="120" />
-      <el-table-column label="状态" width="110"><template #default="{row}">
-        <el-tag v-if="!row.active" type="info">已下架</el-tag>
-        <el-tag v-else-if="!row.online_visible" type="warning">仅门店</el-tag>
-        <el-tag v-else type="success">在售</el-tag></template></el-table-column>
-      <el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="edit(row)">编辑</el-button></template></el-table-column>
+    <div class="muted" style="margin:-4px 0 12px">共 {{rows.length}} 个商品 · 在售 {{rows.filter(r => r.active).length}} · 仅门店 {{rows.filter(r => r.active && !r.online_visible).length}}</div>
+    <el-table :data="rows" @row-click="edit" row-class-name="clickable">
+      <el-table-column label="商品" min-width="220"><template #default="{row}">
+        <div style="display:flex;align-items:center;gap:12px">
+          <div class="thumb"><img v-if="row.image" :src="row.image"><span v-else>{{row.name.slice(0,1)}}</span></div>
+          <div style="min-width:0"><div class="c-main">{{row.name}}</div>
+            <div class="c-sub">{{[row.code && '货号 ' + row.code, row.supplier_name].filter(Boolean).join(' · ') || '—'}}</div></div>
+        </div></template></el-table-column>
+      <el-table-column label="分类" min-width="150"><template #default="{row}">
+        <span v-for="n in (row.category_name || '').split('、').filter(Boolean)" :key="n" class="chip">{{n}}</span>
+        <span v-if="!row.category_name" class="muted">未分类</span></template></el-table-column>
+      <el-table-column label="规格与售价" min-width="230"><template #default="{row}">
+        <div class="skus"><span v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="sku-chip">{{s.name === '默认' ? '' : s.name + ' '}}<b>¥{{yuan(s.price)}}</b></span></div></template></el-table-column>
+      <el-table-column label="扣库存" min-width="190"><template #default="{row}">
+        <div v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="c-sub" style="margin:0">
+          <template v-if="s.stock_item_name">{{s.stock_item_name}} <span style="color:var(--text)">−{{s.deduct_qty}}</span><span v-if="row.skus.filter(x => x.active).length > 1"> /{{s.name}}</span></template>
+          <template v-else>不扣库存</template></div></template></el-table-column>
+      <el-table-column label="扫码点单" min-width="130"><template #default="{row}">
+        <span v-if="!row.online_visible" class="muted">不显示</span>
+        <template v-else>
+          <div class="c-sub" style="margin:0;color:var(--text-2)">{{qtyText(row)}}</div>
+          <div class="c-sub" style="margin:0" v-if="row.area_limited">仅 {{row.area_ids.length}} 个区域</div></template></template></el-table-column>
+      <el-table-column label="状态" width="90"><template #default="{row}">
+        <el-tag v-if="!row.active" type="info" size="small">已下架</el-tag>
+        <el-tag v-else-if="!row.online_visible" type="warning" size="small">仅门店</el-tag>
+        <el-tag v-else type="success" size="small">在售</el-tag></template></el-table-column>
+      <el-table-column width="80" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
     </el-table>
 
     <el-dialog v-model="dlg" :title="form.id ? '编辑商品' : '新增商品'" width="900px" top="4vh">
@@ -150,24 +160,34 @@ const Products = {
       catch (e) { err(e); } finally { saving.value = false; }
     };
     onMounted(load);
-    return { rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, save, catLabel, yuan };
+    const qtyText = (r) => [r.min_qty > 1 ? r.min_qty + ' 件起' : '', r.max_qty ? '限 ' + r.max_qty + ' 件' : ''].filter(Boolean).join('，') || '不限数量';
+    return { rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, save, catLabel, qtyText, yuan };
   },
 };
 
 // ---------------- 通用简单资料表（分类、供应商、库存品） ----------------
-function simpleCrud({ title, url, fields, columns, after }) {
+function simpleCrud({ title, desc, url, fields, columns, after, order }) {
   return {
     props: ['meta'],
     template: `
     <div class="panel">
-      <div class="toolbar"><b>${title}</b><span class="grow"></span><el-button type="primary" @click="edit()">新增</el-button></div>
-      <el-table :data="rows" border stripe>
-        <el-table-column v-for="c in columns" :key="c.prop" :prop="c.prop" :label="c.label" :width="c.width">
-          <template #default="{row}">{{ c.fmt ? c.fmt(row, meta) : row[c.prop] }}</template>
+      <div class="toolbar">
+        <el-input v-model="kw" placeholder="搜索名称" clearable style="width:220px" />
+        <span class="muted">共 {{rows.length}} 个<span v-if="rows.some(r => r.active === false)"> · 停用 {{rows.filter(r => r.active === false).length}}</span></span>
+        <span class="grow"></span><el-button type="primary" @click="edit()">新增${title}</el-button></div>
+      ${desc ? `<div class="hint" style="margin:-6px 0 12px">${desc}</div>` : ''}
+      <el-table :data="shown" @row-click="edit" row-class-name="clickable">
+        <el-table-column v-for="(c, i) in columns" :key="c.prop" :label="c.label" :min-width="c.width || 120" :align="c.align">
+          <template #default="{row}">
+            <template v-if="i === 0"><div class="c-main" :style="c.indent && c.indent(row) ? 'padding-left:18px' : ''"><span v-if="c.indent && c.indent(row)" class="muted">└ </span>{{ c.fmt ? c.fmt(row, meta) : row[c.prop] }}</div>
+              <div v-if="c.sub && c.sub(row, meta)" class="c-sub" :style="c.indent && c.indent(row) ? 'padding-left:18px' : ''">{{ c.sub(row, meta) }}</div></template>
+            <el-tag v-else-if="c.prop === 'active'" :type="row.active ? 'success' : 'info'" size="small">{{row.active ? '启用' : '停用'}}</el-tag>
+            <span v-else :class="{muted: !(c.fmt ? c.fmt(row, meta) : row[c.prop])}">{{ (c.fmt ? c.fmt(row, meta) : row[c.prop]) || '—' }}</span>
+          </template>
         </el-table-column>
-        <el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="edit(row)">编辑</el-button></template></el-table-column>
+        <el-table-column width="80" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
       </el-table>
-      <el-dialog v-model="dlg" :title="form.id ? '编辑' : '新增'" width="480px">
+      <el-dialog v-model="dlg" :title="(form.id ? '编辑' : '新增') + '${title}'" width="480px">
         <el-form :model="form" label-width="90px">
           <el-form-item v-for="f in fields" :key="f.prop" :label="f.label">
             <el-switch v-if="f.type==='bool'" v-model="form[f.prop]" />
@@ -182,7 +202,11 @@ function simpleCrud({ title, url, fields, columns, after }) {
       </el-dialog>
     </div>`,
     setup(props) {
-      const rows = ref([]), dlg = ref(false), form = reactive({}), saving = ref(false);
+      const rows = ref([]), dlg = ref(false), form = reactive({}), saving = ref(false), kw = ref('');
+      const shown = computed(() => {
+        const list = kw.value ? rows.value.filter(r => String(r.name || '').includes(kw.value)) : rows.value;
+        return order ? order(list) : list;
+      });
       const load = async () => { try { rows.value = await api.get(url); if (after) after(props.meta, rows.value); } catch (e) { err(e); } };
       const edit = (row) => {
         Object.keys(form).forEach(k => delete form[k]);
@@ -204,32 +228,36 @@ function simpleCrud({ title, url, fields, columns, after }) {
         try { form.id ? await api.put(url + '/' + form.id, body) : await api.post(url, body); ok(); dlg.value = false; load(); } catch (e) { err(e); } finally { saving.value = false; }
       };
       onMounted(load);
-      return { rows, dlg, form, edit, save, fields, columns };
+      return { rows, shown, kw, dlg, form, edit, save, fields, columns };
     },
   };
 }
 
 const Categories = simpleCrud({
-  title: '商品分类（先建大类，再在大类下建小类）', url: '/api/categories',
+  title: '分类', desc: '先建大类，再在大类下建小类；一个商品可以同时放进多个分类。', url: '/api/categories',
   fields: [{ prop: 'name', label: '名称' }, { prop: 'parent_id', label: '上级大类', type: 'select', default: null,
     options: (m, f) => m.categories.filter(c => !c.parent_id && c.id !== f.id) }, { prop: 'sort', label: '排序', type: 'int', default: 0 }, { prop: 'active', label: '启用', type: 'bool' }],
-  columns: [{ prop: 'name', label: '名称' }, { prop: 'parent_id', label: '上级大类', fmt: (r, m) => (m.categories.find(c => c.id === r.parent_id) || {}).name || '—' },
-    { prop: 'sort', label: '排序', width: 80 }, { prop: 'active', label: '状态', width: 80, fmt: r => r.active ? '启用' : '停用' }],
+  columns: [{ prop: 'name', label: '分类', width: 260, indent: r => !!r.parent_id, sub: (r, m) => r.parent_id ? '' : (m.categories.filter(c => c.parent_id === r.id).length ? m.categories.filter(c => c.parent_id === r.id).length + ' 个小类' : '') },
+    { prop: 'sort', label: '排序', width: 80, fmt: r => String(r.sort) }, { prop: 'active', label: '状态', width: 80 }],
+  // 大类后面紧跟它的小类，看起来像目录
+  order: (list) => { const out = []; list.filter(c => !c.parent_id).forEach(p => { out.push(p); list.filter(c => c.parent_id === p.id).forEach(c => out.push(c)); });
+    list.forEach(c => { if (!out.includes(c)) out.push(c); }); return out; },
   after: (m, rows) => { m.categories = rows; },
 });
 const Suppliers = simpleCrud({
   title: '供应商', url: '/api/suppliers',
   fields: [{ prop: 'name', label: '名称' }, { prop: 'contact', label: '联系人' }, { prop: 'phone', label: '电话' }, { prop: 'remark', label: '备注' }, { prop: 'active', label: '启用', type: 'bool' }],
-  columns: [{ prop: 'name', label: '名称' }, { prop: 'contact', label: '联系人' }, { prop: 'phone', label: '电话' }, { prop: 'remark', label: '备注' }],
+  columns: [{ prop: 'name', label: '供应商', width: 220, sub: r => r.remark }, { prop: 'contact', label: '联系人' }, { prop: 'phone', label: '电话', width: 150 },
+    { prop: 'active', label: '状态', width: 80 }],
   after: (m, rows) => { m.suppliers = rows; },
 });
 const StockItems = simpleCrud({
-  title: '库存品（实际占库存的东西；多个商品规格可以共用一个库存品）', url: '/api/stock-items',
+  title: '库存品', desc: '库存品是实际占库存的东西；不同商品、不同规格可以绑定同一个库存品，按各自的扣减量扣。', url: '/api/stock-items',
   fields: [{ prop: 'name', label: '名称' }, { prop: 'code', label: '编码' }, { prop: 'unit', label: '单位', default: '份' }, { prop: 'cost', label: '单位成本', type: 'money', default: '0' },
     { prop: 'supplier_id', label: '供应商', type: 'select', default: null, options: m => m.suppliers }, { prop: 'active', label: '启用', type: 'bool' }],
-  columns: [{ prop: 'name', label: '名称' }, { prop: 'code', label: '编码' }, { prop: 'unit', label: '单位', width: 80 },
-    { prop: 'cost', label: '单位成本', width: 100, fmt: r => '¥' + yuan(r.cost) }, { prop: 'supplier_id', label: '供应商', fmt: (r, m) => (m.suppliers.find(s => s.id === r.supplier_id) || {}).name || '' },
-    { prop: 'active', label: '状态', width: 80, fmt: r => r.active ? '启用' : '停用' }],
+  columns: [{ prop: 'name', label: '库存品', width: 220, sub: r => r.code ? '编码 ' + r.code : '' }, { prop: 'unit', label: '单位', width: 80 },
+    { prop: 'cost', label: '单位成本', width: 110, fmt: r => '¥' + yuan(r.cost) }, { prop: 'supplier_id', label: '供应商', width: 160, fmt: (r, m) => (m.suppliers.find(s => s.id === r.supplier_id) || {}).name || '' },
+    { prop: 'active', label: '状态', width: 80 }],
   after: (m, rows) => { m.stockItems = rows.filter(r => r.active); },
 });
 
@@ -240,31 +268,29 @@ const Stores = {
   <div>
   <div class="panel">
     <div class="toolbar"><b>门店</b><span class="grow"></span><el-button type="primary" @click="editStore()">新增门店</el-button></div>
-    <el-table :data="meta.stores" border>
-      <el-table-column prop="name" label="门店" />
-      <el-table-column prop="address" label="地址" />
-      <el-table-column prop="phone" label="电话" width="130" />
-      <el-table-column label="门店看库存" width="100"><template #default="{row}">{{row.staff_can_view_stock ? '允许' : '不允许'}}</template></el-table-column>
-      <el-table-column label="门店改库存" width="100"><template #default="{row}">{{row.staff_can_edit_stock ? '允许' : '不允许'}}</template></el-table-column>
-      <el-table-column label="小程序接单" width="100"><template #default="{row}">{{row.accept_online_orders ? '接单' : '暂停'}}</template></el-table-column>
-      <el-table-column label="出票" width="110"><template #default="{row}">{{row.print_mode === 'agent' ? '打印小助手' : '本机浏览器'}}</template></el-table-column>
-      <el-table-column label="状态" width="80"><template #default="{row}">{{row.active ? '营业' : '停用'}}</template></el-table-column>
-      <el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="editStore(row)">编辑</el-button></template></el-table-column>
+    <el-table :data="meta.stores" @row-click="editStore" row-class-name="clickable">
+      <el-table-column label="门店" min-width="200"><template #default="{row}">
+        <div class="c-main">{{row.name}}</div><div class="c-sub">{{[row.address, row.phone].filter(Boolean).join(' · ') || '未填地址电话'}}</div></template></el-table-column>
+      <el-table-column label="扫码点单" width="110"><template #default="{row}"><el-tag :type="row.accept_online_orders ? 'success' : 'warning'" size="small">{{row.accept_online_orders ? '接单中' : '暂停接单'}}</el-tag></template></el-table-column>
+      <el-table-column label="店员对本店库存" min-width="150"><template #default="{row}">
+        <span class="chip">{{row.staff_can_view_stock ? '可查看' : '不可查看'}}</span><span class="chip">{{row.staff_can_edit_stock ? '可盘点' : '不可修改'}}</span></template></el-table-column>
+      <el-table-column label="出票" min-width="120"><template #default="{row}"><span class="c-main" style="font-weight:400">{{row.print_mode === 'agent' ? '打印小助手' : '本机浏览器'}}</span></template></el-table-column>
+      <el-table-column label="状态" width="80"><template #default="{row}"><el-tag :type="row.active ? 'success' : 'info'" size="small">{{row.active ? '营业' : '停用'}}</el-tag></template></el-table-column>
+      <el-table-column width="80" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
     </el-table>
   </div>
   <div class="panel">
     <div class="toolbar"><b>区域与二维码</b><span class="muted">顾客扫区域二维码点单，订单自动带上门店和区域</span><span class="grow"></span><el-button type="primary" @click="editArea()">新增区域</el-button></div>
-    <el-table :data="areas" border>
-      <el-table-column prop="store_name" label="门店" width="140" />
-      <el-table-column prop="name" label="区域" />
-      <el-table-column prop="sort" label="排序" width="80" />
-      <el-table-column label="点单数量" width="110"><template #default="{row}"><el-tag v-if="row.no_qty_limit" type="success">不限数量</el-tag><span v-else class="muted">按规则</span></template></el-table-column>
-      <el-table-column label="状态" width="80"><template #default="{row}">{{row.active ? '启用' : '停用'}}</template></el-table-column>
-      <el-table-column label="操作" width="300"><template #default="{row}">
-        <el-button link type="primary" @click="openRules(row)">点单规则</el-button>
-        <el-button link type="primary" @click="showQr(row)">二维码</el-button>
-        <el-button link type="primary" @click="editArea(row)">编辑</el-button>
-        <el-button link type="danger" @click="resetCode(row)">作废旧码</el-button></template></el-table-column>
+    <el-table :data="areas">
+      <el-table-column label="区域" min-width="200"><template #default="{row}">
+        <div class="c-main">{{row.name}}</div><div class="c-sub">{{row.store_name}}</div></template></el-table-column>
+      <el-table-column label="点单数量" width="120"><template #default="{row}"><el-tag v-if="row.no_qty_limit" type="success" size="small">不限数量</el-tag><span v-else class="muted" style="white-space:nowrap">按规则</span></template></el-table-column>
+      <el-table-column label="状态" width="80"><template #default="{row}"><el-tag :type="row.active ? 'success' : 'info'" size="small">{{row.active ? '启用' : '停用'}}</el-tag></template></el-table-column>
+      <el-table-column label="操作" width="320" align="right"><template #default="{row}">
+        <el-button size="small" @click="openRules(row)">点单规则</el-button>
+        <el-button size="small" @click="showQr(row)">二维码</el-button>
+        <el-button size="small" @click="editArea(row)">编辑</el-button>
+        <el-button size="small" link type="danger" @click="resetCode(row)">作废旧码</el-button></template></el-table-column>
     </el-table>
   </div>
   <el-dialog v-model="sDlg" :title="sForm.id ? '编辑门店' : '新增门店'" width="520px">
@@ -404,25 +430,34 @@ const Inventory = {
   props: ['meta'],
   template: `
   <div class="panel">
+    <div class="segs">
+      <div v-for="l in locations" :key="l.id" class="seg" :class="{on: loc === l.id}" @click="loc = l.id; load()">
+        {{l.name}}<span class="n">{{l.kind_text}}</span></div>
+      <span class="seg" style="color:var(--primary)" @click="newWarehouse">+ 新增仓库</span>
+    </div>
     <div class="toolbar">
-      <el-select v-model="loc" style="width:180px" @change="load">
-        <el-option v-for="l in locations" :key="l.id" :label="l.kind_text + '：' + l.name" :value="l.id" /></el-select>
-      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:260px" @change="load" />
-      <el-input v-model="kw" placeholder="库存品" clearable style="width:150px" @keyup.enter="load" />
+      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
+      <el-input v-model="kw" placeholder="搜索库存品" clearable style="width:160px" @keyup.enter="load" @clear="load" />
       <el-button @click="load">查询</el-button>
       <span class="grow"></span>
       <el-button @click="openDoc('in')">入库</el-button>
       <el-button @click="openDoc('out')">出库</el-button>
-      <el-button type="primary" @click="openDoc('transfer')">调拨到门店</el-button>
       <el-button @click="openDoc('adjust')">盘点</el-button>
-      <el-button @click="newWarehouse">新增仓库</el-button>
+      <el-button type="primary" @click="openDoc('transfer')">调拨到门店</el-button>
     </div>
-    <el-table :data="rows" border stripe show-summary :summary-method="summary">
-      <el-table-column prop="name" label="库存品" min-width="140" />
-      <el-table-column prop="unit" label="单位" width="60" />
-      <el-table-column v-for="c in cols" :key="c[0]" :label="c[1]" width="86" class-name="right">
-        <template #default="{row}"><el-button link @click="showMoves(row)">{{row[c[0]]}}</el-button></template></el-table-column>
-      <el-table-column prop="current" label="当前库存" width="90" class-name="right" />
+    <div class="stats" style="margin-bottom:14px">
+      <div class="stat"><div class="k">库存品</div><div class="v">{{rows.length}}</div><div class="s">本地点有记录的</div></div>
+      <div class="stat"><div class="k">期间入库 + 调入</div><div class="v">{{fmtN(sumOf('in') + sumOf('transfer_in'))}}</div></div>
+      <div class="stat"><div class="k">期间销售</div><div class="v">{{fmtN(sumOf('sale') - sumOf('sale_return'))}}</div><div class="s">已扣除退货回补</div></div>
+      <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div><div class="s">需要补货或核对</div></div>
+    </div>
+    <el-table :data="rows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 ? 'row-low' : ''">
+      <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}</div><div class="c-sub">{{row.unit}}</div></template></el-table-column>
+      <el-table-column v-for="c in cols" :key="c[0]" :label="c[1]" min-width="78" align="right">
+        <template #default="{row}"><span v-if="!row[c[0]]" class="zero">–</span>
+          <el-button v-else link :class="{strong: c[0] === 'closing'}" @click="showMoves(row)">{{fmtN(row[c[0]])}}</el-button></template></el-table-column>
+      <el-table-column label="当前库存" min-width="96" align="right" fixed="right"><template #default="{row}">
+        <b class="money" :style="row.current <= 0 ? 'color:var(--danger)' : ''">{{fmtN(row.current)}}</b></template></el-table-column>
     </el-table>
     <div class="muted" style="margin-top:6px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
 
@@ -463,7 +498,15 @@ const Inventory = {
       if (!loc.value) return;
       try { rows.value = await api.get('/api/stock-ledger', { location_id: loc.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value }); } catch (e) { err(e); }
     };
-    const summary = ({ columns, data }) => columns.map((c, i) => i === 0 ? '合计' : '');
+    const fmtN = (v) => +(+v || 0).toFixed(3);
+    const sumOf = (k) => rows.value.reduce((a, r) => a + (+r[k] || 0), 0);
+    const lowCount = computed(() => rows.value.filter(r => r.current <= 0).length);
+    // 合计行：各列数量相加（不同单位相加只用于核对，和表格里点出来的流水对得上即可）
+    const summary = ({ columns }) => columns.map((c, i) => {
+      if (i === 0) return '合计';
+      const key = i <= cols.length ? cols[i - 1][0] : 'current';
+      return fmtN(sumOf(key)) || '–';
+    });
     const docTitle = computed(() => ({ in: '入库', out: '出库', transfer: '调拨（仓库 → 门店）', adjust: '盘点' }[doc.kind]));
     const stockAt = (lid, sid) => { const m = balances[lid]; if (!m) return ''; const r = m.find(x => x.stock_item_id === sid); return r ? r.qty : 0; };
     const fetchBal = async (lid) => { if (lid && !balances[lid]) balances[lid] = await api.get('/api/stock', { location_id: lid }); };
@@ -506,7 +549,7 @@ const Inventory = {
       try { await api.post('/api/warehouses', { name }); ok(); loadLocs(); } catch (e) { err(e); }
     };
     onMounted(async () => { try { await loadLocs(); load(); } catch (e) { err(e); } });
-    return { locations, loc, range, kw, rows, cols, load, summary, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
+    return { locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
 
@@ -554,38 +597,58 @@ const Orders = {
   components: { OrderDetail },
   template: `
   <div class="panel">
-    <div class="toolbar">
-      <el-select v-model="q.store_id" placeholder="全部门店" clearable style="width:140px"><el-option v-for="s in meta.stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
-      <el-select v-model="q.source" placeholder="全部来源" clearable style="width:120px"><el-option label="门店收银" value="pos" /><el-option label="小程序" value="online" /></el-select>
-      <el-select v-model="q.status" placeholder="全部状态" clearable style="width:120px"><el-option v-for="(t,k) in st" :key="k" :label="t" :value="k" /></el-select>
-      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" style="width:260px" />
-      <el-input v-model="q.keyword" placeholder="单号 / 床号 / 电话" clearable style="width:170px" @keyup.enter="load(1)" />
-      <el-button type="primary" @click="load(1)">查询</el-button>
+    <div class="segs">
+      <div v-for="t in tabs" :key="t[0]" class="seg" :class="{on: tab === t[0]}" @click="tab = t[0]; load(1)">
+        {{t[1]}}<span class="n" :class="t[2]">{{counts[t[0]] || 0}}</span></div>
     </div>
-    <el-table :data="rows" border stripe @row-click="open">
-      <el-table-column prop="no" label="单号" width="190" />
-      <el-table-column prop="created_at" label="时间" width="160" />
-      <el-table-column prop="store_name" label="门店" width="100" />
-      <el-table-column prop="source_text" label="来源" width="80" />
-      <el-table-column label="区域" width="140"><template #default="{row}">{{row.area_name}} {{row.location_note}}</template></el-table-column>
-      <el-table-column label="商品" min-width="200"><template #default="{row}">{{row.items.map(i => i.product_name + (i.sku_name !== '默认' ? '(' + i.sku_name + ')' : '') + '×' + i.qty).join('，')}}</template></el-table-column>
-      <el-table-column label="应收" width="90" class-name="right"><template #default="{row}">{{yuan(row.payable_amount)}}</template></el-table-column>
-      <el-table-column label="状态" width="130"><template #default="{row}">{{row.status_text}} / {{row.pay_status_text}}</template></el-table-column>
+    <div class="toolbar">
+      <el-select v-model="q.store_id" placeholder="全部门店" clearable style="width:150px" @change="load(1)"><el-option v-for="s in meta.stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
+      <el-select v-model="q.source" placeholder="全部来源" clearable style="width:120px" @change="load(1)"><el-option label="门店收银" value="pos" /><el-option label="扫码点单" value="online" /></el-select>
+      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始日期" end-placeholder="结束日期" style="width:250px" @change="load(1)" />
+      <el-input v-model="q.keyword" placeholder="单号 / 床号 / 电话" clearable style="width:180px" @keyup.enter="load(1)" @clear="load(1)" />
+      <el-button @click="load(1)">查询</el-button>
+      <span class="grow"></span>
+      <span class="muted">共 {{total}} 单，应收合计 <b class="money" style="color:var(--text)">¥{{yuan(sumPayable)}}</b></span>
+    </div>
+    <el-table :data="rows" @row-click="open" row-class-name="clickable">
+      <el-table-column label="订单" min-width="210"><template #default="{row}">
+        <div class="c-main mono">{{row.no}}</div><div class="c-sub">{{row.created_at.slice(5, 16)}} · {{row.store_name}}</div></template></el-table-column>
+      <el-table-column label="来源" min-width="150"><template #default="{row}">
+        <el-tag :type="row.source === 'online' ? 'primary' : 'info'" size="small">{{row.source === 'online' ? '扫码点单' : '门店收银'}}</el-tag>
+        <div class="c-sub" v-if="row.area_name">{{row.area_name}} {{row.location_note}}</div></template></el-table-column>
+      <el-table-column label="商品" min-width="240"><template #default="{row}">
+        <div class="c-main ellipsis" :title="goods(row)">{{goods(row)}}</div><div class="c-sub">共 {{row.item_count}} 件</div></template></el-table-column>
+      <el-table-column label="应收" width="130" align="right"><template #default="{row}">
+        <div class="c-main money">¥{{yuan(row.payable_amount)}}</div>
+        <div class="c-sub" v-if="row.refunded_amount" style="color:var(--danger)">退 ¥{{yuan(row.refunded_amount)}}</div>
+        <div class="c-sub" v-else-if="row.discount_amount">优惠 ¥{{yuan(row.discount_amount)}}</div></template></el-table-column>
+      <el-table-column label="状态" width="170"><template #default="{row}">
+        <el-tag :type="statusType(row)" size="small">{{row.status_text}}</el-tag>
+        <el-tag v-if="row.status !== 'cancelled'" :type="payType(row)" size="small" effect="plain" style="margin-left:4px">{{row.pay_status_text}}</el-tag></template></el-table-column>
+      <el-table-column width="80" align="right"><template #default><span class="muted" style="white-space:nowrap">详情 ›</span></template></el-table-column>
     </el-table>
-    <el-pagination style="margin-top:10px" layout="total, prev, pager, next" :total="total" :page-size="50" :current-page="page" @current-change="load" />
+    <el-pagination style="margin-top:14px;justify-content:flex-end" layout="prev, pager, next" :total="total" :page-size="50" :current-page="page" @current-change="load" hide-on-single-page />
     <el-drawer v-model="drawer" title="订单详情" size="720px"><order-detail :order="cur" /></el-drawer>
   </div>`,
   setup() {
-    const q = reactive({ store_id: null, source: null, status: null, keyword: '' }), range = ref([]), rows = ref([]), total = ref(0), page = ref(1);
-    const drawer = ref(false), cur = ref(null);
-    const st = { pending: '待接单', accepted: '已接单', completed: '已完成', cancelled: '已取消' };
+    const q = reactive({ store_id: null, source: null, keyword: '' }), range = ref([]), rows = ref([]), total = ref(0), page = ref(1);
+    const drawer = ref(false), cur = ref(null), tab = ref('all'), counts = ref({}), sumPayable = ref(0);
+    const tabs = [['all', '全部', ''], ['pending', '待接单', 'red'], ['unpaid', '待收款', 'amber'], ['completed', '已完成', ''], ['refund', '有退款', ''], ['cancelled', '已取消', '']];
+    const filters = { all: {}, pending: { status: 'pending' }, unpaid: { status: 'accepted', pay_status: 'unpaid' }, completed: { status: 'completed' },
+      refund: { pay_status: 'partial_refunded,refunded' }, cancelled: { status: 'cancelled' } };
+    const goods = (row) => row.items.map(i => i.product_name + (i.sku_name !== '默认' ? '（' + i.sku_name + '）' : '') + ' ×' + i.qty).join('，');
+    const statusType = (r) => ({ pending: 'danger', accepted: 'warning', completed: 'success', cancelled: 'info' }[r.status]);
+    const payType = (r) => ({ unpaid: 'warning', paid: 'success', partial_refunded: 'danger', refunded: 'danger' }[r.pay_status]);
     const load = async (p) => {
       page.value = p || 1;
-      try { const r = await api.get('/api/orders', { ...q, begin: (range.value || [])[0], end: (range.value || [])[1], page: page.value }); rows.value = r.items; total.value = r.total; } catch (e) { err(e); }
+      try {
+        const r = await api.get('/api/orders', { ...q, ...filters[tab.value], begin: (range.value || [])[0], end: (range.value || [])[1], page: page.value });
+        rows.value = r.items; total.value = r.total; counts.value = r.counts || {}; sumPayable.value = r.sum_payable || 0;
+      } catch (e) { err(e); }
     };
     const open = async (row) => { try { cur.value = await api.get('/api/orders/' + row.id); drawer.value = true; } catch (e) { err(e); } };
     onMounted(() => load(1));
-    return { q, range, rows, total, page, load, open, drawer, cur, st, yuan };
+    return { q, range, rows, total, page, load, open, drawer, cur, tab, tabs, counts, sumPayable, goods, statusType, payType, yuan };
   },
 };
 
@@ -602,31 +665,37 @@ const Revenue = {
       <span class="grow"></span>
       <el-button type="primary" @click="exp">导出 Excel</el-button>
     </div>
-    <el-table :data="rowsWithTotal" border stripe>
-      <el-table-column prop="period" label="期间" width="150" fixed />
-      <el-table-column prop="store_name" label="门店" width="100" />
-      <el-table-column prop="orders" label="单数" width="70" />
-      <el-table-column label="商品原价" width="100" class-name="right"><template #default="{row}">{{yuan(row.original)}}</template></el-table-column>
-      <el-table-column label="优惠" width="90" class-name="right"><template #default="{row}">{{yuan(row.discount)}}</template></el-table-column>
-      <el-table-column label="收款" width="100" class-name="right"><template #default="{row}">{{yuan(row.received)}}</template></el-table-column>
-      <el-table-column label="退款" width="90" class-name="right"><template #default="{row}">{{yuan(row.refunded)}}</template></el-table-column>
-      <el-table-column label="实收" width="100" class-name="right"><template #default="{row}"><b>{{yuan(row.net)}}</b></template></el-table-column>
-      <el-table-column prop="qty" label="销售件数" width="90" />
-      <el-table-column prop="refund_qty" label="退货件数" width="90" />
-      <el-table-column label="成本" width="90" class-name="right"><template #default="{row}">{{yuan(row.cost)}}</template></el-table-column>
-      <el-table-column label="毛利" width="90" class-name="right"><template #default="{row}">{{yuan(row.profit)}}</template></el-table-column>
-      <el-table-column label="现金 / 微信 / 支付宝 / 其他" min-width="220"><template #default="{row}">{{['cash','wechat','alipay','other'].map(m => yuan(row.methods[m])).join(' / ')}}</template></el-table-column>
+    <div class="stats" v-if="data.total">
+      <div class="stat"><div class="k">实收</div><div class="v">¥{{yuan(data.total.net)}}</div><div class="s">收款 ¥{{yuan(data.total.received)}} − 退款 ¥{{yuan(data.total.refunded)}}</div></div>
+      <div class="stat"><div class="k">单数</div><div class="v">{{data.total.orders}}</div><div class="s">门店收银 {{data.total.pos_orders}} · 扫码点单 {{data.total.online_orders}}</div></div>
+      <div class="stat"><div class="k">优惠</div><div class="v">¥{{yuan(data.total.discount)}}</div><div class="s">商品原价 ¥{{yuan(data.total.original)}}</div></div>
+      <div class="stat"><div class="k">毛利</div><div class="v">¥{{yuan(data.total.profit)}}</div><div class="s">成本 ¥{{yuan(data.total.cost)}}</div></div>
+    </div>
+    <div class="chips-row" v-if="data.total">
+      <span v-for="m in methodList" :key="m[0]" class="chip">{{m[1]}} <b class="money">¥{{yuan(data.total.methods[m[0]])}}</b></span>
+    </div>
+    <el-table :data="rowsWithTotal" :row-class-name="({row}) => row.period === '合计' ? 'row-total' : ''">
+      <el-table-column label="期间" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.period}}</div><div class="c-sub" v-if="row.store_name">{{row.store_name}}</div></template></el-table-column>
+      <el-table-column prop="orders" label="单数" min-width="70" align="right" />
+      <el-table-column label="商品原价" min-width="100" align="right"><template #default="{row}"><span class="money">{{yuan(row.original)}}</span></template></el-table-column>
+      <el-table-column label="优惠" min-width="90" align="right"><template #default="{row}"><span class="money" :class="{zero: !row.discount}">{{row.discount ? '−' + yuan(row.discount) : '–'}}</span></template></el-table-column>
+      <el-table-column label="退款" min-width="90" align="right"><template #default="{row}"><span class="money" :class="{zero: !row.refunded}" :style="row.refunded ? 'color:var(--danger)' : ''">{{row.refunded ? '−' + yuan(row.refunded) : '–'}}</span></template></el-table-column>
+      <el-table-column label="实收" min-width="110" align="right"><template #default="{row}"><b class="money">{{yuan(row.net)}}</b></template></el-table-column>
+      <el-table-column label="件数（退）" min-width="100" align="right"><template #default="{row}">{{row.qty}}<span v-if="row.refund_qty" class="muted">（{{row.refund_qty}}）</span></template></el-table-column>
+      <el-table-column label="成本" min-width="90" align="right"><template #default="{row}"><span class="money">{{yuan(row.cost)}}</span></template></el-table-column>
+      <el-table-column label="毛利" min-width="100" align="right"><template #default="{row}"><span class="money">{{yuan(row.profit)}}</span></template></el-table-column>
     </el-table>
     <div class="muted" style="margin-top:6px">收款按收款时间、退款按退款时间计入；实收 = 收款 − 退款。微信 / 支付宝目前是店员确认收款的记账，不是在线支付。</div>
   </div>`,
   setup() {
-    const group = ref('day'), store = ref(null), range = ref([today(), today()]), data = ref({ rows: [], total: null });
+    const group = ref('day'), store = ref(null), range = ref([daysAgo(6), today()]), data = ref({ rows: [], total: null });
     const params = () => ({ group: group.value, store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1] });
     const load = async () => { try { data.value = await api.get('/api/reports/revenue', params()); } catch (e) { err(e); } };
     const exp = async () => { try { await api.download('/api/reports/revenue', params()); } catch (e) { err(e); } };
     const rowsWithTotal = computed(() => data.value.total ? [...data.value.rows, { ...data.value.total, period: '合计', store_name: '' }] : []);
     onMounted(load);
-    return { group, store, range, load, exp, rowsWithTotal, yuan };
+    const methodList = [['cash', '现金'], ['wechat', '微信'], ['alipay', '支付宝'], ['other', '其他']];
+    return { group, store, range, data, load, exp, rowsWithTotal, methodList, yuan };
   },
 };
 
@@ -644,30 +713,25 @@ const ProductSales = {
       <el-button @click="exp('/api/reports/product-sales')">导出汇总</el-button>
       <el-button @click="exp('/api/reports/product-sales/detail')">导出全部明细</el-button>
     </div>
-    <el-table :data="rows" border stripe highlight-current-row @current-change="r => pick(r)">
-      <el-table-column prop="product_name" label="商品" />
-      <el-table-column prop="sku_name" label="规格" width="100" />
-      <el-table-column prop="sold_qty" label="销售件数" width="90" />
-      <el-table-column prop="refund_qty" label="退货件数" width="90" />
-      <el-table-column prop="net_qty" label="净件数" width="80" />
-      <el-table-column label="原价金额" width="100"><template #default="{row}">{{yuan(row.amount)}}</template></el-table-column>
-      <el-table-column label="优惠" width="80"><template #default="{row}">{{yuan(row.discount)}}</template></el-table-column>
-      <el-table-column label="净收" width="100"><template #default="{row}"><b>{{yuan(row.net)}}</b></template></el-table-column>
-      <el-table-column prop="order_count" label="单数" width="70" />
+    <div class="hint" style="margin:-6px 0 10px">点一行，下面展开这个商品的逐单明细。</div>
+    <el-table :data="rows" highlight-current-row @current-change="r => pick(r)" row-class-name="clickable">
+      <el-table-column label="商品" min-width="200"><template #default="{row}"><div class="c-main">{{row.product_name}}</div><div class="c-sub" v-if="row.sku_name !== '默认'">{{row.sku_name}}</div></template></el-table-column>
+      <el-table-column label="净件数" min-width="110" align="right"><template #default="{row}"><b>{{row.net_qty}}</b><div class="c-sub">卖 {{row.sold_qty}}<span v-if="row.refund_qty" style="color:var(--danger)"> · 退 {{row.refund_qty}}</span></div></template></el-table-column>
+      <el-table-column label="原价金额" min-width="100" align="right"><template #default="{row}"><span class="money">{{yuan(row.amount)}}</span></template></el-table-column>
+      <el-table-column label="优惠" min-width="90" align="right"><template #default="{row}"><span class="money" :class="{zero: !row.discount}">{{row.discount ? '−' + yuan(row.discount) : '–'}}</span></template></el-table-column>
+      <el-table-column label="净收" min-width="110" align="right"><template #default="{row}"><b class="money">{{yuan(row.net)}}</b></template></el-table-column>
+      <el-table-column prop="order_count" label="单数" min-width="70" align="right" />
     </el-table>
-    <div v-if="cur" style="margin-top:16px">
-      <div class="toolbar"><b>{{cur.product_name}}（{{cur.sku_name}}）逐单明细</b><span class="grow"></span><el-button size="small" @click="expDetail">导出明细</el-button></div>
-      <el-table :data="detail" border size="small">
-        <el-table-column prop="time" label="时间" width="160" />
-        <el-table-column prop="type_text" label="类型" width="60" />
-        <el-table-column prop="order_no" label="单号" width="190" />
-        <el-table-column prop="store_name" label="门店" width="100" />
-        <el-table-column prop="area" label="区域 / 位置" />
-        <el-table-column prop="qty" label="数量" width="70" />
-        <el-table-column label="单价" width="80"><template #default="{row}">{{yuan(row.unit_price)}}</template></el-table-column>
-        <el-table-column label="原价金额" width="90"><template #default="{row}">{{yuan(row.amount)}}</template></el-table-column>
-        <el-table-column label="优惠" width="80"><template #default="{row}">{{yuan(row.discount)}}</template></el-table-column>
-        <el-table-column label="实收" width="90"><template #default="{row}">{{yuan(row.paid)}}</template></el-table-column>
+    <div v-if="cur" style="margin-top:22px;padding-top:18px;border-top:1px solid var(--border)">
+      <div class="toolbar"><b>{{cur.product_name}}<span v-if="cur.sku_name !== '默认'">（{{cur.sku_name}}）</span>逐单明细</b><span class="grow"></span><el-button size="small" @click="expDetail">导出明细</el-button></div>
+      <el-table :data="detail" size="small">
+        <el-table-column label="单号" min-width="200"><template #default="{row}"><div class="c-main mono">{{row.order_no}}</div><div class="c-sub">{{row.time.slice(5, 16)}} · {{row.store_name}}{{row.area ? ' · ' + row.area : ''}}</div></template></el-table-column>
+        <el-table-column label="类型" width="80"><template #default="{row}"><el-tag :type="row.type === 'refund' ? 'danger' : 'success'" size="small">{{row.type_text}}</el-tag></template></el-table-column>
+        <el-table-column label="数量" width="80" align="right"><template #default="{row}"><b :style="row.qty < 0 ? 'color:var(--danger)' : ''">{{row.qty}}</b></template></el-table-column>
+        <el-table-column label="单价" width="90" align="right"><template #default="{row}"><span class="money">{{yuan(row.unit_price)}}</span></template></el-table-column>
+        <el-table-column label="原价金额" width="100" align="right"><template #default="{row}"><span class="money">{{yuan(row.amount)}}</span></template></el-table-column>
+        <el-table-column label="优惠" width="90" align="right"><template #default="{row}"><span class="money" :class="{zero: !row.discount}">{{row.discount ? yuan(row.discount) : '–'}}</span></template></el-table-column>
+        <el-table-column label="实收" width="100" align="right"><template #default="{row}"><b class="money">{{yuan(row.paid)}}</b></template></el-table-column>
       </el-table>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
         <span class="muted">共 {{dTotal}} 条，合计 {{dSums.qty}} 件，实收 ¥{{yuan(dSums.paid)}}</span>
@@ -676,7 +740,7 @@ const ProductSales = {
     </div>
   </div>`,
   setup() {
-    const store = ref(null), range = ref([today(), today()]), kw = ref(''), rows = ref([]), cur = ref(null), detail = ref([]);
+    const store = ref(null), range = ref([daysAgo(6), today()]), kw = ref(''), rows = ref([]), cur = ref(null), detail = ref([]);
     const dTotal = ref(0), dPage = ref(1), dSums = ref({ qty: 0, paid: 0 });
     const params = () => ({ store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value });
     const load = async () => { cur.value = null; try { rows.value = (await api.get('/api/reports/product-sales', params())).rows; } catch (e) { err(e); } };
@@ -768,25 +832,33 @@ const Accounts = {
   <div>
   <div class="panel">
     <div class="toolbar"><b>角色与权限</b><span class="grow"></span><el-button type="primary" @click="editRole()">新增角色</el-button></div>
-    <el-table :data="roles" border>
-      <el-table-column prop="name" label="角色" width="140" />
-      <el-table-column label="类型" width="90"><template #default="{row}">{{row.is_admin ? '后台' : '门店'}}</template></el-table-column>
-      <el-table-column label="权限"><template #default="{row}">{{row.permissions.map(p => permLabel(p)).join('、')}}</template></el-table-column>
-      <el-table-column label="最低折扣" width="90"><template #default="{row}">{{row.min_discount_rate > 1 ? row.min_discount_rate/10 + ' 折' : '不限'}}</template></el-table-column>
-      <el-table-column label="单笔最多调低" width="110"><template #default="{row}">{{row.max_adjust_amount == null ? '不限' : '¥' + yuan(row.max_adjust_amount)}}</template></el-table-column>
-      <el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="editRole(row)">编辑</el-button></template></el-table-column>
+    <el-table :data="roles" @row-click="editRole" row-class-name="clickable">
+      <el-table-column label="角色" min-width="150"><template #default="{row}">
+        <div class="c-main">{{row.name}}</div><div class="c-sub">{{row.is_admin ? '后台角色 · 可看所有门店和营收' : '门店角色'}}</div></template></el-table-column>
+      <el-table-column label="权限" min-width="360"><template #default="{row}">
+        <span v-for="p in row.permissions" :key="p" class="chip">{{permLabel(p)}}</span></template></el-table-column>
+      <el-table-column label="优惠上限" min-width="150"><template #default="{row}">
+        <div class="c-main" style="font-weight:400">{{row.min_discount_rate > 1 ? '最低 ' + row.min_discount_rate/10 + ' 折' : '折扣不限'}}</div>
+        <div class="c-sub">{{row.max_adjust_amount == null ? '调低金额不限' : '单笔最多调低 ¥' + yuan(row.max_adjust_amount)}}</div></template></el-table-column>
+      <el-table-column width="80" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
     </el-table>
   </div>
   <div class="panel">
     <div class="toolbar"><b>账号</b><span class="grow"></span><el-button type="primary" @click="editUser()">新增账号</el-button></div>
-    <el-table :data="users" border>
-      <el-table-column prop="username" label="账号" width="120" />
-      <el-table-column prop="display_name" label="姓名" width="120" />
-      <el-table-column prop="role_name" label="角色" width="120" />
-      <el-table-column label="门店"><template #default="{row}">{{row.is_admin ? '全部门店' : row.stores.map(s => s.name).join('、')}}</template></el-table-column>
-      <el-table-column label="优惠上限（账号单独）" width="170"><template #default="{row}">{{row.min_discount_rate ? row.min_discount_rate/10 + ' 折' : '同角色'}} / {{row.max_adjust_amount == null ? '同角色' : '¥' + yuan(row.max_adjust_amount)}}</template></el-table-column>
-      <el-table-column label="状态" width="80"><template #default="{row}">{{row.active ? '正常' : '停用'}}</template></el-table-column>
-      <el-table-column label="操作" width="80"><template #default="{row}"><el-button link type="primary" @click="editUser(row)">编辑</el-button></template></el-table-column>
+    <el-table :data="users" @row-click="editUser" row-class-name="clickable">
+      <el-table-column label="账号" min-width="170"><template #default="{row}">
+        <div style="display:flex;align-items:center;gap:10px"><span class="avatar">{{(row.display_name || row.username).slice(0,1)}}</span>
+          <div><div class="c-main">{{row.display_name || row.username}}</div><div class="c-sub mono" style="font-size:12px">{{row.username}}</div></div></div></template></el-table-column>
+      <el-table-column label="角色" min-width="110"><template #default="{row}"><span class="chip">{{row.role_name}}</span></template></el-table-column>
+      <el-table-column label="门店" min-width="200"><template #default="{row}">
+        <span v-if="row.is_admin" class="muted">全部门店</span>
+        <template v-else><span v-for="s in row.stores" :key="s.id" class="chip">{{s.name}}</span><span v-if="!row.stores.length" style="color:var(--danger)">未分配门店</span></template></template></el-table-column>
+      <el-table-column label="优惠上限" min-width="150"><template #default="{row}">
+        <span v-if="row.min_discount_rate == null && row.max_adjust_amount == null" class="muted">跟随角色</span>
+        <template v-else><div class="c-main" style="font-weight:400">{{row.min_discount_rate ? '最低 ' + row.min_discount_rate/10 + ' 折' : '折扣跟随角色'}}</div>
+          <div class="c-sub">{{row.max_adjust_amount == null ? '调低跟随角色' : '最多调低 ¥' + yuan(row.max_adjust_amount)}}</div></template></template></el-table-column>
+      <el-table-column label="状态" width="80"><template #default="{row}"><el-tag :type="row.active ? 'success' : 'info'" size="small">{{row.active ? '正常' : '停用'}}</el-tag></template></el-table-column>
+      <el-table-column width="80" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
     </el-table>
   </div>
   <el-dialog v-model="rDlg" :title="rForm.id ? '编辑角色' : '新增角色'" width="620px">
