@@ -11,3 +11,6 @@ backend/media/
 backend/data/
 .env
 *.log
+
+# 迁移用的业务数据，不进仓库
+迁移数据/

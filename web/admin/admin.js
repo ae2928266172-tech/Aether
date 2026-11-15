@@ -704,16 +704,42 @@ const ProductSales = {
   props: ['meta'],
   template: `
   <div class="panel">
+    <div class="segs">
+      <div class="seg" :class="{on: view === 'product'}" @click="view = 'product'; load()">按商品</div>
+      <div class="seg" :class="{on: view === 'category'}" @click="view = 'category'; load()">按分类</div>
+    </div>
     <div class="toolbar">
-      <el-select v-model="store" placeholder="全部门店" clearable style="width:140px"><el-option v-for="s in meta.stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
-      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" style="width:260px" />
-      <el-input v-model="kw" placeholder="商品名称" clearable style="width:160px" @keyup.enter="load" />
+      <el-select v-model="store" placeholder="全部门店" clearable style="width:140px" @change="load"><el-option v-for="s in meta.stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
+      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" style="width:250px" @change="load" />
+      <template v-if="view === 'product'">
+        <el-select v-model="catId" placeholder="全部分类" clearable filterable style="width:170px" @change="load">
+          <el-option v-for="c in catOptions" :key="c.id" :label="c.label" :value="c.id" /></el-select>
+        <el-input v-model="kw" placeholder="商品名称" clearable style="width:150px" @keyup.enter="load" @clear="load" />
+      </template>
       <el-button type="primary" @click="load">查询</el-button>
       <span class="grow"></span>
-      <el-button @click="exp('/api/reports/product-sales')">导出汇总</el-button>
-      <el-button @click="exp('/api/reports/product-sales/detail')">导出全部明细</el-button>
+      <template v-if="view === 'product'">
+        <el-button @click="exp('/api/reports/product-sales')">导出汇总</el-button>
+        <el-button @click="exp('/api/reports/product-sales/detail')">导出全部明细</el-button>
+      </template>
+      <el-button v-else @click="exp('/api/reports/category-sales')">导出分类汇总</el-button>
     </div>
-    <div class="hint" style="margin:-6px 0 10px">点一行，下面展开这个商品的逐单明细。</div>
+
+    <template v-if="view === 'category'">
+      <div class="hint" style="margin:-6px 0 10px">大类包含它下面小类的商品；一个商品放在几个分类里，就在每个分类里各算一次。点一行查看这个分类里的商品。</div>
+      <el-table :data="catRows" @row-click="openCat" row-class-name="clickable">
+        <el-table-column label="分类" min-width="200"><template #default="{row}">
+          <div class="c-main" :style="row.parent_id ? 'padding-left:18px;font-weight:400' : ''"><span v-if="row.parent_id" class="muted">└ </span>{{row.name}}</div></template></el-table-column>
+        <el-table-column prop="product_count" label="卖出的商品" min-width="100" align="right" />
+        <el-table-column label="净件数" min-width="120" align="right"><template #default="{row}"><b>{{row.net_qty}}</b><div class="c-sub">卖 {{row.sold_qty}}<span v-if="row.refund_qty" style="color:var(--danger)"> · 退 {{row.refund_qty}}</span></div></template></el-table-column>
+        <el-table-column label="净收" min-width="120" align="right"><template #default="{row}"><b class="money">{{yuan(row.net)}}</b><div class="c-sub" v-if="row.refund" style="color:var(--danger)">退 {{yuan(row.refund)}}</div></template></el-table-column>
+        <el-table-column prop="order_count" label="单数" min-width="70" align="right" />
+        <el-table-column width="90" align="right"><template #default><span class="muted" style="white-space:nowrap">看商品 ›</span></template></el-table-column>
+      </el-table>
+    </template>
+
+    <template v-else>
+    <div class="hint" style="margin:-6px 0 10px">点一行，下面展开这个商品的逐单明细。<b v-if="catId">当前只看分类：{{(catOptions.find(c => c.id === catId) || {}).label}}</b></div>
     <el-table :data="rows" highlight-current-row @current-change="r => pick(r)" row-class-name="clickable">
       <el-table-column label="商品" min-width="200"><template #default="{row}"><div class="c-main">{{row.product_name}}</div><div class="c-sub" v-if="row.sku_name !== '默认'">{{row.sku_name}}</div></template></el-table-column>
       <el-table-column label="净件数" min-width="110" align="right"><template #default="{row}"><b>{{row.net_qty}}</b><div class="c-sub">卖 {{row.sold_qty}}<span v-if="row.refund_qty" style="color:var(--danger)"> · 退 {{row.refund_qty}}</span></div></template></el-table-column>
@@ -738,12 +764,25 @@ const ProductSales = {
         <el-pagination layout="prev, pager, next" :total="dTotal" :page-size="100" :current-page="dPage" @current-change="p => pick(cur, p)" hide-on-single-page />
       </div>
     </div>
+    </template>
   </div>`,
-  setup() {
+  setup(props) {
     const store = ref(null), range = ref([daysAgo(6), today()]), kw = ref(''), rows = ref([]), cur = ref(null), detail = ref([]);
     const dTotal = ref(0), dPage = ref(1), dSums = ref({ qty: 0, paid: 0 });
-    const params = () => ({ store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value });
-    const load = async () => { cur.value = null; try { rows.value = (await api.get('/api/reports/product-sales', params())).rows; } catch (e) { err(e); } };
+    const view = ref('product'), catId = ref(null), catRows = ref([]);
+    const catOptions = computed(() => {
+      const cs = props.meta.categories || [];
+      return cs.filter(c => !c.parent_id).flatMap(p => [{ id: p.id, label: p.name }, ...cs.filter(c => c.parent_id === p.id).map(c => ({ id: c.id, label: p.name + ' / ' + c.name }))]);
+    });
+    const params = () => ({ store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value, category_id: catId.value });
+    const load = async () => {
+      cur.value = null;
+      try {
+        if (view.value === 'category') catRows.value = (await api.get('/api/reports/category-sales', { store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1] })).rows;
+        else rows.value = (await api.get('/api/reports/product-sales', params())).rows;
+      } catch (e) { err(e); }
+    };
+    const openCat = (row) => { if (!row.category_id) return; catId.value = row.category_id; kw.value = ''; view.value = 'product'; load(); };
     const pick = async (row, page = 1) => {
       if (!row) return; cur.value = row; dPage.value = page;
       try { const r = await api.get('/api/reports/product-sales/detail', { ...params(), keyword: '', sku_id: row.sku_id, page, size: 100 });
@@ -752,7 +791,7 @@ const ProductSales = {
     const exp = async (url) => { try { await api.download(url, params()); } catch (e) { err(e); } };
     const expDetail = async () => { try { await api.download('/api/reports/product-sales/detail', { ...params(), keyword: '', sku_id: cur.value.sku_id }); } catch (e) { err(e); } };
     onMounted(load);
-    return { store, range, kw, rows, cur, detail, dTotal, dPage, dSums, load, pick, exp, expDetail, yuan };
+    return { store, range, kw, rows, cur, detail, dTotal, dPage, dSums, view, catId, catRows, catOptions, openCat, load, pick, exp, expDetail, yuan };
   },
 };
 
@@ -1009,7 +1048,7 @@ const MENU = [
   ['dashboard', '经营概览', 'reports', Dashboard, '经营', 'home', '今天和本月的营收、待处理订单'],
   ['orders', '订单', 'reports', Orders, '经营', 'receipt', '所有门店的收银单和小程序订单'],
   ['revenue', '营收报表', 'reports', Revenue, '经营', 'chart', '按门店、日 / 周 / 月统计，可导出'],
-  ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '某商品卖了多少件，展开看逐单明细'],
+  ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '按商品或按分类查卖了多少，展开看逐单明细'],
   ['products', '商品', 'catalog', Products, '商品资料', 'package', '名称、规格、售价、图片、医疗器械资料'],
   ['categories', '商品分类', 'catalog', Categories, '商品资料', 'tag', '大类、小类'],
   ['stockItems', '库存品', 'catalog', StockItems, '商品资料', 'layers', '实际占库存的东西，多个规格可共用'],
