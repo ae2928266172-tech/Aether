@@ -66,13 +66,19 @@ def area_info(code: str, db: Session = Depends(get_db)):
 
 @router.get("/menu/{code}")
 def menu(code: str, db: Session = Depends(get_db)):
-    _area(db, code)
+    from ..services.area_rules import effective, load_rules
+    area = _area(db, code)
+    rules = load_rules(db, area)
     cats = [{"id": c.id, "name": c.name, "parent_id": c.parent_id}
             for c in db.scalars(select(Category).where(Category.active.is_(True)).order_by(Category.sort, Category.id))]
     prods = []
     for p in db.scalars(select(Product).where(Product.active.is_(True), Product.online_visible.is_(True))
                         .order_by(Product.sort, Product.id)):
+        rule = effective(p, area, rules)
+        if not rule.allowed:  # 这个区域不能点的商品，顾客看不到
+            continue
         d = product_out(p, admin=False)
+        d["min_qty"], d["max_qty"] = rule.min_qty, rule.max_qty
         for s in d["skus"]:
             for k in ("stock_item_id", "stock_item_name", "deduct_qty", "barcode"):
                 s.pop(k, None)

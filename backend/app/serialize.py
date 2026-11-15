@@ -33,7 +33,7 @@ def store_out(s: Store) -> dict:
 
 def area_out(a: Area) -> dict:
     return {"id": a.id, "store_id": a.store_id, "store_name": a.store.name, "name": a.name, "code": a.code,
-            "sort": a.sort, "active": a.active}
+            "sort": a.sort, "active": a.active, "no_qty_limit": a.no_qty_limit}
 
 
 def stock_item_out(i: StockItem) -> dict:
@@ -51,11 +51,26 @@ MEDICAL_FIELDS = {"reg_cert_no": "注册证号", "production_license_no": "生�
                   "registrant": "注册人", "production_address": "生产地址"}
 
 
+def product_cat_ids(p: Product) -> list[int]:
+    ids = [c.id for c in p.categories]
+    if p.category_id and p.category_id not in ids:  # 旧数据只有 category_id
+        ids.insert(0, p.category_id)
+    return ids
+
+
 def product_out(p: Product, admin: bool = True) -> dict:
-    d = {"id": p.id, "name": p.name, "code": p.code, "category_id": p.category_id,
-         "category_name": p.category.name if p.category else None, "unit": p.unit, "image": p.image,
+    cats = {c.id: c.name for c in p.categories}
+    if p.category:
+        cats.setdefault(p.category.id, p.category.name)
+    ids = product_cat_ids(p)
+    d = {"id": p.id, "name": p.name, "code": p.code, "category_id": p.category_id, "category_ids": ids,
+         "category_name": "、".join(cats[i] for i in ids if i in cats) or None, "unit": p.unit, "image": p.image,
          "description": p.description, "online_visible": p.online_visible, "active": p.active, "sort": p.sort,
+         "min_qty": p.min_qty, "max_qty": p.max_qty,
          "skus": [sku_out(s) for s in p.skus if admin or s.active]}
+    if admin:
+        d["area_limited"] = p.area_limited
+        d["area_ids"] = [a.id for a in p.areas]
     for k in MEDICAL_FIELDS:
         d[k] = getattr(p, k)
     if admin:

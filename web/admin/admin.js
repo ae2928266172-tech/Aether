@@ -49,7 +49,7 @@ const Products = {
           <el-col :span="12"><el-form-item label="商品名称" required><el-input v-model="form.name" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="货号"><el-input v-model="form.code" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="分类">
-            <el-select v-model="form.category_id" clearable filterable style="width:100%">
+            <el-select v-model="form.category_ids" multiple clearable filterable placeholder="可选多个分类" style="width:100%">
               <el-option v-for="c in meta.categories" :key="c.id" :label="catLabel(c)" :value="c.id" /></el-select></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="单位"><el-input v-model="form.unit" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="小程序可见"><el-switch v-model="form.online_visible" /></el-form-item></el-col>
@@ -85,6 +85,17 @@ const Products = {
           <el-col :span="12"><el-form-item label="生产地址"><el-input v-model="form.production_address" /></el-form-item></el-col>
         </el-row>
 
+        <div class="form-section">扫码点单<small>只限制顾客扫码点单，门店收银不受限；每个区域还可以在“门店与区域 → 点单规则”里单独设置</small></div>
+        <el-row :gutter="12">
+          <el-col :span="12"><el-form-item label="每单起订量"><el-input v-model="form.min_qty" placeholder="不限" style="width:140px"><template #append>件</template></el-input></el-form-item></el-col>
+          <el-col :span="12"><el-form-item label="每单限购量"><el-input v-model="form.max_qty" placeholder="不限" style="width:140px"><template #append>件</template></el-input></el-form-item></el-col>
+        </el-row>
+        <el-form-item label="可点区域">
+          <el-radio-group v-model="form.area_limited"><el-radio :value="false">所有区域</el-radio><el-radio :value="true">只在指定区域</el-radio></el-radio-group>
+          <el-select v-if="form.area_limited" v-model="form.area_ids" multiple filterable placeholder="选择区域" style="width:100%;margin-top:6px">
+            <el-option v-for="a in meta.areas" :key="a.id" :label="a.store_name + ' · ' + a.name" :value="a.id" /></el-select>
+        </el-form-item>
+
         <div class="form-section">供应商</div>
         <el-form-item label="供应商">
           <el-select v-model="form.supplier_id" clearable filterable style="width:300px">
@@ -103,9 +114,10 @@ const Products = {
     const edit = (row) => {
       Object.keys(form).forEach(k => delete form[k]);
       Object.assign(form, row ? JSON.parse(JSON.stringify(row)) : {
-        name: '', code: '', category_id: null, unit: '件', image: '', description: '', online_visible: true, active: true,
+        name: '', code: '', category_ids: [], min_qty: '', max_qty: '', area_limited: false, area_ids: [], unit: '件', image: '', description: '', online_visible: true, active: true,
         reg_cert_no: '', production_license_no: '', registrant: '', production_address: '', supplier_id: null, skus: [] });
       form.skus = row ? form.skus.map(s => ({ ...s, price_y: yuan(s.price), cost_y: s.cost == null ? '' : yuan(s.cost) })) : [blankSku()];
+      if (row) { form.min_qty = row.min_qty || ''; form.max_qty = row.max_qty || ''; form.area_ids = row.area_ids || []; form.category_ids = row.category_ids || []; }
       dlg.value = true;
     };
     const addSku = () => form.skus.push({ ...blankSku(), name: '' });
@@ -124,8 +136,13 @@ const Products = {
         const d = parseFloat(s.deduct_qty);
         if (!isFinite(d) || d <= 0) return ElMessage.warning(label + '的扣减量必须大于 0');
       }
+      const qtyOf = (v) => blank(v) ? null : (/^\d+$/.test(String(v).trim()) && +v >= 1 ? +v : NaN);
+      const minQ = qtyOf(form.min_qty), maxQ = qtyOf(form.max_qty);
+      if (Number.isNaN(minQ) || Number.isNaN(maxQ)) return ElMessage.warning('起订量、限购量请填正整数，或留空表示不限');
+      if (minQ && maxQ && minQ > maxQ) return ElMessage.warning('起订量不能大于限购量');
+      if (form.area_limited && !form.area_ids.length) return ElMessage.warning('选了“只在指定区域”，请至少选一个区域');
       if (zero) { try { await ElMessageBox.confirm('有规格的售价是 0 元，确定要保存吗？', '售价为 0', { type: 'warning' }); } catch (e) { return; } }
-      const body = { ...form, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: money(s.price_y),
+      const body = { ...form, min_qty: minQ, max_qty: maxQ, category_id: (form.category_ids || [])[0] || null, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: money(s.price_y),
         cost: blank(s.cost_y) ? null : money(s.cost_y), stock_item_id: s.stock_item_id || null,
         deduct_qty: parseFloat(s.deduct_qty), active: s.active, sort: i })) };
       saving.value = true;
@@ -241,8 +258,10 @@ const Stores = {
       <el-table-column prop="store_name" label="门店" width="140" />
       <el-table-column prop="name" label="区域" />
       <el-table-column prop="sort" label="排序" width="80" />
+      <el-table-column label="点单数量" width="110"><template #default="{row}"><el-tag v-if="row.no_qty_limit" type="success">不限数量</el-tag><span v-else class="muted">按规则</span></template></el-table-column>
       <el-table-column label="状态" width="80"><template #default="{row}">{{row.active ? '启用' : '停用'}}</template></el-table-column>
-      <el-table-column label="操作" width="220"><template #default="{row}">
+      <el-table-column label="操作" width="300"><template #default="{row}">
+        <el-button link type="primary" @click="openRules(row)">点单规则</el-button>
         <el-button link type="primary" @click="showQr(row)">二维码</el-button>
         <el-button link type="primary" @click="editArea(row)">编辑</el-button>
         <el-button link type="danger" @click="resetCode(row)">作废旧码</el-button></template></el-table-column>
@@ -285,8 +304,29 @@ const Stores = {
       <el-form-item label="区域名称"><el-input v-model="aForm.name" placeholder="如：一病区、3 楼" /></el-form-item>
       <el-form-item label="排序"><el-input-number v-model="aForm.sort" /></el-form-item>
       <el-form-item label="启用"><el-switch v-model="aForm.active" /></el-form-item>
+      <el-form-item label="不限数量"><el-switch v-model="aForm.no_qty_limit" /><span class="hint" style="margin:0 0 0 8px">打开后这个区域点单不受起订量、限购量限制（如 ICU）</span></el-form-item>
     </el-form>
     <template #footer><el-button @click="aDlg=false">取消</el-button><el-button type="primary" @click="saveArea">保存</el-button></template>
+  </el-dialog>
+  <el-dialog v-model="rDlg" :title="rArea.store_name + ' · ' + rArea.name + ' 点单规则'" width="820px" top="5vh">
+    <div class="hint" style="margin:0 0 12px">只影响顾客扫码点单。起订量、限购量留空 = 用商品自己的设置，填 0 = 本区域不限。
+      <b v-if="rArea.no_qty_limit">这个区域已设为“不限数量”，下面的数量设置不生效。</b></div>
+    <div class="toolbar" style="margin-bottom:8px">
+      <el-input v-model="rKw" placeholder="搜索商品" clearable style="width:200px" />
+      <el-button size="small" @click="rRows.forEach(r => r.allowed = true)">全部可点</el-button>
+      <el-button size="small" @click="rRows.forEach(r => r.allowed = false)">全部不可点</el-button>
+    </div>
+    <el-table :data="rShown" size="small" max-height="460">
+      <el-table-column prop="name" label="商品" min-width="160" />
+      <el-table-column label="可点" width="70"><template #default="{row}"><el-checkbox v-model="row.allowed" :disabled="row.area_limited" /></template></el-table-column>
+      <el-table-column label="起订量" width="130"><template #default="{row}"><el-input v-model="row.min_qty" size="small" :placeholder="row.product_min_qty ? '商品：' + row.product_min_qty : '不限'" /></template></el-table-column>
+      <el-table-column label="限购量" width="130"><template #default="{row}"><el-input v-model="row.max_qty" size="small" :placeholder="row.product_max_qty ? '商品：' + row.product_max_qty : '不限'" /></template></el-table-column>
+      <el-table-column label="当前效果" min-width="150"><template #default="{row}">
+        <span v-if="row.area_limited" class="muted">商品设了只在其他区域可点</span>
+        <span v-else-if="!row.effective.allowed" style="color:var(--danger)">不能点</span>
+        <span v-else>{{ effText(row.effective) }}</span></template></el-table-column>
+    </el-table>
+    <template #footer><el-button @click="rDlg=false">取消</el-button><el-button type="primary" :loading="rSaving" @click="saveRules">保存</el-button></template>
   </el-dialog>
   <el-dialog v-model="qDlg" title="区域二维码" width="380px">
     <div class="qr-box">
@@ -302,7 +342,7 @@ const Stores = {
   setup(props, { emit }) {
     const areas = ref([]), sDlg = ref(false), aDlg = ref(false), qDlg = ref(false);
     const sForm = reactive({}), aForm = reactive({}), qArea = ref({}), qImg = ref(''), qUrl = ref('');
-    const loadAreas = async () => { try { areas.value = await api.get('/api/areas'); } catch (e) { err(e); } };
+    const loadAreas = async () => { try { areas.value = await api.get('/api/areas'); props.meta.areas = areas.value; } catch (e) { err(e); } };
     const reloadStores = async () => { props.meta.stores = await api.get('/api/stores'); };
     const printer = ref({}), origin = location.origin, agentUrl = location.origin + '/api/print-agent/download';
     const loadPrinter = async () => { printer.value = sForm.id ? await api.get('/api/stores/' + sForm.id + '/printer').catch(() => ({})) : {}; };
@@ -319,7 +359,25 @@ const Stores = {
     const testPrint = async () => {
       try { await api.put('/api/stores/' + sForm.id, sForm); printer.value = { ...printer.value, ...(await api.post('/api/stores/' + sForm.id + '/printer/test')) }; ok('测试页已发送，打印小助手在线时几秒内出纸'); } catch (e) { err(e); }
     };
-    const editArea = (r) => { Object.assign(aForm, r ? { ...r } : { id: null, store_id: (props.meta.stores[0] || {}).id, name: '', sort: 0, active: true }); aDlg.value = true; };
+    const editArea = (r) => { Object.assign(aForm, r ? { ...r } : { id: null, store_id: (props.meta.stores[0] || {}).id, name: '', sort: 0, active: true, no_qty_limit: false }); aDlg.value = true; };
+    // 区域点单规则
+    const rDlg = ref(false), rArea = ref({}), rRows = ref([]), rKw = ref(''), rSaving = ref(false);
+    const rShown = computed(() => rKw.value ? rRows.value.filter(r => r.name.includes(rKw.value)) : rRows.value);
+    const effText = (e) => [e.min_qty ? e.min_qty + ' 件起' : '', e.max_qty ? '每单最多 ' + e.max_qty + ' 件' : ''].filter(Boolean).join('，') || '可点，不限数量';
+    const fillRules = (res) => { rArea.value = res.area; rRows.value = res.rules.map(r => ({ ...r, min_qty: r.min_qty == null ? '' : r.min_qty, max_qty: r.max_qty == null ? '' : r.max_qty })); };
+    const openRules = async (a) => { rKw.value = ''; try { fillRules(await api.get('/api/areas/' + a.id + '/rules')); rDlg.value = true; } catch (e) { err(e); } };
+    const saveRules = async () => {
+      const qty = (v) => blank(v) ? null : (/^\d+$/.test(String(v).trim()) ? +v : NaN);
+      const body = [];
+      for (const r of rRows.value) {
+        const mn = qty(r.min_qty), mx = qty(r.max_qty);
+        if (Number.isNaN(mn) || Number.isNaN(mx)) return ElMessage.warning(r.name + '：数量请填整数，留空用商品设置，0 表示不限');
+        if (mn && mx && mn > mx) return ElMessage.warning(r.name + '：起订量不能大于限购量');
+        body.push({ product_id: r.product_id, allowed: r.allowed, min_qty: mn, max_qty: mx });
+      }
+      rSaving.value = true;
+      try { fillRules(await api.put('/api/areas/' + rArea.value.id + '/rules', body)); ok(); } catch (e) { err(e); } finally { rSaving.value = false; }
+    };
     const saveArea = async () => { try { aForm.id ? await api.put('/api/areas/' + aForm.id, aForm) : await api.post('/api/areas', aForm); ok(); aDlg.value = false; loadAreas(); } catch (e) { err(e); } };
     const resetCode = async (r) => {
       try { await ElMessageBox.confirm('作废后，已经贴出去的旧二维码将无法点单，需要重新打印。确定吗？', '作废旧码', { type: 'warning' }); } catch (e) { return; }
@@ -334,7 +392,7 @@ const Stores = {
     const downloadQr = () => { const a = document.createElement('a'); a.href = qImg.value; a.download = qArea.value.store_name + '_' + qArea.value.name + '.gif'; a.click(); };
     const publicUrl = ref(''), qLocal = ref(false);
     onMounted(async () => { loadAreas(); try { publicUrl.value = (await api.get('/api/settings/rules')).public_url || ''; } catch (e) {} });
-    return { qLocal, areas, sDlg, aDlg, qDlg, sForm, aForm, qArea, qImg, qUrl, editStore, saveStore, printer, origin, agentUrl, resetKey, testPrint, editArea, saveArea, resetCode, showQr, downloadQr };
+    return { rDlg, rArea, rRows, rKw, rShown, rSaving, effText, openRules, saveRules, qLocal, areas, sDlg, aDlg, qDlg, sForm, aForm, qArea, qImg, qUrl, editStore, saveStore, printer, origin, agentUrl, resetKey, testPrint, editArea, saveArea, resetCode, showQr, downloadQr };
   },
 };
 
@@ -917,16 +975,17 @@ const App = {
   </div>`,
   setup() {
     const user = ref(null), lf = reactive({ username: '', password: '' }), busy = ref(false), tab = ref('dashboard'), ready = ref(false);
-    const meta = reactive({ categories: [], suppliers: [], stockItems: [], stores: [] });
+    const meta = reactive({ categories: [], suppliers: [], stockItems: [], stores: [], areas: [] });
     const menu = computed(() => user.value ? MENU.filter(m => user.value.is_admin && user.value.permissions.includes(m[2])) : []);
     const groups = computed(() => [...new Set(menu.value.map(m => m[4]))]);
     const cur = computed(() => menu.value.find(m => m[0] === tab.value) || []);
     const toStore = () => { location.href = '/web/store/'; };
     const loadMeta = async () => {
       const p = user.value.permissions, safe = (f) => f.catch(() => []);
-      [meta.categories, meta.suppliers, meta.stockItems, meta.stores] = await Promise.all([
+      [meta.categories, meta.suppliers, meta.stockItems, meta.stores, meta.areas] = await Promise.all([
         safe(api.get('/api/categories')), p.includes('catalog') ? safe(api.get('/api/suppliers')) : [],
-        p.includes('catalog') || p.includes('inventory') ? safe(api.get('/api/stock-items')).then(r => r.filter(x => x.active)) : [], safe(api.get('/api/stores'))]);
+        p.includes('catalog') || p.includes('inventory') ? safe(api.get('/api/stock-items')).then(r => r.filter(x => x.active)) : [], safe(api.get('/api/stores')),
+        safe(api.get('/api/areas'))]);
       if (menu.value.length && !menu.value.find(m => m[0] === tab.value)) tab.value = menu.value[0][0];
       ready.value = true;
     };

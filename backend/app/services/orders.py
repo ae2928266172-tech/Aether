@@ -243,6 +243,8 @@ def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], 
                   location_note=location_note.strip(), customer_id=customer_id, contact_phone=contact_phone,
                   remark=remark, status="pending", request_id=request_id)
     order.items = build_items(db, lines, online=True)
+    from .area_rules import check_order
+    check_order(db, area, order.items)
     order.store = store
     apply_pricing(order, None, None, None)
     db.add(order)

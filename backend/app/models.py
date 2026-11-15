@@ -100,8 +100,20 @@ class Area(Base, TimestampMixin):
     code: Mapped[str] = mapped_column(String(32), unique=True)
     sort: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # 本区域不限点单数量（如 ICU）：商品的起订量、限购量在这里都不生效
+    no_qty_limit: Mapped[bool] = mapped_column(Boolean, default=False)
     store: Mapped[Store] = relationship(lazy="joined")
     __table_args__ = (UniqueConstraint("store_id", "name"),)
+
+
+class AreaProductRule(Base):
+    """某个区域对某个商品的单独规则：能不能点、起订量、限购量（为空时用商品自己的设置）。"""
+    __tablename__ = "area_product_rules"
+    area_id: Mapped[int] = mapped_column(ForeignKey("areas.id", ondelete="CASCADE"), primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    allowed: Mapped[bool] = mapped_column(Boolean, default=True)
+    min_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 # ---------------- 商品资料 ----------------
@@ -154,12 +166,33 @@ class Product(Base, TimestampMixin):
     production_address: Mapped[str] = mapped_column(String(300), default="")   # 生产地址
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True)
     online_visible: Mapped[bool] = mapped_column(Boolean, default=True)  # 小程序可见
+    # 小程序点单数量：每单这个商品（各规格合计）至少 / 最多点几件；为空不限。区域可以单独覆盖
+    min_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_qty: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 只在指定区域可点（为 True 时只有 areas 里的区域能点）
+    area_limited: Mapped[bool] = mapped_column(Boolean, default=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort: Mapped[int] = mapped_column(Integer, default=0)
     skus: Mapped[list["Sku"]] = relationship(back_populates="product", lazy="selectin",
                                              order_by="Sku.sort, Sku.id")
     category: Mapped[Category | None] = relationship(lazy="joined")
+    # 一个商品可以同时放在多个分类里（category_id 是第一个，保留兼容）
+    categories: Mapped[list[Category]] = relationship(secondary="product_categories", lazy="selectin")
+    areas: Mapped[list["Area"]] = relationship(secondary="product_areas", lazy="selectin")
     supplier: Mapped[Supplier | None] = relationship(lazy="joined")
+
+
+class ProductCategory(Base):
+    __tablename__ = "product_categories"
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id", ondelete="CASCADE"), primary_key=True)
+
+
+class ProductArea(Base):
+    """商品“只在指定区域可点”时，允许的区域。"""
+    __tablename__ = "product_areas"
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    area_id: Mapped[int] = mapped_column(ForeignKey("areas.id", ondelete="CASCADE"), primary_key=True)
 
 
 class Sku(Base, TimestampMixin):

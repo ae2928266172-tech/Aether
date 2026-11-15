@@ -42,6 +42,8 @@
     .row { display: flex; justify-content: space-between; padding: 6px 0; }
     input, textarea { width: 100%; padding: 10px; border: 1px solid var(--b); border-radius: 8px; font-size: 15px; margin: 4px 0 10px; }
     .muted { color: var(--m); font-size: 13px; }
+    .lim { color: #b45309; font-size: 12px; margin: -2px 0 4px; }
+    .tip { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: rgba(24,24,27,.9); color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 14px; z-index: 20; max-width: 86%; text-align: center; }
     .err { padding: 40px 20px; text-align: center; color: var(--m); }
     .ord { background: #fff; border-radius: 10px; padding: 12px; margin: 10px 12px; }
     .link { color: var(--p); background: none; border: 0; font-size: 14px; }
@@ -58,15 +60,16 @@
         <div v-for="p in shown" :key="p.id" class="item">
           <div class="img" :style="p.image ? {backgroundImage:'url('+p.image+')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
           <div class="info">
-            <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div>
+            <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div><div class="lim" v-if="p.min_qty > 1 || p.max_qty">{{limText(p)}}</div>
             <div v-for="s in p.skus" :key="s.id" class="sku">
               <span>{{s.name !== '默认' ? s.name + '　' : ''}}<span class="pr">¥{{yuan(s.price)}}</span></span>
-              <span class="qty"><button v-if="qty[s.id]" @click="dec(s.id)">−</button><span v-if="qty[s.id]">{{qty[s.id]}}</span><button class="add" @click="inc(s.id)">＋</button></span>
+              <span class="qty"><button v-if="qty[s.id]" @click="dec(p, s.id)">−</button><span v-if="qty[s.id]">{{qty[s.id]}}</span><button class="add" @click="inc(p, s.id)">＋</button></span>
             </div>
           </div>
         </div>
       </div>
     </div>
+    <div v-if="tip" class="tip">{{tip}}</div>
     <div class="bar"><div class="cart">购<i v-if="count">{{count}}</i></div><div class="t">¥{{yuan(total)}}<span class="muted" style="font-weight:400"> 共 {{count}} 件</span></div><button class="btn" :disabled="!count" @click="sheet=true">去下单</button></div>
     <div v-if="sheet" class="mask" @click.self="sheet=false"><div class="sheet">
       <h3>确认订单</h3>
@@ -92,7 +95,7 @@
 </div>
 <script>window.APP_KIND = 'customer';</script>
 <script src="../vendor/vue.global.prod.js"></script>
-<script src="../common/api.js?v=7"></script>
+<script src="../common/api.js?v=8"></script>
 <script>
 const { createApp, ref, reactive, computed, onMounted } = Vue;
 const { api, yuan, rid } = Shouyin;
@@ -102,14 +105,39 @@ createApp({
     const area = ref(null), error = ref(''), cats = ref([]), products = ref([]), cat = ref(null), qty = reactive({});
     const sheet = ref(false), loc = ref(''), phone = ref(''), remark = ref(''), busy = ref(false), ordersOpen = ref(false), orders = ref([]);
     let reqId = rid();
-    const topCats = computed(() => cats.value.filter(c => !c.parent_id && products.value.some(p => p.category_id === c.id || cats.value.some(s => s.parent_id === c.id && s.id === p.category_id))));
-    const shown = computed(() => { if (!cat.value) return products.value; const ids = new Set([cat.value, ...cats.value.filter(c => c.parent_id === cat.value).map(c => c.id)]); return products.value.filter(p => ids.has(p.category_id)); });
+    const catIds = (p) => p.category_ids || (p.category_id ? [p.category_id] : []);
+    const inCat = (p, top) => catIds(p).some(id => id === top || cats.value.some(s => s.parent_id === top && s.id === id));
+    const topCats = computed(() => cats.value.filter(c => !c.parent_id && products.value.some(p => inCat(p, c.id))));
+    const shown = computed(() => cat.value ? products.value.filter(p => inCat(p, cat.value)) : products.value);
     const skuMap = computed(() => { const m = {}; products.value.forEach(p => p.skus.forEach(s => m[s.id] = { name: p.name + (s.name !== '默认' ? '(' + s.name + ')' : ''), price: s.price })); return m; });
     const lines = computed(() => Object.entries(qty).filter(([, q]) => q > 0).map(([id, q]) => ({ sku_id: +id, qty: q, ...skuMap.value[id] })));
     const count = computed(() => lines.value.reduce((a, l) => a + l.qty, 0));
     const total = computed(() => lines.value.reduce((a, l) => a + l.qty * l.price, 0));
-    const inc = (id) => qty[id] = (qty[id] || 0) + 1;
-    const dec = (id) => qty[id] = Math.max(0, (qty[id] || 0) - 1);
+    // 起订量、限购量按这个商品各规格合计算（由区域规则决定）
+    const tip = ref(''); let tipTimer = null;
+    const toast = (m) => { tip.value = m; clearTimeout(tipTimer); tipTimer = setTimeout(() => tip.value = '', 2200); };
+    const pTotal = (p) => p.skus.reduce((a, s) => a + (qty[s.id] || 0), 0);
+    const limText = (p) => [p.min_qty > 1 ? p.min_qty + ' 件起' : '', p.max_qty ? '每单限 ' + p.max_qty + ' 件' : ''].filter(Boolean).join('，');
+    const inc = (p, id) => {
+      const t = pTotal(p);
+      if (p.max_qty && t >= p.max_qty) return toast(p.name + ' 每单最多 ' + p.max_qty + ' 件');
+      const step = t === 0 && p.min_qty > 1 ? p.min_qty : 1;
+      qty[id] = (qty[id] || 0) + (p.max_qty ? Math.min(step, p.max_qty - t) : step);
+      if (step > 1) toast(p.name + ' ' + p.min_qty + ' 件起，已为您加到 ' + p.min_qty + ' 件');
+    };
+    const dec = (p, id) => {
+      const t = pTotal(p);
+      if (p.min_qty > 1 && t - 1 < p.min_qty) { p.skus.forEach(s => { qty[s.id] = 0; }); return; }
+      qty[id] = Math.max(0, (qty[id] || 0) - 1);
+    };
+    const checkLimits = () => {
+      for (const p of products.value) {
+        const t = pTotal(p); if (!t) continue;
+        if (p.min_qty && t < p.min_qty) return p.name + ' 至少要点 ' + p.min_qty + ' 件';
+        if (p.max_qty && t > p.max_qty) return p.name + ' 每单最多 ' + p.max_qty + ' 件';
+      }
+      return '';
+    };
     const ensureLogin = async () => {
       if (api.token()) return;
       // 小程序上线前的网页版：用本机随机标识免注册登录；小程序里改为 wx.login 的 code
@@ -118,6 +146,7 @@ createApp({
     };
     window.onUnauthorized = () => { api.setToken(''); };
     const submit = async () => {
+      const limErr = checkLimits(); if (limErr) return alert(limErr);
       if (area.value.location_required && !loc.value.trim()) return alert('请填写' + area.value.location_label);
       busy.value = true;
       try {
@@ -133,7 +162,7 @@ createApp({
       try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 }).mount('#app');
 </script>

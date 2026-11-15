@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Category, Product, Sku, StockItem, Supplier, User
+from ..models import Area, Category, Product, ProductCategory, Sku, StockItem, Supplier, User
 from ..security import current_user, has_perm, require
 from ..serialize import product_out, stock_item_out
 
@@ -170,12 +170,30 @@ class ProductIn(BaseModel):
     active: bool = True
     sort: int = 0
     supplier_id: int | None = None
+    category_ids: list[int] | None = None  # 多个分类；不传时用 category_id
+    min_qty: int | None = Field(None, ge=1)  # 小程序每单起订量
+    max_qty: int | None = Field(None, ge=1)  # 小程序每单限购量
+    area_limited: bool = False  # 只在指定区域可点
+    area_ids: list[int] = []
     skus: list[SkuIn] = Field(min_length=1)
 
 
+def _cat_ids(body: ProductIn) -> list[int]:
+    ids = body.category_ids if body.category_ids is not None else ([body.category_id] if body.category_id else [])
+    return list(dict.fromkeys(i for i in ids if i))
+
+
 def _check_product(db: Session, body: ProductIn, pid: int | None):
-    if body.category_id and not db.get(Category, body.category_id):
-        raise HTTPException(400, "分类不存在")
+    for cid in _cat_ids(body):
+        if not db.get(Category, cid):
+            raise HTTPException(400, "分类不存在")
+    if body.min_qty and body.max_qty and body.min_qty > body.max_qty:
+        raise HTTPException(400, "起订量不能大于限购量")
+    if body.area_limited and not body.area_ids:
+        raise HTTPException(400, "选了“只在指定区域可点”，请至少勾选一个区域")
+    for aid in body.area_ids:
+        if not db.get(Area, aid):
+            raise HTTPException(400, "区域不存在")
     if body.supplier_id and not db.get(Supplier, body.supplier_id):
         raise HTTPException(400, "供应商不存在")
     names = [s.name.strip() for s in body.skus]
@@ -191,6 +209,16 @@ def _check_product(db: Session, body: ProductIn, pid: int | None):
                                               Sku.id != (s.id or 0)))
             if dup:
                 raise HTTPException(400, f"条码 {s.barcode} 已被“{dup.product.name} {dup.name}”使用")
+
+
+def _apply_product(db: Session, p: Product, body: ProductIn):
+    ids = _cat_ids(body)
+    for k, v in body.model_dump(exclude={"skus", "category_ids", "area_ids", "category_id"}).items():
+        setattr(p, k, v)
+    p.category_id = ids[0] if ids else None
+    p.categories = [db.get(Category, i) for i in ids]
+    p.areas = [db.get(Area, i) for i in body.area_ids] if body.area_limited else []
+    _apply_skus(db, p, body.skus)
 
 
 def _apply_skus(db: Session, p: Product, skus: list[SkuIn]):
@@ -220,8 +248,9 @@ def list_products(keyword: str = "", category_id: int | None = None, include_ina
         q = q.where(Product.name.contains(keyword) | Product.code.contains(keyword)
                     | Product.id.in_(select(Sku.product_id).where(Sku.barcode == keyword)))
     if category_id:
-        sub = select(Category.id).where(Category.parent_id == category_id)
-        q = q.where(Product.category_id.in_(sub) | (Product.category_id == category_id))
+        cats = select(Category.id).where((Category.parent_id == category_id) | (Category.id == category_id))
+        q = q.where(Product.category_id.in_(cats)
+                    | Product.id.in_(select(ProductCategory.product_id).where(ProductCategory.category_id.in_(cats))))
     admin = has_perm(user, "catalog")
     if not (admin and include_inactive):
         q = q.where(Product.active.is_(True))
@@ -251,9 +280,9 @@ def get_product(pid: int, db: Session = Depends(get_db), user: User = Depends(cu
 @router.post("/products")
 def create_product(body: ProductIn, db: Session = Depends(get_db), _: User = Depends(require("catalog"))):
     _check_product(db, body, None)
-    p = Product(**body.model_dump(exclude={"skus"}))
+    p = Product()
     db.add(p)
-    _apply_skus(db, p, body.skus)
+    _apply_product(db, p, body)
     db.commit()
     db.refresh(p)
     return product_out(p)
@@ -265,9 +294,7 @@ def update_product(pid: int, body: ProductIn, db: Session = Depends(get_db), _: 
     if not p:
         raise HTTPException(404, "商品不存在")
     _check_product(db, body, pid)
-    for k, v in body.model_dump(exclude={"skus"}).items():
-        setattr(p, k, v)
-    _apply_skus(db, p, body.skus)
+    _apply_product(db, p, body)
     db.commit()
     db.refresh(p)
     return product_out(p)

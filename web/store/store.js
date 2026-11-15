@@ -142,7 +142,7 @@ const Pos = {
     const shown = computed(() => {
       if (!cat.value) return products.value;
       const ids = new Set([cat.value, ...cats.value.filter(c => c.parent_id === cat.value).map(c => c.id)]);
-      return products.value.filter(p => ids.has(p.category_id));
+      return products.value.filter(p => (p.category_ids || [p.category_id]).some(id => ids.has(id)));
     });
     const priceText = (p) => { const ps = p.skus.map(s => s.price); const a = Math.min(...ps), b = Math.max(...ps); return a === b ? yuan(a) : yuan(a) + ' 起'; };
     const load = async () => { try { [products.value, cats.value] = await Promise.all([api.get('/api/products'), api.get('/api/categories')]); products.value = products.value.filter(p => p.skus.length); } catch (e) { err(e); } };

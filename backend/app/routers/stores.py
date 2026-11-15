@@ -75,6 +75,7 @@ class AreaIn(BaseModel):
     name: str = Field(min_length=1)
     sort: int = 0
     active: bool = True
+    no_qty_limit: bool = False  # 本区域不限点单数量
 
 
 @router.get("/areas")
@@ -122,6 +123,59 @@ def reset_area_code(aid: int, db: Session = Depends(get_db), _: User = Depends(r
     a.code = secrets.token_hex(8)
     db.commit()
     return area_out(a)
+
+
+class AreaRuleIn(BaseModel):
+    product_id: int
+    allowed: bool = True
+    min_qty: int | None = Field(None, ge=0)  # 空 = 用商品设置；0 = 本区域不限
+    max_qty: int | None = Field(None, ge=0)
+
+
+@router.get("/areas/{aid}/rules")
+def get_area_rules(aid: int, db: Session = Depends(get_db), _: User = Depends(require("stores"))):
+    """区域点单规则：列出所有小程序可见的商品，以及在这个区域的实际效果。"""
+    from ..models import Product
+    from ..services.area_rules import effective, load_rules
+    a = db.get(Area, aid)
+    if not a:
+        raise HTTPException(404, "区域不存在")
+    rules = load_rules(db, a)
+    out = []
+    for p in db.scalars(select(Product).where(Product.active.is_(True), Product.online_visible.is_(True))
+                        .order_by(Product.sort, Product.id)):
+        r = rules.get(p.id)
+        eff = effective(p, a, rules)
+        out.append({"product_id": p.id, "name": p.name, "unit": p.unit,
+                    "product_min_qty": p.min_qty, "product_max_qty": p.max_qty,
+                    "area_limited": p.area_limited and a.id not in {x.id for x in p.areas},
+                    "allowed": r.allowed if r else True, "min_qty": r.min_qty if r else None,
+                    "max_qty": r.max_qty if r else None,
+                    "effective": {"allowed": eff.allowed, "min_qty": eff.min_qty, "max_qty": eff.max_qty}})
+    return {"area": area_out(a), "rules": out}
+
+
+@router.put("/areas/{aid}/rules")
+def put_area_rules(aid: int, body: list[AreaRuleIn], db: Session = Depends(get_db), _: User = Depends(require("stores"))):
+    """整体保存某个区域的规则；和商品默认一样（能点、没填数量）的行不存。"""
+    from ..models import AreaProductRule, Product
+    a = db.get(Area, aid)
+    if not a:
+        raise HTTPException(404, "区域不存在")
+    for r in body:
+        if not db.get(Product, r.product_id):
+            raise HTTPException(400, "商品不存在")
+        if r.min_qty and r.max_qty and r.min_qty > r.max_qty:
+            raise HTTPException(400, "起订量不能大于限购量")
+    for old in db.scalars(select(AreaProductRule).where(AreaProductRule.area_id == aid)):
+        db.delete(old)
+    db.flush()
+    for r in body:
+        if r.allowed and r.min_qty is None and r.max_qty is None:
+            continue
+        db.add(AreaProductRule(area_id=aid, product_id=r.product_id, allowed=r.allowed, min_qty=r.min_qty, max_qty=r.max_qty))
+    db.commit()
+    return get_area_rules(aid, db)
 
 
 # ---------------- 库存地点（仓库） ----------------
