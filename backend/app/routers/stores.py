@@ -290,8 +290,10 @@ def store_adjust(sid: int, body: StoreAdjustIn, db: Session = Depends(get_db), u
 
 @router.get("/stock-docs")
 def list_docs(location_id: int | None = None, kind: str | None = None, begin: date | None = None,
-              end: date | None = None, db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
-    q = select(StockDoc).order_by(StockDoc.id.desc()).limit(500)
+              end: date | None = None, page: int = 1, size: int = 100,
+              db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
+    size = max(1, min(size, 500))
+    q = select(StockDoc).order_by(StockDoc.id.desc()).offset((max(page, 1) - 1) * size).limit(size)
     if location_id:
         q = q.where((StockDoc.from_location_id == location_id) | (StockDoc.to_location_id == location_id))
     if kind:

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>扫码点单</title>
   <style>
     :root { --p: #18181b; --bg: #fafafa; --b: #e4e4e7; --m: #a1a1aa; }
@@ -13,7 +13,7 @@
     header .t { flex: 1; font-weight: 600; font-size: 17px; }
     header .s { color: var(--m); font-size: 13px; margin-top: 2px; font-weight: 400; }
     header .mine { background: #fff; color: #18181b; border: 1px solid var(--b); border-radius: 8px; padding: 7px 12px; font-size: 13px; }
-    .wrap { display: flex; height: calc(100vh - 70px - 64px); }
+    .wrap { display: flex; height: calc(100vh - 70px - 64px); height: calc(100dvh - 70px - 64px - env(safe-area-inset-bottom)); }
     .item .img { display: flex; align-items: center; justify-content: center; color: #a1a1aa; font-size: 22px; font-weight: 600; background-color: #f4f4f5; }
     .bar { }
     .bar .cart { width: 42px; height: 42px; border-radius: 10px; background: var(--p); color: #fff; display: flex; align-items: center; justify-content: center; position: relative; font-weight: 700; }
@@ -32,7 +32,7 @@
     .qty { display: flex; align-items: center; gap: 8px; }
     .qty button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--p); background: #fff; color: var(--p); font-size: 18px; line-height: 1; }
     .qty button.add { background: var(--p); color: #fff; }
-    .bar { position: fixed; left: 0; right: 0; bottom: 0; height: 64px; background: #fff; border-top: 1px solid var(--b); display: flex; align-items: center; padding: 0 16px; gap: 12px; }
+    .bar { position: fixed; left: 0; right: 0; bottom: 0; height: calc(64px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom) !important; background: #fff; border-top: 1px solid var(--b); display: flex; align-items: center; padding: 0 16px; gap: 12px; }
     .bar .t { flex: 1; font-size: 20px; font-weight: 800; color: #0f172a; }
     .btn { background: #18181b; color: #fff; border: 0; border-radius: 10px; padding: 12px 24px; font-size: 16px; }
     .btn:disabled { background: #d4d4d8; }
@@ -58,7 +58,7 @@
       <div class="cats"><div :class="{on:!cat}" @click="cat=null">全部</div><div v-for="c in topCats" :key="c.id" :class="{on:cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
       <div class="list">
         <div v-for="p in shown" :key="p.id" class="item">
-          <div class="img" :style="p.image ? {backgroundImage:'url('+p.image+')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
+          <div class="img" :style="p.image ? {backgroundImage:'url(' + JSON.stringify(p.image) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
           <div class="info">
             <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div><div class="lim" v-if="p.min_qty > 1 || p.max_qty">{{limText(p)}}</div>
             <div v-for="s in p.skus" :key="s.id" class="sku">
@@ -76,7 +76,7 @@
       <div v-for="l in lines" :key="l.sku_id" class="row"><span>{{l.name}} × {{l.qty}}</span><span>¥{{yuan(l.price*l.qty)}}</span></div>
       <div class="row"><b>合计</b><b>¥{{yuan(total)}}</b></div>
       <label>{{area.location_label}}<span v-if="area.location_required">（必填）</span></label><input v-model="loc" :placeholder="'请输入' + area.location_label">
-      <label>联系电话（可选）</label><input v-model="phone" type="tel">
+      <label>联系电话（可选）</label><input v-model="phone" type="tel" inputmode="tel" maxlength="20" placeholder="手机或座机号码">
       <label>备注（可选）</label><textarea v-model="remark" rows="2"></textarea>
       <div class="muted" style="margin-bottom:10px">提交后由门店接单并配送，付款方式请听从门店工作人员安排。</div>
       <button class="btn" style="width:100%" :disabled="busy" @click="submit">提交订单</button>
@@ -95,7 +95,7 @@
 </div>
 <script>window.APP_KIND = 'customer';</script>
 <script src="../vendor/vue.global.prod.js"></script>
-<script src="../common/api.js?v=8"></script>
+<script src="../common/api.js?v=9"></script>
 <script>
 const { createApp, ref, reactive, computed, onMounted } = Vue;
 const { api, yuan, rid } = Shouyin;
@@ -147,6 +147,7 @@ createApp({
     window.onUnauthorized = () => { api.setToken(''); };
     const submit = async () => {
       const limErr = checkLimits(); if (limErr) return alert(limErr);
+      if (phone.value.trim() && !/^[\d\s-]{7,20}$/.test(phone.value.trim())) return alert('联系电话格式不对，请只填数字');
       if (area.value.location_required && !loc.value.trim()) return alert('请填写' + area.value.location_label);
       busy.value = true;
       try {

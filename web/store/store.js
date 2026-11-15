@@ -99,7 +99,7 @@ const Pos = {
       <div class="grid">
         <div v-for="p in shown" :key="p.id" class="card" :class="{in: inCart(p)}" @click="pick(p)">
           <span v-if="inCart(p)" class="cnt">{{inCart(p)}}</span>
-          <div class="img" :style="p.image ? {backgroundImage: 'url(' + p.image + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
+          <div class="img" :style="p.image ? {backgroundImage: 'url(' + JSON.stringify(p.image) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
           <div class="n">{{p.name}}</div>
           <div class="sub">{{p.skus.length > 1 ? p.skus.length + ' 个规格' : (p.skus[0].name !== '默认' ? p.skus[0].name : p.unit)}}</div>
           <div class="p">¥{{priceText(p)}}</div>

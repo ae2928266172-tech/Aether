@@ -83,9 +83,9 @@
     rows.push(hr);
     r.items.forEach(it => {
       rows.push(`<div style="${sty('item_size', st.item_bold)}">${esc(it.name)}</div>`);
-      rows.push(`<div class="lr" style="${sty('item_size')}"><span>&nbsp;&nbsp;${it.qty}${esc(it.unit)}${it.unit_price ? ' × ' + it.unit_price : ''}</span><span>${it.amount}</span></div>`);
+      rows.push(`<div class="lr" style="${sty('item_size')}"><span>&nbsp;&nbsp;${esc(it.qty)}${esc(it.unit)}${it.unit_price ? ' × ' + esc(it.unit_price) : ''}</span><span>${esc(it.amount)}</span></div>`);
       (it.medical || []).forEach(([k, v]) => rows.push(`<div style="${sty('medical_size')}">&nbsp;&nbsp;${esc(k)}：${esc(v)}</div>`));
-      if (it.refunded_qty) rows.push(`<div>&nbsp;&nbsp;已退 ${it.refunded_qty}</div>`);
+      if (it.refunded_qty) rows.push(`<div>&nbsp;&nbsp;已退 ${esc(it.refunded_qty)}</div>`);
     });
     rows.push(hr);
     r.totals.forEach(([k, v]) => rows.push(k === '应收'
@@ -124,9 +124,12 @@
   }
 
   // 提示音（不依赖音频文件）
+  let audioCtx = null;  // 整个页面共用一个，避免长时间运行后浏览器因音频对象过多而静音
   function beep(times = 2) {
     try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const ctx = audioCtx;
+      if (ctx.state === 'suspended') ctx.resume();
       for (let i = 0; i < times; i++) {
         const o = ctx.createOscillator(), g = ctx.createGain();
         o.type = 'sine'; o.frequency.value = 880 + i * 220;

@@ -147,3 +147,14 @@ def test_public_url_setting(admin, world):
     admin.put("/api/settings/rules", {"public_url": "shop.example.com"}, expect=400)
     assert admin.put("/api/settings/rules", {"public_url": "https://shop.example.com/"})["public_url"] == "https://shop.example.com"
     assert admin.get("/api/settings/rules")["public_url"] == "https://shop.example.com"
+
+
+def test_detail_pagination_and_doc_paging(admin, world):
+    w, clerk = world, world["clerk"]
+    for _ in range(3):
+        clerk.post("/api/pos/checkout", {"store_id": w["s1"]["id"], "lines": [{"sku_id": w["small"]["id"], "qty": 1}],
+                                         "payments": [{"method": "cash", "amount": 1000}]})
+    r = admin.get("/api/reports/product-sales/detail", sku_id=w["small"]["id"], page=2, size=2)
+    assert r["total"] == 3 and len(r["rows"]) == 1 and r["sums"]["qty"] == 3 and r["sums"]["paid"] == 3000
+    docs = admin.get("/api/stock-docs", page=1, size=1)
+    assert len(docs) == 1

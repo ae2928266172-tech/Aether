@@ -354,10 +354,13 @@ const Stores = {
     const saveStore = async () => { try { sForm.id ? await api.put('/api/stores/' + sForm.id, sForm) : await api.post('/api/stores', sForm); ok(); sDlg.value = false; reloadStores(); } catch (e) { err(e); } };
     const resetKey = async () => {
       if (printer.value.print_key) { try { await ElMessageBox.confirm('换新密钥后，打印小助手要用新密钥重新安装才能出票。确定吗？', '换新密钥', { type: 'warning' }); } catch (e) { return; } }
-      try { if (sForm.print_mode === 'agent') await api.put('/api/stores/' + sForm.id, sForm); printer.value = await api.post('/api/stores/' + sForm.id + '/printer/key'); } catch (e) { err(e); }
+      try { printer.value = await api.post('/api/stores/' + sForm.id + '/printer/key'); } catch (e) { err(e); }
     };
     const testPrint = async () => {
-      try { await api.put('/api/stores/' + sForm.id, sForm); printer.value = { ...printer.value, ...(await api.post('/api/stores/' + sForm.id + '/printer/test')) }; ok('测试页已发送，打印小助手在线时几秒内出纸'); } catch (e) { err(e); }
+      // 不顺带保存表单：出票方式还没保存时提示先保存
+      const saved = props.meta.stores.find(s => s.id === sForm.id) || {};
+      if (saved.print_mode !== 'agent') return ElMessage.warning('请先点“保存”，把出票方式存为“打印小助手”，再打印测试页');
+      try { printer.value = { ...printer.value, ...(await api.post('/api/stores/' + sForm.id + '/printer/test')) }; ok('测试页已发送，打印小助手在线时几秒内出纸'); } catch (e) { err(e); }
     };
     const editArea = (r) => { Object.assign(aForm, r ? { ...r } : { id: null, store_id: (props.meta.stores[0] || {}).id, name: '', sort: 0, active: true, no_qty_limit: false }); aDlg.value = true; };
     // 区域点单规则
@@ -471,12 +474,22 @@ const Inventory = {
       Object.assign(doc, { kind, remark: '', supplier_id: null, rid: rid(),
         from: kind === 'out' ? loc.value : (kind === 'transfer' ? (wh || {}).id : null),
         to: kind === 'transfer' ? (st || {}).id : (kind === 'out' ? null : loc.value) });
-      doc.lines = props.meta.stockItems.map(i => ({ id: i.id, name: i.name, unit: i.unit, qty: '' }));
+      // 停用的库存品也列出来（排在后面），方便把剩余库存出库或盘为 0
+      let all = props.meta.stockItems;
+      try { all = await api.get('/api/stock-items'); } catch (e) {}
+      doc.lines = [...all.filter(i => i.active), ...all.filter(i => !i.active)]
+        .map(i => ({ id: i.id, name: i.name + (i.active ? '' : '（已停用）'), unit: i.unit, qty: '' }));
       dDlg.value = true;
     };
     const submitDoc = async () => {
-      const lines = doc.lines.filter(l => l.qty !== '' && l.qty !== null && (doc.kind === 'adjust' || parseFloat(l.qty) > 0)).map(l => ({ stock_item_id: l.id, qty: parseFloat(l.qty) }));
+      const bad = doc.lines.find(l => String(l.qty).trim() !== '' && !(isFinite(parseFloat(l.qty)) && /^\d+(\.\d{1,3})?$/.test(String(l.qty).trim())));
+      if (bad) return ElMessage.warning(bad.name + ' 的数量请填数字');
+      const lines = doc.lines.filter(l => String(l.qty).trim() !== '' && (doc.kind === 'adjust' || parseFloat(l.qty) > 0)).map(l => ({ stock_item_id: l.id, qty: parseFloat(l.qty) }));
       if (!lines.length) return ElMessage.warning('请填写数量');
+      const locName = (id) => (locations.value.find(l => l.id === id) || {}).name || '';
+      const where = { in: '入库到 ' + locName(doc.to), out: '从 ' + locName(doc.from) + ' 出库', transfer: '从 ' + locName(doc.from) + ' 调拨到 ' + locName(doc.to), adjust: '盘点 ' + locName(doc.to) }[doc.kind];
+      const total = lines.reduce((a, l) => a + l.qty, 0);
+      try { await ElMessageBox.confirm(`${where}：共 ${lines.length} 项，合计 ${+total.toFixed(3)}。提交后库存立即变化，确定吗？`, '确认' + docTitle.value, { type: 'warning' }); } catch (e) { return; }
       saving.value = true;
       try {
         await api.post('/api/stock-docs', { kind: doc.kind, from_location_id: doc.kind === 'out' || doc.kind === 'transfer' ? doc.from : null,
@@ -631,7 +644,7 @@ const ProductSales = {
       <el-button @click="exp('/api/reports/product-sales')">导出汇总</el-button>
       <el-button @click="exp('/api/reports/product-sales/detail')">导出全部明细</el-button>
     </div>
-    <el-table :data="rows" border stripe highlight-current-row @current-change="pick">
+    <el-table :data="rows" border stripe highlight-current-row @current-change="r => pick(r)">
       <el-table-column prop="product_name" label="商品" />
       <el-table-column prop="sku_name" label="规格" width="100" />
       <el-table-column prop="sold_qty" label="销售件数" width="90" />
@@ -656,17 +669,26 @@ const ProductSales = {
         <el-table-column label="优惠" width="80"><template #default="{row}">{{yuan(row.discount)}}</template></el-table-column>
         <el-table-column label="实收" width="90"><template #default="{row}">{{yuan(row.paid)}}</template></el-table-column>
       </el-table>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+        <span class="muted">共 {{dTotal}} 条，合计 {{dSums.qty}} 件，实收 ¥{{yuan(dSums.paid)}}</span>
+        <el-pagination layout="prev, pager, next" :total="dTotal" :page-size="100" :current-page="dPage" @current-change="p => pick(cur, p)" hide-on-single-page />
+      </div>
     </div>
   </div>`,
   setup() {
     const store = ref(null), range = ref([today(), today()]), kw = ref(''), rows = ref([]), cur = ref(null), detail = ref([]);
+    const dTotal = ref(0), dPage = ref(1), dSums = ref({ qty: 0, paid: 0 });
     const params = () => ({ store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value });
     const load = async () => { cur.value = null; try { rows.value = (await api.get('/api/reports/product-sales', params())).rows; } catch (e) { err(e); } };
-    const pick = async (row) => { if (!row) return; cur.value = row; try { detail.value = (await api.get('/api/reports/product-sales/detail', { ...params(), keyword: '', sku_id: row.sku_id })).rows; } catch (e) { err(e); } };
+    const pick = async (row, page = 1) => {
+      if (!row) return; cur.value = row; dPage.value = page;
+      try { const r = await api.get('/api/reports/product-sales/detail', { ...params(), keyword: '', sku_id: row.sku_id, page, size: 100 });
+        detail.value = r.rows; dTotal.value = r.total; dSums.value = r.sums; } catch (e) { err(e); }
+    };
     const exp = async (url) => { try { await api.download(url, params()); } catch (e) { err(e); } };
     const expDetail = async () => { try { await api.download('/api/reports/product-sales/detail', { ...params(), keyword: '', sku_id: cur.value.sku_id }); } catch (e) { err(e); } };
     onMounted(load);
-    return { store, range, kw, rows, cur, detail, load, pick, exp, expDetail, yuan };
+    return { store, range, kw, rows, cur, detail, dTotal, dPage, dSums, load, pick, exp, expDetail, yuan };
   },
 };
 

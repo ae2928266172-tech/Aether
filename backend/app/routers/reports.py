@@ -224,15 +224,23 @@ def product_sales(begin: date | None = None, end: date | None = None, store_id: 
 @router.get("/product-sales/detail")
 def product_sales_detail(sku_id: int | None = None, begin: date | None = None, end: date | None = None,
                          store_id: int | None = None, keyword: str = "", export: bool = False,
+                         page: int = 1, size: int = 100,
                          db: Session = Depends(get_db), _: User = Depends(require("reports"))):
     b, e, start, stop = _range(begin, end)
     lines = _sales(db, start, stop, store_id, keyword, sku_id)
+    total = len(lines)
     if export:
         header = ["时间", "类型", "单号", "退款单号", "门店", "区域/位置", "商品", "规格", "数量", "单价", "原价金额", "优惠", "实收"]
         out = [[l["time"].strftime("%Y-%m-%d %H:%M:%S"), l["type_text"], l["order_no"], l.get("refund_no", ""),
                 l["store_name"], l["area"], l["product_name"], l["sku_name"], l["qty"], y(l["unit_price"]),
                 y(l["amount"]), y(l["discount"]), y(l["paid"])] for l in lines]
         return _xlsx("逐单明细", header, out, f"商品销售明细_{b}_{e}")
-    for l in lines:
+    # 导出给全部；页面上分页显示，合计按全部明细算
+    sums = {"qty": sum(l["qty"] for l in lines), "amount": sum(l["amount"] for l in lines),
+            "discount": sum(l["discount"] for l in lines), "paid": sum(l["paid"] for l in lines)}
+    size = max(1, min(size, 1000))
+    rows = lines[(max(page, 1) - 1) * size: max(page, 1) * size]
+    for l in rows:
         l["time"] = l["time"].strftime("%Y-%m-%d %H:%M:%S")
-    return {"begin": b.isoformat(), "end": e.isoformat(), "rows": lines}
+    return {"begin": b.isoformat(), "end": e.isoformat(), "total": total, "page": page, "size": size, "sums": sums,
+            "rows": rows}
