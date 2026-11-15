@@ -123,6 +123,12 @@ const Pos = {
       </div>
     </div>
     <pay-dialog v-model="payDlg" :user="user" :lines="lines" @pay="pay" />
+    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，请选择" width="480px">
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <el-button v-for="m in scanMatches" :key="m.sku.id" size="large" style="margin:0;justify-content:space-between;height:52px"
+          @click="add(m.product, m.sku); scanDlg = false"><span>{{m.product.name}}<span v-if="m.sku.name !== '默认'" class="muted">　{{m.sku.name}}</span></span><b>¥{{yuan(m.sku.price)}}</b></el-button>
+      </div>
+    </el-dialog>
     <el-dialog v-model="skuDlg" :title="skuProduct && skuProduct.name" width="460px">
       <div style="display:flex;flex-wrap:wrap;gap:10px">
         <el-button v-for="s in (skuProduct ? skuProduct.skus : [])" :key="s.id" size="large" style="min-width:120px;height:64px" @click="add(skuProduct, s); skuDlg=false">
@@ -136,6 +142,7 @@ const Pos = {
   </div>`,
   setup(props) {
     const products = ref([]), cats = ref([]), cat = ref(null), scanText = ref(''), cart = ref([]), remark = ref('');
+    const scanDlg = ref(false), scanMatches = ref([]);
     const payDlg = ref(false), skuDlg = ref(false), skuProduct = ref(null), doneDlg = ref(false), last = ref({}), lastChange = ref(0), scan = ref(null);
     let reqId = rid();
     const topCats = computed(() => cats.value.filter(c => !c.parent_id && c.active));
@@ -150,7 +157,12 @@ const Pos = {
     const pick = (p) => { if (p.skus.length === 1) add(p, p.skus[0]); else { skuProduct.value = p; skuDlg.value = true; } };
     const onScan = async () => {
       const t = scanText.value.trim(); if (!t) return;
-      try { const r = await api.get('/api/products/by-barcode/' + encodeURIComponent(t)); add(r.product, r.product.skus.find(s => s.id === r.sku_id)); scanText.value = ''; }
+      try {
+        const r = await api.get('/api/products/by-barcode/' + encodeURIComponent(t)); scanText.value = '';
+        const ms = (r.matches || [r]).map(m => ({ product: m.product, sku: m.product.skus.find(s => s.id === m.sku_id) })).filter(m => m.sku);
+        if (ms.length === 1) add(ms[0].product, ms[0].sku);
+        else { scanMatches.value = ms; scanDlg.value = true; }  // 一个条码对应多个规格：让店员选
+      }
       catch (e) {
         const m = products.value.filter(p => p.name.includes(t));
         if (m.length === 1) { pick(m[0]); scanText.value = ''; } else if (m.length) { products.value = m.concat(products.value.filter(p => !m.includes(p))); cat.value = null; } else err(e);
@@ -180,7 +192,7 @@ const Pos = {
     const reprint = async () => { try { outPrint(await api.post('/api/orders/' + last.value.id + '/print', { reprint: true })); } catch (e) { err(e); } };
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); });
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
-      priceText, add, pick, onScan, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
+      scanDlg, scanMatches, priceText, add, pick, onScan, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
   },
 };
 

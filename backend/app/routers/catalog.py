@@ -204,11 +204,11 @@ def _check_product(db: Session, body: ProductIn, pid: int | None):
             raise HTTPException(400, "绑定的库存品不存在")
         if s.deduct_qty <= 0:
             raise HTTPException(400, "扣减量必须大于 0")
-        if s.barcode:
-            dup = db.scalar(select(Sku).where(Sku.barcode == s.barcode, Sku.active.is_(True),
-                                              Sku.id != (s.id or 0)))
-            if dup:
-                raise HTTPException(400, f"条码 {s.barcode} 已被“{dup.product.name} {dup.name}”使用")
+    # 同一个条码可以对应多个规格（厂家一个条码多个尺码的情况很常见），扫码时让店员选；
+    # 只是同一个商品里两个规格不能填同一个条码
+    codes = [s.barcode for s in body.skus if s.barcode and s.active]
+    if len(codes) != len(set(codes)):
+        raise HTTPException(400, "同一商品的两个规格不能用同一个条码")
 
 
 def _apply_product(db: Session, p: Product, body: ProductIn):
@@ -259,14 +259,17 @@ def list_products(keyword: str = "", category_id: int | None = None, include_ina
 
 @router.get("/products/by-barcode/{code}")
 def by_barcode(code: str, db: Session = Depends(get_db), user: User = Depends(current_user)):
-    sku = db.scalar(select(Sku).where(Sku.barcode == code, Sku.active.is_(True)))
-    if not sku:
+    """按条码（或货号）找规格。一个条码对应多个规格时，matches 里列出全部，由收银台让店员选。"""
+    admin = has_perm(user, "catalog")
+    skus = [s for s in db.scalars(select(Sku).where(Sku.barcode == code, Sku.active.is_(True))) if s.product.active]
+    if not skus:
         p = db.scalar(select(Product).where(Product.code == code, Product.active.is_(True)))
-        if p and len([s for s in p.skus if s.active]) == 1:
-            sku = next(s for s in p.skus if s.active)
-    if not sku or not sku.product.active:
+        if p:
+            skus = [s for s in p.skus if s.active]
+    if not skus:
         raise HTTPException(404, f"没有找到条码 {code}")
-    return {"product": product_out(sku.product, admin=has_perm(user, "catalog")), "sku_id": sku.id}
+    matches = [{"product": product_out(s.product, admin=admin), "sku_id": s.id} for s in skus]
+    return {**matches[0], "matches": matches}
 
 
 @router.get("/products/{pid}")

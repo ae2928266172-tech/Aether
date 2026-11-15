@@ -23,6 +23,14 @@ PRE = re.compile(r"^(\*\*|\*|ICU-?|NICU-?|EICU-?)\s*")
 MIN_RE = re.compile(r"[（(]\s*(?:单点)?\s*([0-9一二两三四五六七八九十]+)\s*(片|卷|包|个|条|支|盒|瓶)?\s*(?:起点|起送|起订|起)\s*[）)]")
 CN = {"一": 1, "二": 2, "两": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
 SKIP_NAMES = ("备注床号", "请务必备注")
+# Aether 2026-11-15 确认是同一个东西、名字不一样的：去前缀后的名称 → 合并后的名称
+ALIASES = {
+    "护理垫": "成人护理垫",
+    "振德灭菌凡士林纱布": "振德凡士林油纱",
+    "医用中单(灭菌)": "(灭菌)医用中单",
+}
+# Aether 2026-11-15 确认的价格：(商品, 规格关键字) → 售价
+PRICE_OVERRIDES = {("无菌采样杯", "120ml"): 9.80}
 
 
 def load(d, n):
@@ -42,14 +50,23 @@ def split_name(name):
         min_qty = int(v) if v.isdigit() else CN.get(v)
         rest = (rest[:mq.start()] + rest[mq.end():])
     rest = rest.replace("（", "(").replace("）", ")").strip()
+    rest = ALIASES.get(rest, rest)
     return rest, ver or "普通", min_qty
 
 
 def norm_spec(s):
     s = (s or "").replace("㎝", "cm").replace("（", "(").replace("）", ")").replace("×", "*").replace("＊", "*")
     s = re.sub(r"\s+", "", s).lower()
-    s = re.sub(r"\(?(五包起送|单点.*起送)\)?", "", s)
+    s = re.sub(r"\(?(五包起送|五包起点|五包|单点.*起送)\)?", "", s)
+    s = re.sub(r"(\d+)p(?![a-z])", r"\1片", s)  # 10P 与 10片 写法统一
+    s = re.sub(r"(\d)cm", r"\1", s)  # 20*30cm 与 20*30 写法统一
     return s
+
+
+def clean_spec(s):
+    """规格显示文字：去掉“(五包起点)”这类起订说明。"""
+    s = re.sub(r"[（(]\s*(五包起送|五包起点|五包|单点[^)）]*起送)\s*[)）]", "", s or "").strip()
+    return s or "默认"
 
 
 def money(v):
@@ -103,12 +120,16 @@ def plan(products):
                 vals = sorted({str(v[field]) for v in vers})
                 if len(vals) > 1:
                     diffs.append(f"{label}不同：" + " / ".join(f"{v['ver']} {v[field]}" for v in vers))
-            out.append({"product": base, "spec": main["spec"], "versions": "、".join(v["ver"] for v in vers), "n": len(vers),
-                        "price": main["price"], "cost": main["cost"], "unit": main["unit"], "supplier": main["supplier"],
+            price = PRICE_OVERRIDES.get((base, key), main["price"])
+            if price != main["price"]:
+                diffs.append(f"已按确认统一售价 {price}")
+            out.append({"product": base, "spec": clean_spec(main["spec"]), "spec_key": key, "versions": "、".join(v["ver"] for v in vers), "n": len(vers),
+                        "price": price, "cost": main["cost"], "unit": main["unit"], "supplier": main["supplier"],
                         "barcode": " / ".join(dict.fromkeys(v["barcode"] for v in vers if v["barcode"])),
                         "qty": round(sum(v["qty"] for v in vers), 3), "qty_detail": "，".join(f"{v['ver']} {v['qty']:g}" for v in vers),
                         "categories": "、".join(cats), "min_qty": min_qty, "diffs": "；".join(diffs),
-                        "hg_ids": ",".join(v["hg_id"] for v in vers), "hg_names": " | ".join(dict.fromkeys(v["hg_name"] for v in vers))})
+                        "hg_ids": ",".join(v["hg_id"] for v in vers), "hg_names": " | ".join(dict.fromkeys(v["hg_name"] for v in vers)),
+                        "hg_code": main["hg_code"], "cat_list": cats, "vers": vers})
     return out
 
 

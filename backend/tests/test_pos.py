@@ -115,6 +115,13 @@ def test_barcode_and_negative_stock_rule(admin, world):
     assert r["sku_id"] == w["big"]["id"]
     assert "cost" not in r["product"]["skus"][0]
     clerk.get("/api/products/by-barcode/nope", expect=404)
+    # 同一个条码可以给不同商品的规格用，扫码时返回全部让店员选
+    ice = w["ice"]
+    admin.put(f"/api/products/{ice['id']}", {"name": ice["name"], "skus": [{**ice["skus"][0], "barcode": "690002"}]})
+    assert {m["sku_id"] for m in clerk.get("/api/products/by-barcode/690002")["matches"]} == {w["big"]["id"], ice["skus"][0]["id"]}
+    # 同一个商品的两个规格不能同条码
+    water = w["water"]
+    admin.put(f"/api/products/{water['id']}", {"name": water["name"], "skus": [{**s, "barcode": "X1"} for s in water["skus"]]}, expect=400)
     # 默认：门店收银允许卖成负数
     o = clerk.post("/api/pos/checkout", checkout(clerk, w, [{"sku_id": w["big"]["id"], "qty": 60}]))
     assert stock_of(admin, w["s1"]["location_id"], w["cup"]["id"]) == -20
