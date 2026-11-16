@@ -547,7 +547,7 @@ const Inventory = {
     const outReasons = ['领用', '报损', '退供应商', '其他'], kindText = { in: '入库', out: '出库', transfer: '调拨', adjust: '盘点' };
     const lineAmt = (r) => { const q = parseFloat(r.qty), p = money(r.price); return q > 0 && p !== null ? Math.round(q * p) : null; };
     const docAmt = computed(() => doc.kind === 'in' ? doc.lines.reduce((a, r) => a + (lineAmt(r) || 0), 0) : 0);
-    const diffOf = (r) => { if (blank(r.qty) || !isFinite(parseFloat(r.qty))) return null; return +(parseFloat(r.qty) - (+stockAt(doc.to, r.id) || 0)).toFixed(3); };
+    const diffOf = (r) => { if (!balances[doc.to] || blank(r.qty) || !isFinite(parseFloat(r.qty))) return null; return +(parseFloat(r.qty) - (+stockAt(doc.to, r.id) || 0)).toFixed(3); };
     const lDlg = ref(false), docs = ref([]), lq = reactive({ kind: '', location_id: null, range: [daysAgo(30), today()], keyword: '' });
     const docParams = () => ({ kind: lq.kind || undefined, location_id: lq.location_id || undefined, begin: (lq.range || [])[0], end: (lq.range || [])[1], keyword: lq.keyword });
     const loadDocs = async () => { try { docs.value = await api.get('/api/stock-docs', docParams()); } catch (e) { err(e); } };
@@ -589,6 +589,8 @@ const Inventory = {
       Object.assign(doc, { kind, remark: '', reason: '', supplier_id: null, rid: rid(),
         from: kind === 'out' ? loc.value : (kind === 'transfer' ? (wh || {}).id : null),
         to: kind === 'transfer' ? (st || {}).id : (kind === 'out' ? null : loc.value) });
+      // 地点没变时 watch 不会触发，这里主动取一次现有库存
+      fetchBal(doc.from).catch(() => {}); fetchBal(doc.to).catch(() => {});
       // 停用的库存品也列出来（排在后面），方便把剩余库存出库或盘为 0
       let all = props.meta.stockItems;
       try { all = await api.get('/api/stock-items'); } catch (e) {}
