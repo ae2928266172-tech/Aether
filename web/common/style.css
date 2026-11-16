@@ -173,3 +173,4 @@ a:hover { text-decoration: underline; }
   .content { padding: 14px; }
 }
 .stat.clickable { cursor: pointer; }
+.el-table .row-void td.el-table__cell { color: var(--muted, #9ca3af); text-decoration: line-through; }

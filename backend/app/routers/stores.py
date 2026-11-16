@@ -8,10 +8,11 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from ..db import get_db, now
-from ..models import Area, Location, StockBalance, StockDoc, StockItem, StockMove, Store, User
+from ..models import Area, Location, StockBalance, StockDoc, StockItem, StockMove, Store, Supplier, User
 from ..security import check_store_access, current_user, has_perm, require, store_stock_access
 from ..serialize import area_out, dt, num, store_out
 from ..services import inventory as inv
+from .reports import _xlsx
 
 router = APIRouter(prefix="/api", tags=["门店与库存"])
 
@@ -240,6 +241,7 @@ def store_stock(sid: int, keyword: str = "", db: Session = Depends(get_db), user
 class DocLineIn(BaseModel):
     stock_item_id: int
     qty: float
+    unit_cost: int | None = None  # 单价（分），入库填进价；不填按库存品成本
 
 
 class DocIn(BaseModel):
@@ -247,27 +249,70 @@ class DocIn(BaseModel):
     from_location_id: int | None = None
     to_location_id: int | None = None
     supplier_id: int | None = None
+    reason: str = ""  # 出库原因：领用 / 报损 / 退供应商 / 其他
     remark: str = ""
     request_id: str | None = None
     lines: list[DocLineIn]
 
 
-def _doc_out(db: Session, d: StockDoc):
-    names = {i.id: (i.name, i.unit) for i in db.scalars(select(StockItem))}
-    locs = {l.id: l.name for l in db.scalars(select(Location))}
-    return {"id": d.id, "no": d.no, "kind": d.kind,
-            "kind_text": {"in": "入库", "out": "出库", "transfer": "调拨", "adjust": "盘点"}[d.kind],
+DOC_KIND_TEXT = {"in": "入库", "out": "出库", "transfer": "调拨", "adjust": "盘点"}
+
+
+def _doc_ctx(db: Session) -> dict:
+    return {"names": {i.id: (i.name, i.unit) for i in db.scalars(select(StockItem))},
+            "locs": {l.id: l.name for l in db.scalars(select(Location))},
+            "users": {u.id: (u.display_name or u.username) for u in db.scalars(select(User))},
+            "sups": {s.id: s.name for s in db.scalars(select(Supplier))}}
+
+
+def _doc_out(db: Session, d: StockDoc, ctx: dict | None = None):
+    ctx = ctx or _doc_ctx(db)
+    names, locs, users, sups = ctx["names"], ctx["locs"], ctx["users"], ctx["sups"]
+    lines = []
+    for ln in d.lines:
+        name, unit = names.get(ln.stock_item_id, ("", ""))
+        row = {"stock_item_id": ln.stock_item_id, "name": name, "unit": unit, "qty": num(ln.qty),
+               "unit_cost": ln.unit_cost, "amount": ln.amount}
+        if d.kind == "adjust":  # 盘点：qty 是实盘数，diff 是盈亏数量（正为盘盈），amount 是盈亏金额
+            row["book_qty"] = None if ln.book_qty is None else num(ln.book_qty)
+            row["diff"] = None if ln.book_qty is None else num(ln.qty - ln.book_qty)
+        lines.append(row)
+    amts = [ln["amount"] for ln in lines]
+    if d.kind == "adjust":
+        total_qty = sum((ln.qty - ln.book_qty for ln in d.lines if ln.book_qty is not None), inv.Decimal(0))
+    else:
+        total_qty = sum((ln.qty for ln in d.lines), inv.Decimal(0))
+    return {"id": d.id, "no": d.no, "kind": d.kind, "kind_text": DOC_KIND_TEXT[d.kind],
+            "from_location_id": d.from_location_id, "to_location_id": d.to_location_id,
             "from_location": locs.get(d.from_location_id), "to_location": locs.get(d.to_location_id),
-            "remark": d.remark, "created_at": dt(d.created_at),
-            "lines": [{"stock_item_id": ln.stock_item_id, "name": names.get(ln.stock_item_id, ("", ""))[0],
-                       "unit": names.get(ln.stock_item_id, ("", ""))[1], "qty": num(ln.qty)} for ln in d.lines]}
+            "supplier_id": d.supplier_id, "supplier_name": sups.get(d.supplier_id), "reason": d.reason or "",
+            "remark": d.remark, "created_at": dt(d.created_at), "created_by_name": users.get(d.created_by, ""),
+            "voided": d.voided_at is not None, "voided_at": dt(d.voided_at),
+            "voided_by_name": users.get(d.voided_by, ""), "void_reason": d.void_reason or "",
+            "total_qty": num(total_qty), "total_amount": None if any(a is None for a in amts) else sum(amts),
+            "lines": lines}
 
 
 @router.post("/stock-docs")
 def create_doc(body: DocIn, db: Session = Depends(get_db), user: User = Depends(require("inventory"))):
+    if body.supplier_id and not db.get(Supplier, body.supplier_id):
+        raise HTTPException(400, "供应商不存在")
     d = inv.create_doc(db, kind=body.kind, lines=[ln.model_dump() for ln in body.lines], user_id=user.id,
                        from_location_id=body.from_location_id, to_location_id=body.to_location_id,
-                       supplier_id=body.supplier_id, remark=body.remark, request_id=body.request_id)
+                       supplier_id=body.supplier_id, remark=body.remark, request_id=body.request_id,
+                       reason=body.reason)
+    db.commit()
+    return _doc_out(db, d)
+
+
+class VoidIn(BaseModel):
+    reason: str = Field(min_length=1, max_length=200)
+
+
+@router.post("/stock-docs/{did}/void")
+def void_doc(did: int, body: VoidIn, db: Session = Depends(get_db), user: User = Depends(require("inventory"))):
+    """作废填错的单据：库存按原单反向冲回，单据保留并标“已作废”。"""
+    d = inv.void_doc(db, did, user.id, body.reason)
     db.commit()
     return _doc_out(db, d)
 
@@ -282,7 +327,9 @@ class StoreAdjustIn(BaseModel):
 def store_adjust(sid: int, body: StoreAdjustIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     """门店盘点（填实盘数），需后台允许本店修改库存。"""
     store = store_stock_access(db, user, sid, edit=True)
-    d = inv.create_doc(db, kind="adjust", lines=[ln.model_dump() for ln in body.lines], user_id=user.id,
+    # 门店盘点不让填单价，盈亏金额按库存品成本算
+    d = inv.create_doc(db, kind="adjust", lines=[ln.model_dump(exclude={"unit_cost"}) for ln in body.lines],
+                       user_id=user.id,
                        to_location_id=store.location_id, remark=body.remark or "门店盘点",
                        request_id=body.request_id)
     db.commit()
@@ -291,10 +338,14 @@ def store_adjust(sid: int, body: StoreAdjustIn, db: Session = Depends(get_db), u
 
 @router.get("/stock-docs")
 def list_docs(location_id: int | None = None, kind: str | None = None, begin: date | None = None,
-              end: date | None = None, page: int = 1, size: int = 100,
+              end: date | None = None, keyword: str = "", page: int = 1, size: int = 100, export: bool = False,
               db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
     size = max(1, min(size, 500))
-    q = select(StockDoc).order_by(StockDoc.id.desc()).offset((max(page, 1) - 1) * size).limit(size)
+    q = select(StockDoc).order_by(StockDoc.id.desc())
+    if not export:
+        q = q.offset((max(page, 1) - 1) * size).limit(size)
+    if keyword:
+        q = q.where(StockDoc.no.contains(keyword.strip()) | StockDoc.remark.contains(keyword.strip()))
     if location_id:
         q = q.where((StockDoc.from_location_id == location_id) | (StockDoc.to_location_id == location_id))
     if kind:
@@ -303,14 +354,36 @@ def list_docs(location_id: int | None = None, kind: str | None = None, begin: da
         q = q.where(StockDoc.created_at >= datetime.combine(begin, time.min))
     if end:
         q = q.where(StockDoc.created_at < datetime.combine(end + timedelta(days=1), time.min))
-    return [_doc_out(db, d) for d in db.scalars(q)]
+    ctx = _doc_ctx(db)
+    docs = [_doc_out(db, d, ctx) for d in db.scalars(q)]
+    if export:  # 每行一个库存品，方便在 Excel 里筛选、汇总
+        yuan = lambda v: None if v is None else v / 100
+        rows = []
+        for d in docs:
+            for ln in d["lines"]:
+                rows.append([d["no"], d["kind_text"], d["created_at"], d["from_location"] or "", d["to_location"] or "",
+                             d["supplier_name"] or "", d["reason"], ln["name"], ln["unit"], ln.get("book_qty"), ln["qty"],
+                             ln.get("diff"), yuan(ln["unit_cost"]), yuan(ln["amount"]), d["created_by_name"], d["remark"],
+                             "已作废：" + d["void_reason"] if d["voided"] else ""])
+        header = ["单号", "类型", "时间", "调出 / 出库地点", "调入 / 入库地点", "供应商", "出库原因", "库存品", "单位",
+                  "账面数（盘点）", "数量 / 实盘数", "盈亏数（盘点）", "单价", "金额 / 盈亏金额", "制单人", "备注", "状态"]
+        return _xlsx("出入库单据", header, rows, f"出入库单据_{begin or ''}_{end or ''}")
+    return docs
 
 
 @router.get("/stock-ledger")
 def stock_ledger(location_id: int, begin: date | None = None, end: date | None = None, keyword: str = "",
-                 db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
+                 export: bool = False, db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
     today = now().date()
-    rows = inv.ledger(db, location_id, begin or today, end or today, keyword)
+    b, e = begin or today, end or today
+    rows = inv.ledger(db, location_id, b, e, keyword)
+    if export:
+        loc = db.get(Location, location_id)
+        cols = ["opening", *inv.LEDGER_COLUMNS, "closing", "current"]
+        header = ["库存品", "编码", "单位", "期初", *inv.LEDGER_COLUMNS.values(), "结余", "当前库存", "预警量", "低于预警"]
+        out = [[r["name"], r["code"], r["unit"], *[num(r[c]) for c in cols],
+                None if r["alert_qty"] is None else num(r["alert_qty"]), "是" if r["low"] else ""] for r in rows]
+        return _xlsx("库存台账", header, out, f"库存台账_{loc.name if loc else location_id}_{b}_{e}")
     return [{k: (num(v) if k not in ("name", "code", "unit", "stock_item_id", "low", "alert_qty") else v)
              for k, v in r.items()} | {"alert_qty": None if r["alert_qty"] is None else num(r["alert_qty"])}
             for r in rows]
@@ -338,7 +411,7 @@ def stock_moves(location_id: int, stock_item_id: int, begin: date | None = None,
         ref = ""
         if m.doc_id:
             d = db.get(StockDoc, m.doc_id)
-            ref = d.no + (f"（{d.remark}）" if d.remark else "")
+            ref = d.no + (f"（{d.remark}）" if d.remark else "") + (f" · {m.note}" if m.note else "")
         elif m.order_id:
             ref = db.get(Order, m.order_id).no
         out.append({"id": m.id, "kind": m.kind, "kind_text": inv.LEDGER_COLUMNS[m.kind], "qty": num(m.qty),

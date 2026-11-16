@@ -237,8 +237,14 @@ class StockDoc(Base, TimestampMixin):
     to_location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     business_date: Mapped[datetime] = mapped_column(DateTime, default=now)
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True)
+    # 出库原因：领用 / 报损 / 退供应商 / 其他（入库为采购入库等，可空）
+    reason: Mapped[str] = mapped_column(String(20), default="")
     remark: Mapped[str] = mapped_column(String(200), default="")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # 作废：填错的单据不删除，作废时按原单反向冲回库存，留痕可查
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    voided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(200), default="")
     # 客户端生成的请求号，防止网络重试导致重复入库
     request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     lines: Mapped[list["StockDocLine"]] = relationship(lazy="selectin")
@@ -249,7 +255,10 @@ class StockDocLine(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     doc_id: Mapped[int] = mapped_column(ForeignKey("stock_docs.id"))
     stock_item_id: Mapped[int] = mapped_column(ForeignKey("stock_items.id"))
-    qty: Mapped[Decimal] = mapped_column(Qty)
+    qty: Mapped[Decimal] = mapped_column(Qty)  # 盘点单为实盘数
+    unit_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 单价（分）：入库为进价，其余按库存品成本
+    amount: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 金额（分）：数量 × 单价；盘点为盈亏金额
+    book_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)  # 盘点时的账面数
 
 
 class StockMove(Base):
@@ -266,6 +275,7 @@ class StockMove(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     balance_after: Mapped[Decimal] = mapped_column(Qty)
+    note: Mapped[str] = mapped_column(String(30), default="")  # 如“作废冲回”
 
 
 # ---------------- 订单 ----------------

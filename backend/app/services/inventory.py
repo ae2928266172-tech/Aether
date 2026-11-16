@@ -87,14 +87,22 @@ def _doc_no(prefix: str) -> str:
 
 
 DOC_PREFIX = {"in": "RK", "out": "CK", "transfer": "DB", "adjust": "PD"}
+OUT_REASONS = ["领用", "报损", "退供应商", "其他"]
+
+
+def _amount(qty: Decimal, unit_cost: int | None) -> int | None:
+    if unit_cost is None:
+        return None
+    return int((D(qty) * unit_cost).quantize(Decimal(1), rounding="ROUND_HALF_UP"))
 
 
 def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None,
                from_location_id: int | None = None, to_location_id: int | None = None,
                supplier_id: int | None = None, remark: str = "", request_id: str | None = None,
-               allow_negative: bool = False) -> StockDoc:
+               allow_negative: bool = False, reason: str = "") -> StockDoc:
     """入库 in（to）、出库 out（from）、调拨 transfer（from→to）、盘点 adjust（to，数量为实盘数）。
 
+    每行可带 unit_cost（分）：入库填进价；不填时按库存品当前成本，用来算单据金额、盘点盈亏金额。
     同一个 request_id 只生效一次，重复提交直接返回第一次的单据。
     """
     if request_id:
@@ -117,29 +125,49 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
             loc = db.get(Location, lid)
             if not loc or not loc.active:
                 raise HTTPException(400, "库存地点不存在或已停用")
+    reason = (reason or "").strip()
+    if kind == "out" and reason and reason not in OUT_REASONS:
+        raise HTTPException(400, "出库原因只能是：" + "、".join(OUT_REASONS))
     merged: dict[int, Decimal] = defaultdict(Decimal)
+    amounts: dict[int, int | None] = {}
     for ln in lines:
         q = D(ln["qty"])
         if kind != "adjust" and q <= 0:
             continue
         if kind == "adjust" and q < 0:
             raise HTTPException(400, "盘点数量不能为负数")
-        if not db.get(StockItem, ln["stock_item_id"]):
+        item = db.get(StockItem, ln["stock_item_id"])
+        if not item:
             raise HTTPException(400, f"库存品 {ln['stock_item_id']} 不存在")
+        cost = ln.get("unit_cost")
+        if cost is not None and cost < 0:
+            raise HTTPException(400, "单价不能为负数")
+        if cost is None:
+            cost = item.cost
+        sid = ln["stock_item_id"]
         if kind == "adjust":
-            merged[ln["stock_item_id"]] = q
+            merged[sid] = q
+            amounts[sid] = cost  # 盘点：这里先记单价，下面按盈亏数量算金额
         else:
-            merged[ln["stock_item_id"]] += q
+            merged[sid] += q
+            amounts[sid] = (amounts.get(sid) or 0) + _amount(q, cost)
     if not merged:
         raise HTTPException(400, "请至少填写一个数量")
 
     doc = StockDoc(no=_doc_no(DOC_PREFIX[kind]), kind=kind, from_location_id=from_location_id,
-                   to_location_id=to_location_id, supplier_id=supplier_id, remark=remark,
+                   to_location_id=to_location_id, supplier_id=supplier_id, remark=remark, reason=reason,
                    created_by=user_id, request_id=request_id)
     db.add(doc)
     db.flush()
     for sid, q in merged.items():
-        db.add(StockDocLine(doc_id=doc.id, stock_item_id=sid, qty=q))
+        if kind == "adjust":
+            book = D(get_balance(db, to_location_id, sid).qty)
+            db.add(StockDocLine(doc_id=doc.id, stock_item_id=sid, qty=q, book_qty=book,
+                                unit_cost=amounts[sid], amount=_amount(q - book, amounts[sid])))
+        else:
+            amt = amounts[sid]
+            db.add(StockDocLine(doc_id=doc.id, stock_item_id=sid, qty=q, amount=amt,
+                                unit_cost=int((D(amt) / q).quantize(Decimal(1), rounding="ROUND_HALF_UP"))))
         if kind == "in":
             change_stock(db, location_id=to_location_id, stock_item_id=sid, qty=q, kind="in",
                          doc_id=doc.id, user_id=user_id)
@@ -159,6 +187,25 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
                              doc_id=doc.id, user_id=user_id)
     db.flush()
     db.refresh(doc)
+    return doc
+
+
+def void_doc(db: Session, doc_id: int, user_id: int | None, reason: str = "") -> StockDoc:
+    """作废单据：按这张单当时产生的每笔库存变动反向冲回（允许冲成负数，和收银“库存不够也能卖”一致）。"""
+    doc = db.scalar(select(StockDoc).where(StockDoc.id == doc_id).with_for_update())
+    if not doc:
+        raise HTTPException(404, "单据不存在")
+    if doc.voided_at:
+        raise HTTPException(409, "这张单据已经作废过了")
+    moves = db.scalars(select(StockMove).where(StockMove.doc_id == doc.id, (StockMove.note == "") | StockMove.note.is_(None))
+                       .order_by(StockMove.id)).all()
+    at = now()
+    for m in moves:
+        mv = change_stock(db, location_id=m.location_id, stock_item_id=m.stock_item_id, qty=-D(m.qty),
+                          kind=m.kind, doc_id=doc.id, user_id=user_id, at=at)
+        mv.note = "作废冲回"
+    doc.voided_at, doc.voided_by, doc.void_reason = at, user_id, (reason or "").strip()[:200]
+    db.flush()
     return doc
 
 

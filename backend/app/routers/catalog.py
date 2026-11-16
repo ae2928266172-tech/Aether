@@ -246,7 +246,7 @@ def _apply_skus(db: Session, p: Product, skus: list[SkuIn]):
 
 @router.get("/products")
 def list_products(keyword: str = "", category_id: int | None = None, include_inactive: bool = False,
-                  db: Session = Depends(get_db), user: User = Depends(current_user)):
+                  export: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
     q = select(Product).order_by(Product.sort, Product.id)
     if keyword:
         q = q.where(Product.name.contains(keyword) | Product.code.contains(keyword)
@@ -257,9 +257,31 @@ def list_products(keyword: str = "", category_id: int | None = None, include_ina
         q = q.where(Product.category_id.in_(cats)
                     | Product.id.in_(select(ProductCategory.product_id).where(ProductCategory.category_id.in_(cats))))
     admin = has_perm(user, "catalog")
+    if export and not admin:
+        raise HTTPException(403, "没有权限")
     if not (admin and include_inactive):
         q = q.where(Product.active.is_(True))
+    if export:
+        return _export_products(db.scalars(q).all())
     return [product_out(p, admin=admin) for p in db.scalars(q)]
+
+
+def _export_products(products: list[Product]):
+    """商品资料导出：每个规格一行（备份、核对、发给别人看）。"""
+    from .reports import _xlsx
+    yuan = lambda v: None if v is None else v / 100
+    rows = []
+    for p in products:
+        d = product_out(p)
+        for s in d["skus"]:
+            rows.append([d["name"], d["code"], d["mnemonic"], d["category_name"] or "", d["unit"], s["name"],
+                         s["barcode"], yuan(s["price"]), yuan(s["cost"]), s["stock_item_name"] or "", s["deduct_qty"],
+                         d["supplier_name"] or "", "是" if d["online_visible"] else "否",
+                         "启用" if d["active"] and s["active"] else "停用", d["reg_cert_no"],
+                         d["production_license_no"], d["registrant"], d["production_address"]])
+    header = ["商品名称", "货号", "助记码", "分类", "单位", "规格", "条码", "售价", "成本", "库存品", "扣减量", "供应商",
+              "小程序可见", "状态", "注册证号 / 备案号", "生产许可证号", "注册人 / 备案人", "生产地址"]
+    return _xlsx("商品资料", header, rows, "商品资料")
 
 
 @router.get("/products/by-barcode/{code}")
