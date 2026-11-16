@@ -15,7 +15,7 @@ const Products = {
   template: `
   <div class="panel">
     <div class="toolbar">
-      <el-input v-model="kw" placeholder="名称 / 货号 / 条码" clearable style="width:220px" @keyup.enter="load" />
+      <el-input v-model="kw" placeholder="名称 / 助记码 / 货号 / 条码" clearable style="width:220px" @keyup.enter="load" />
       <el-select v-model="cat" placeholder="全部分类" clearable style="width:160px" @change="load">
         <el-option v-for="c in meta.categories" :key="c.id" :label="catLabel(c)" :value="c.id" />
       </el-select>
@@ -30,7 +30,7 @@ const Products = {
         <div style="display:flex;align-items:center;gap:12px">
           <div class="thumb"><img v-if="row.image" :src="row.image"><span v-else>{{row.name.slice(0,1)}}</span></div>
           <div style="min-width:0"><div class="c-main">{{row.name}}</div>
-            <div class="c-sub">{{[row.code && '货号 ' + row.code, row.supplier_name].filter(Boolean).join(' · ') || '—'}}</div></div>
+            <div class="c-sub">{{[row.code && '货号 ' + row.code, row.mnemonic && '助记码 ' + row.mnemonic, row.supplier_name].filter(Boolean).join(' · ') || '—'}}</div></div>
         </div></template></el-table-column>
       <el-table-column label="分类" min-width="150"><template #default="{row}">
         <span v-for="n in (row.category_name || '').split('、').filter(Boolean)" :key="n" class="chip">{{n}}</span>
@@ -57,7 +57,8 @@ const Products = {
       <el-form :model="form" label-width="110px">
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="商品名称" required><el-input v-model="form.name" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="货号"><el-input v-model="form.code" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="货号"><el-input v-model="form.code" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="助记码" label-width="70px"><el-input v-model="form.mnemonic" placeholder="留空自动生成" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="分类">
             <el-select v-model="form.category_ids" multiple clearable filterable placeholder="可选多个分类" style="width:100%">
               <el-option v-for="c in meta.categories" :key="c.id" :label="catLabel(c)" :value="c.id" /></el-select></el-form-item></el-col>
@@ -124,9 +125,10 @@ const Products = {
     const edit = (row) => {
       Object.keys(form).forEach(k => delete form[k]);
       Object.assign(form, row ? JSON.parse(JSON.stringify(row)) : {
-        name: '', code: '', category_ids: [], min_qty: '', max_qty: '', area_limited: false, area_ids: [], unit: '件', image: '', description: '', online_visible: true, active: true,
+        name: '', code: '', mnemonic: '', category_ids: [], min_qty: '', max_qty: '', area_limited: false, area_ids: [], unit: '件', image: '', description: '', online_visible: true, active: true,
         reg_cert_no: '', production_license_no: '', registrant: '', production_address: '', supplier_id: null, skus: [] });
       form.skus = row ? form.skus.map(s => ({ ...s, price_y: yuan(s.price), cost_y: s.cost == null ? '' : yuan(s.cost) })) : [blankSku()];
+      form._name0 = row ? row.name : ''; form._mn0 = row ? row.mnemonic : '';
       if (row) { form.min_qty = row.min_qty || ''; form.max_qty = row.max_qty || ''; form.area_ids = row.area_ids || []; form.category_ids = row.category_ids || []; }
       dlg.value = true;
     };
@@ -155,6 +157,9 @@ const Products = {
       const body = { ...form, min_qty: minQ, max_qty: maxQ, category_id: (form.category_ids || [])[0] || null, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: money(s.price_y),
         cost: blank(s.cost_y) ? null : money(s.cost_y), stock_item_id: s.stock_item_id || null,
         deduct_qty: parseFloat(s.deduct_qty), active: s.active, sort: i })) };
+      // 改了名称但没动助记码：按新名称重新生成
+      if (form.id && form.name !== form._name0 && form.mnemonic === form._mn0) body.mnemonic = '';
+      delete body._name0; delete body._mn0;
       saving.value = true;
       try { form.id ? await api.put('/api/products/' + form.id, body) : await api.post('/api/products', body); ok(); dlg.value = false; load(); }
       catch (e) { err(e); } finally { saving.value = false; }

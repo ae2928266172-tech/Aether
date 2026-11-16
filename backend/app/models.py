@@ -157,6 +157,8 @@ class Product(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     code: Mapped[str] = mapped_column(String(50), default="")  # 货号
+    # 助记码：默认是名称的拼音首字母，可以手改；收银台输入 zb 就能找到“纸杯”
+    mnemonic: Mapped[str] = mapped_column(String(50), default="", index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
     unit: Mapped[str] = mapped_column(String(20), default="件")
     image: Mapped[str] = mapped_column(String(300), default="")

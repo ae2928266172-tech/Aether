@@ -12,6 +12,7 @@ from ..db import get_db
 from ..models import Area, Category, Product, ProductCategory, Sku, StockItem, Supplier, User
 from ..security import current_user, has_perm, require
 from ..serialize import product_out, stock_item_out
+from ..services.mnemonic import make_mnemonic
 
 router = APIRouter(prefix="/api", tags=["商品资料"])
 MEDIA_DIR = os.environ.get("SHOUYIN_MEDIA") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "media")
@@ -159,6 +160,7 @@ class SkuIn(BaseModel):
 class ProductIn(BaseModel):
     name: str = Field(min_length=1)
     code: str = ""
+    mnemonic: str = Field("", max_length=50)  # 留空时按名称自动生成拼音首字母
     category_id: int | None = None
     unit: str = "件"
     image: str = ""
@@ -216,6 +218,7 @@ def _apply_product(db: Session, p: Product, body: ProductIn):
     ids = _cat_ids(body)
     for k, v in body.model_dump(exclude={"skus", "category_ids", "area_ids", "category_id"}).items():
         setattr(p, k, v)
+    p.mnemonic = (body.mnemonic or "").strip().lower() or make_mnemonic(body.name)
     p.category_id = ids[0] if ids else None
     p.categories = [db.get(Category, i) for i in ids]
     p.areas = [db.get(Area, i) for i in body.area_ids] if body.area_limited else []
@@ -247,6 +250,7 @@ def list_products(keyword: str = "", category_id: int | None = None, include_ina
     q = select(Product).order_by(Product.sort, Product.id)
     if keyword:
         q = q.where(Product.name.contains(keyword) | Product.code.contains(keyword)
+                    | Product.mnemonic.contains(keyword.strip().lower())
                     | Product.id.in_(select(Sku.product_id).where(Sku.barcode == keyword)))
     if category_id:
         cats = select(Category.id).where((Category.parent_id == category_id) | (Category.id == category_id))

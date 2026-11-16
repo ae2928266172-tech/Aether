@@ -64,7 +64,7 @@ def product_out(p: Product, admin: bool = True) -> dict:
     if p.category:
         cats.setdefault(p.category.id, p.category.name)
     ids = product_cat_ids(p)
-    d = {"id": p.id, "name": p.name, "code": p.code, "category_id": p.category_id, "category_ids": ids,
+    d = {"id": p.id, "name": p.name, "code": p.code, "mnemonic": p.mnemonic or "", "category_id": p.category_id, "category_ids": ids,
          "category_name": "、".join(cats[i] for i in ids if i in cats) or None, "unit": p.unit, "image": p.image,
          "description": p.description, "online_visible": p.online_visible, "active": p.active, "sort": p.sort,
          "min_qty": p.min_qty, "max_qty": p.max_qty,

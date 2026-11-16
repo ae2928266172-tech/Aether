@@ -43,7 +43,16 @@ def init_db(engine, session_factory):
     _add_missing_columns(engine)
     with session_factory() as db:
         seed(db)
+        fill_mnemonics(db)
         db.commit()
+
+
+def fill_mnemonics(db: Session):
+    """老数据（含惠管家导入的商品）没有助记码的，按名称补上。"""
+    from .models import Product
+    from .services.mnemonic import make_mnemonic
+    for p in db.scalars(select(Product).where((Product.mnemonic == "") | Product.mnemonic.is_(None))):
+        p.mnemonic = make_mnemonic(p.name)
 
 
 def seed(db: Session):

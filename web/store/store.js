@@ -93,11 +93,12 @@ const Pos = {
   template: `
   <div class="ws-body">
     <div class="pos-left">
-      <div class="scan"><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入商品名称后回车" clearable @keyup.enter="onScan" /></div>
+      <div class="scan"><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入名称 / 拼音首字母（如 zb 找纸杯）" clearable @keyup.enter="onScan" @keyup.esc="scanText=''" /></div>
       <div class="cats"><div class="cat" :class="{on: !cat}" @click="cat=null">全部</div>
         <div v-for="c in topCats" :key="c.id" class="cat" :class="{on: cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
       <div class="grid">
-        <div v-for="p in shown" :key="p.id" class="card" :class="{in: inCart(p)}" @click="pick(p)">
+        <el-empty v-if="scanText.trim() && !shown.length" :image-size="70" :description="'没有找到“' + scanText.trim() + '”'" style="grid-column:1/-1" />
+        <div v-for="p in shown" :key="p.id" class="card" :class="{in: inCart(p)}" @click="tap(p)">
           <span v-if="inCart(p)" class="cnt">{{inCart(p)}}</span>
           <div class="img" :style="p.image ? {backgroundImage: 'url(' + JSON.stringify(p.image) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
           <div class="n">{{p.name}}</div>
@@ -146,7 +147,15 @@ const Pos = {
     const payDlg = ref(false), skuDlg = ref(false), skuProduct = ref(null), doneDlg = ref(false), last = ref({}), lastChange = ref(0), scan = ref(null);
     let reqId = rid();
     const topCats = computed(() => cats.value.filter(c => !c.parent_id && c.active));
+    // 边输边搜：名称、助记码（拼音首字母）、货号、规格名、条码
+    const matchKw = (p, t) => {
+      const k = t.toLowerCase();
+      return p.name.toLowerCase().includes(k) || (p.mnemonic || '').includes(k) || (p.code || '').toLowerCase().includes(k)
+        || p.skus.some(s => (s.barcode || '').startsWith(t) || (s.name !== '默认' && s.name.toLowerCase().includes(k)));
+    };
     const shown = computed(() => {
+      const t = scanText.value.trim();
+      if (t) return products.value.filter(p => matchKw(p, t));
       if (!cat.value) return products.value;
       const ids = new Set([cat.value, ...cats.value.filter(c => c.parent_id === cat.value).map(c => c.id)]);
       return products.value.filter(p => (p.category_ids || [p.category_id]).some(id => ids.has(id)));
@@ -154,6 +163,7 @@ const Pos = {
     const priceText = (p) => { const ps = p.skus.map(s => s.price); const a = Math.min(...ps), b = Math.max(...ps); return a === b ? yuan(a) : yuan(a) + ' 起'; };
     const load = async () => { try { [products.value, cats.value] = await Promise.all([api.get('/api/products'), api.get('/api/categories')]); products.value = products.value.filter(p => p.skus.length); } catch (e) { err(e); } };
     const add = (p, s) => { const l = cart.value.find(x => x.sku_id === s.id); if (l) l.qty++; else cart.value.push({ sku_id: s.id, name: p.name, sku: s.name, price: s.price, qty: 1 }); };
+    const tap = (p) => { pick(p); if (scanText.value) { scanText.value = ''; scan.value && scan.value.focus(); } };
     const pick = (p) => { if (p.skus.length === 1) add(p, p.skus[0]); else { skuProduct.value = p; skuDlg.value = true; } };
     const onScan = async () => {
       const t = scanText.value.trim(); if (!t) return;
@@ -164,8 +174,9 @@ const Pos = {
         else { scanMatches.value = ms; scanDlg.value = true; }  // 一个条码对应多个规格：让店员选
       }
       catch (e) {
-        const m = products.value.filter(p => p.name.includes(t));
-        if (m.length === 1) { pick(m[0]); scanText.value = ''; } else if (m.length) { products.value = m.concat(products.value.filter(p => !m.includes(p))); cat.value = null; } else err(e);
+        // 不是条码：只剩一个商品就直接加入，多个就留在列表里让店员点
+        const m = products.value.filter(p => matchKw(p, t));
+        if (m.length === 1) { pick(m[0]); scanText.value = ''; } else if (!m.length) err(e);
       }
     };
     const inCart = (p) => cart.value.filter(l => p.skus.some(s => s.id === l.sku_id)).reduce((a, l) => a + l.qty, 0);
@@ -192,7 +203,7 @@ const Pos = {
     const reprint = async () => { try { outPrint(await api.post('/api/orders/' + last.value.id + '/print', { reprint: true })); } catch (e) { err(e); } };
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); });
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
-      scanDlg, scanMatches, priceText, add, pick, onScan, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
+      scanDlg, scanMatches, priceText, add, pick, tap, onScan, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
   },
 };
 
