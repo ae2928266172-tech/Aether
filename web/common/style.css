@@ -172,3 +172,4 @@ a:hover { text-decoration: underline; }
   .aside { display: none; }
   .content { padding: 14px; }
 }
+.stat.clickable { cursor: pointer; }

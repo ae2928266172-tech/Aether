@@ -106,6 +106,7 @@ class StockItemIn(BaseModel):
     unit: str = "份"
     cost: int = 0
     supplier_id: int | None = None
+    alert_qty: Decimal | None = Field(None, ge=0)  # 库存预警量，为空不提醒
     active: bool = True
 
 

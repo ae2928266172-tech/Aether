@@ -195,6 +195,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
               <el-option v-for="o in f.options(meta, form)" :key="o.id" :label="o.name" :value="o.id" /></el-select>
             <el-input v-else-if="f.type==='money'" v-model="form[f.prop]"><template #append>元</template></el-input>
             <el-input-number v-else-if="f.type==='int'" v-model="form[f.prop]" />
+            <el-input v-else-if="f.type==='qty'" v-model="form[f.prop]" :placeholder="f.placeholder || ''"><template v-if="f.suffix" #append>{{f.suffix}}</template></el-input>
             <el-input v-else v-model="form[f.prop]" />
           </el-form-item>
         </el-form>
@@ -210,7 +211,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
       const load = async () => { try { rows.value = await api.get(url); if (after) after(props.meta, rows.value); } catch (e) { err(e); } };
       const edit = (row) => {
         Object.keys(form).forEach(k => delete form[k]);
-        fields.forEach(f => { form[f.prop] = row ? row[f.prop] : (f.default !== undefined ? f.default : (f.type === 'bool' ? true : '')); if (f.type === 'money' && row) form[f.prop] = yuan(row[f.prop]); });
+        fields.forEach(f => { form[f.prop] = row ? row[f.prop] : (f.default !== undefined ? f.default : (f.type === 'bool' ? true : '')); if (f.type === 'money' && row) form[f.prop] = yuan(row[f.prop]); if (f.type === 'qty' && form[f.prop] == null) form[f.prop] = ''; });
         if (row) form.id = row.id;
         dlg.value = true;
       };
@@ -221,6 +222,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
           if (f.prop === 'name' && !String(v || '').trim()) return ElMessage.warning('请填写名称');
           if (f.type === 'money') { v = money(v); if (v === null) return ElMessage.warning(f.label + '请填数字，例如 0 或 1.5'); }
           if (f.type === 'select' && v === '') v = null;
+          if (f.type === 'qty') { if (blank(v)) v = null; else if (!/^\d+(\.\d{1,3})?$/.test(String(v).trim())) return ElMessage.warning(f.label + '请填数字，不需要就留空'); else v = parseFloat(v); }
           body[f.prop] = v;
         }
         if (saving.value) return;
@@ -254,8 +256,10 @@ const Suppliers = simpleCrud({
 const StockItems = simpleCrud({
   title: '库存品', desc: '库存品是实际占库存的东西；不同商品、不同规格可以绑定同一个库存品，按各自的扣减量扣。', url: '/api/stock-items',
   fields: [{ prop: 'name', label: '名称' }, { prop: 'code', label: '编码' }, { prop: 'unit', label: '单位', default: '份' }, { prop: 'cost', label: '单位成本', type: 'money', default: '0' },
-    { prop: 'supplier_id', label: '供应商', type: 'select', default: null, options: m => m.suppliers }, { prop: 'active', label: '启用', type: 'bool' }],
+    { prop: 'supplier_id', label: '供应商', type: 'select', default: null, options: m => m.suppliers },
+    { prop: 'alert_qty', label: '库存预警', type: 'qty', default: '', placeholder: '库存 ≤ 这个数时提醒补货，留空不提醒' }, { prop: 'active', label: '启用', type: 'bool' }],
   columns: [{ prop: 'name', label: '库存品', width: 220, sub: r => r.code ? '编码 ' + r.code : '' }, { prop: 'unit', label: '单位', width: 80 },
+    { prop: 'alert_qty', label: '预警量', width: 90, fmt: r => r.alert_qty == null ? '' : String(r.alert_qty) },
     { prop: 'cost', label: '单位成本', width: 110, fmt: r => '¥' + yuan(r.cost) }, { prop: 'supplier_id', label: '供应商', width: 160, fmt: (r, m) => (m.suppliers.find(s => s.id === r.supplier_id) || {}).name || '' },
     { prop: 'active', label: '状态', width: 80 }],
   after: (m, rows) => { m.stockItems = rows.filter(r => r.active); },
@@ -450,9 +454,10 @@ const Inventory = {
       <div class="stat"><div class="k">期间入库 + 调入</div><div class="v">{{fmtN(sumOf('in') + sumOf('transfer_in'))}}</div></div>
       <div class="stat"><div class="k">期间销售</div><div class="v">{{fmtN(sumOf('sale') - sumOf('sale_return'))}}</div><div class="s">已扣除退货回补</div></div>
       <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div><div class="s">需要补货或核对</div></div>
+      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--danger)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
     </div>
-    <el-table :data="rows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 ? 'row-low' : ''">
-      <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}</div><div class="c-sub">{{row.unit}}</div></template></el-table-column>
+    <el-table :data="shownRows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 || row.low ? 'row-low' : ''">
+      <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag></div><div class="c-sub">{{row.unit}}</div></template></el-table-column>
       <el-table-column v-for="c in cols" :key="c[0]" :label="c[1]" min-width="78" align="right">
         <template #default="{row}"><span v-if="!row[c[0]]" class="zero">–</span>
           <el-button v-else link :class="{strong: c[0] === 'closing'}" @click="showMoves(row)">{{fmtN(row[c[0]])}}</el-button></template></el-table-column>
@@ -499,8 +504,11 @@ const Inventory = {
       try { rows.value = await api.get('/api/stock-ledger', { location_id: loc.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value }); } catch (e) { err(e); }
     };
     const fmtN = (v) => +(+v || 0).toFixed(3);
-    const sumOf = (k) => rows.value.reduce((a, r) => a + (+r[k] || 0), 0);
+    const sumOf = (k) => shownRows.value.reduce((a, r) => a + (+r[k] || 0), 0);
     const lowCount = computed(() => rows.value.filter(r => r.current <= 0).length);
+    const onlyLow = ref(false);
+    const alertCount = computed(() => rows.value.filter(r => r.low).length);
+    const shownRows = computed(() => onlyLow.value ? rows.value.filter(r => r.low) : rows.value);
     // 合计行：各列数量相加（不同单位相加只用于核对，和表格里点出来的流水对得上即可）
     const summary = ({ columns }) => columns.map((c, i) => {
       if (i === 0) return '合计';
@@ -549,7 +557,7 @@ const Inventory = {
       try { await api.post('/api/warehouses', { name }); ok(); loadLocs(); } catch (e) { err(e); }
     };
     onMounted(async () => { try { await loadLocs(); load(); } catch (e) { err(e); } });
-    return { locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
+    return { locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
 
@@ -1027,9 +1035,21 @@ const Dashboard = {
         </div>
       </div>
     </div>
+    <div v-if="alerts !== null" class="panel" style="margin-top:16px">
+      <div class="panel-title">库存预警 <span v-if="alerts.length" style="color:var(--danger)">{{alerts.length}}</span></div>
+      <div class="panel-desc">库存小于等于预警量的库存品；预警量在“库存品”里设置</div>
+      <el-table v-if="alerts.length" :data="alerts.slice(0, 20)" size="small">
+        <el-table-column prop="location_name" label="仓库 / 门店" width="160" />
+        <el-table-column prop="name" label="库存品" />
+        <el-table-column label="现有" width="90" align="right"><template #default="{row}"><b style="color:var(--danger)">{{row.qty}}</b> {{row.unit}}</template></el-table-column>
+        <el-table-column prop="alert_qty" label="预警量" width="80" align="right" />
+      </el-table>
+      <div v-if="alerts.length > 20" class="muted" style="margin-top:6px">还有 {{alerts.length - 20}} 条，到“仓库与库存”里查看</div>
+      <el-empty v-if="!alerts.length" :image-size="50" description="没有低于预警量的库存品" />
+    </div>
   </div>`,
   setup() {
-    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]);
+    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null);
     onMounted(async () => {
       const d = today();
       try {
@@ -1037,8 +1057,9 @@ const Dashboard = {
           api.get('/api/reports/revenue', { begin: d.slice(0, 8) + '01', end: d, group: 'month' }), api.get('/api/orders', { status: 'pending', size: 1 })]);
         t.value = a.total; m.value = b.total; pending.value = p.total; byStore.value = a.rows;
       } catch (e) { err(e); }
+      try { alerts.value = await api.get('/api/stock-alerts'); } catch (e) { alerts.value = null; }  // 没有库存权限的账号不显示
     });
-    return { t, m, pending, byStore, yuan };
+    return { t, m, pending, byStore, alerts, yuan };
   },
 };
 

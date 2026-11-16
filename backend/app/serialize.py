@@ -38,7 +38,8 @@ def area_out(a: Area) -> dict:
 
 def stock_item_out(i: StockItem) -> dict:
     return {"id": i.id, "name": i.name, "code": i.code, "unit": i.unit, "cost": i.cost,
-            "supplier_id": i.supplier_id, "active": i.active}
+            "supplier_id": i.supplier_id, "active": i.active,
+            "alert_qty": None if i.alert_qty is None else num(i.alert_qty)}
 
 
 def sku_out(s: Sku) -> dict:

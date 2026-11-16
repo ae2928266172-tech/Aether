@@ -221,7 +221,8 @@ def _balances(db: Session, location_id: int, keyword: str = ""):
         q = q.where(StockItem.name.contains(keyword) | StockItem.code.contains(keyword))
     bal = dict(db.execute(select(StockBalance.stock_item_id, StockBalance.qty)
                           .where(StockBalance.location_id == location_id)).all())
-    return [{"stock_item_id": i.id, "name": i.name, "code": i.code, "unit": i.unit, "qty": num(bal.get(i.id))}
+    return [{"stock_item_id": i.id, "name": i.name, "code": i.code, "unit": i.unit, "qty": num(bal.get(i.id)),
+             "alert_qty": None if i.alert_qty is None else num(i.alert_qty), "low": inv.is_low(bal.get(i.id), i.alert_qty)}
             for i in db.scalars(q) if i.active or bal.get(i.id)]
 
 
@@ -310,8 +311,16 @@ def stock_ledger(location_id: int, begin: date | None = None, end: date | None =
                  db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
     today = now().date()
     rows = inv.ledger(db, location_id, begin or today, end or today, keyword)
-    return [{k: (num(v) if k not in ("name", "code", "unit", "stock_item_id") else v) for k, v in r.items()}
+    return [{k: (num(v) if k not in ("name", "code", "unit", "stock_item_id", "low", "alert_qty") else v)
+             for k, v in r.items()} | {"alert_qty": None if r["alert_qty"] is None else num(r["alert_qty"])}
             for r in rows]
+
+
+@router.get("/stock-alerts")
+def stock_alerts(location_id: int | None = None, db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
+    """库存预警：各仓库、门店里库存小于等于预警量的库存品。"""
+    return [{**r, "qty": num(r["qty"]), "alert_qty": num(r["alert_qty"]), "short": num(r["short"])}
+            for r in inv.low_stock(db, location_id)]
 
 
 @router.get("/stock-moves")

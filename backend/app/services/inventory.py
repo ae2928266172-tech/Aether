@@ -48,6 +48,34 @@ def change_stock(db: Session, *, location_id: int, stock_item_id: int, qty, kind
     return mv
 
 
+def is_low(qty, alert_qty) -> bool:
+    """库存预警：设置了预警量，且库存小于等于预警量。"""
+    return alert_qty is not None and D(qty or 0) <= D(alert_qty)
+
+
+def low_stock(db: Session, location_id: int | None = None) -> list[dict]:
+    """所有启用的仓库 / 门店里，低于预警量的库存品。没有库存记录的按 0 算。"""
+    items = db.scalars(select(StockItem).where(StockItem.active.is_(True), StockItem.alert_qty.is_not(None))
+                       .order_by(StockItem.id)).all()
+    if not items:
+        return []
+    locs_q = select(Location).where(Location.active.is_(True)).order_by(Location.kind.desc(), Location.id)
+    if location_id:
+        locs_q = locs_q.where(Location.id == location_id)
+    locs = db.scalars(locs_q).all()
+    bal = {(lid, sid): D(q) for lid, sid, q in db.execute(
+        select(StockBalance.location_id, StockBalance.stock_item_id, StockBalance.qty))}
+    out = []
+    for loc in locs:
+        for it in items:
+            q = bal.get((loc.id, it.id), Decimal(0))
+            if is_low(q, it.alert_qty):
+                out.append({"location_id": loc.id, "location_name": loc.name, "location_kind": loc.kind,
+                            "stock_item_id": it.id, "name": it.name, "code": it.code, "unit": it.unit,
+                            "qty": q, "alert_qty": D(it.alert_qty), "short": D(it.alert_qty) - q})
+    return out
+
+
 def fmt(q) -> str:
     q = D(q).normalize()
     s = format(q, "f")
@@ -168,6 +196,7 @@ def ledger(db: Session, location_id: int, begin: date, end: date, keyword: str =
         if not it.active and op == 0 and not p and D(current.get(it.id) or 0) == 0:
             continue
         row = {"stock_item_id": it.id, "name": it.name, "code": it.code, "unit": it.unit, "opening": op}
+        row["alert_qty"] = it.alert_qty
         total = op
         for k in LEDGER_COLUMNS:
             v = D(p.get(k, 0))
@@ -176,5 +205,6 @@ def ledger(db: Session, location_id: int, begin: date, end: date, keyword: str =
             total += v
         row["closing"] = total
         row["current"] = D(current.get(it.id) or 0)
+        row["low"] = is_low(row["current"], it.alert_qty)
         rows.append(row)
     return rows

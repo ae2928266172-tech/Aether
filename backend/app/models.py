@@ -146,6 +146,8 @@ class StockItem(Base, TimestampMixin):
     unit: Mapped[str] = mapped_column(String(20), default="份")
     cost: Mapped[int] = mapped_column(Integer, default=0)  # 单位成本（分）
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True)
+    # 库存预警：任一仓库 / 门店的库存小于等于这个数时提醒补货；为空不提醒
+    alert_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
