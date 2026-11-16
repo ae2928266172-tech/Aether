@@ -108,7 +108,10 @@ const Pos = {
       </div>
     </div>
     <div class="pos-right">
-      <div class="cart-head"><b>当前订单</b><el-button v-if="cart.length" link type="danger" @click="clear">清空</el-button></div>
+      <div class="cart-head"><b>当前订单</b><span>
+        <el-button v-if="cart.length" link @click="hold">挂单</el-button>
+        <el-button v-if="held.length" link type="primary" @click="heldDlg=true">取单（{{held.length}}）</el-button>
+        <el-button v-if="cart.length" link type="danger" @click="clear">清空</el-button></span></div>
       <div class="cart">
         <el-empty v-if="!cart.length" :image-size="90" description="点商品或扫码加入" />
         <div v-for="(l,i) in cart" :key="l.sku_id" class="line">
@@ -128,6 +131,14 @@ const Pos = {
       <div style="display:flex;flex-direction:column;gap:8px">
         <el-button v-for="m in scanMatches" :key="m.sku.id" size="large" style="margin:0;justify-content:space-between;height:52px"
           @click="add(m.product, m.sku); scanDlg = false"><span>{{m.product.name}}<span v-if="m.sku.name !== '默认'" class="muted">　{{m.sku.name}}</span></span><b>¥{{yuan(m.sku.price)}}</b></el-button>
+      </div>
+    </el-dialog>
+    <el-dialog v-model="heldDlg" title="已挂起的单" width="520px">
+      <div class="muted" style="margin-bottom:8px">挂单只存在这台电脑上，没有收款、不扣库存。取回后价格按现在的售价。</div>
+      <div v-for="(h, i) in held" :key="h.at" class="held">
+        <div style="flex:1;min-width:0"><b>{{h.time}}</b><span class="muted">　{{h.cart.reduce((a, l) => a + l.qty, 0)}} 件 · ¥{{yuan(h.cart.reduce((a, l) => a + l.qty * l.price, 0))}}</span>
+          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{h.cart.map(l => l.name + (l.sku !== '默认' ? '（' + l.sku + '）' : '') + '×' + l.qty).join('、')}}<span v-if="h.remark">　备注：{{h.remark}}</span></div></div>
+        <el-button type="primary" @click="takeHeld(i)">取回</el-button><el-button link type="danger" @click="dropHeld(i)">删除</el-button>
       </div>
     </el-dialog>
     <el-dialog v-model="skuDlg" :title="skuProduct && skuProduct.name" width="460px">
@@ -183,6 +194,29 @@ const Pos = {
     const dec = (i) => { if (cart.value[i].qty > 1) cart.value[i].qty--; else cart.value.splice(i, 1); };
     const fix = (i) => { const l = cart.value[i]; l.qty = Math.max(1, parseInt(l.qty) || 1); };
     const clear = () => { cart.value = []; remark.value = ''; };
+    // 挂单：顾客临时去拿东西、先收下一位时，把当前购物车存起来（存在本机浏览器）
+    const heldKey = 'shouyin_held_' + props.storeId, held = ref([]), heldDlg = ref(false);
+    try { held.value = JSON.parse(localStorage.getItem(heldKey) || '[]'); } catch (e) { held.value = []; }
+    const saveHeld = () => { try { localStorage.setItem(heldKey, JSON.stringify(held.value)); } catch (e) {} };
+    const hold = () => {
+      if (!cart.value.length) return;
+      const d = new Date();
+      held.value.push({ at: Date.now(), time: d.toTimeString().slice(0, 5), cart: JSON.parse(JSON.stringify(cart.value)), remark: remark.value });
+      saveHeld(); clear(); ElMessage.success('已挂单，点“取单”可以取回');
+    };
+    const takeHeld = (i) => {
+      const h = held.value[i];
+      if (cart.value.length) hold();  // 当前也有商品：先把当前的挂起来
+      const skus = new Map(products.value.flatMap(p => p.skus.map(s => [s.id, s])));
+      const lines = h.cart.filter(l => skus.has(l.sku_id)).map(l => ({ ...l, price: skus.get(l.sku_id).price }));
+      if (lines.length < h.cart.length) ElMessage.warning('有 ' + (h.cart.length - lines.length) + ' 个商品已下架，没有取回');
+      cart.value = lines; remark.value = h.remark || '';
+      held.value.splice(held.value.indexOf(h), 1); saveHeld(); heldDlg.value = false;
+    };
+    const dropHeld = async (i) => {
+      try { await ElMessageBox.confirm('删除这张挂单？', '删除', { type: 'warning' }); } catch (e) { return; }
+      held.value.splice(i, 1); saveHeld(); if (!held.value.length) heldDlg.value = false;
+    };
     const count = computed(() => cart.value.reduce((a, l) => a + l.qty, 0));
     const total = computed(() => cart.value.reduce((a, l) => a + l.qty * l.price, 0));
     const lines = computed(() => cart.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
@@ -203,7 +237,7 @@ const Pos = {
     const reprint = async () => { try { outPrint(await api.post('/api/orders/' + last.value.id + '/print', { reprint: true })); } catch (e) { err(e); } };
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); });
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
-      scanDlg, scanMatches, priceText, add, pick, tap, onScan, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
+      scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
   },
 };
 

@@ -91,3 +91,4 @@
   .pos-right { width: 100%; }
   .ws-top .clock, .ws-top .who span:last-child { display: none; }
 }
+.held { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
