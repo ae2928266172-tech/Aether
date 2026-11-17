@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>桌面软件设置</title>
+<link rel="stylesheet" href="base.css">
+<style>
+  body { background: #fff; }
+  .wrap { padding: 24px 32px 20px; }
+  .foot { display: flex; justify-content: space-between; align-items: center; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .checks { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <span class="mark">收</span>
+  <h1>桌面软件设置</h1>
+  <div class="muted">这些设置只对这台电脑有效。</div>
+
+  <label for="server">收银系统地址</label>
+  <div class="row"><input type="text" id="server" placeholder="例如 192.168.31.10:8765"><button id="check">测试连接</button></div>
+  <div class="msg" id="serverMsg"></div>
+
+  <label for="printer">小票机</label>
+  <div class="row"><select id="printer"></select><select id="paper" style="flex:0 0 110px"><option value="58">58mm 纸</option><option value="80">80mm 纸</option></select></div>
+
+  <label>出票方式</label>
+  <div class="radios">
+    <label><input type="radio" name="mode" value="raw"> 直接出票（推荐）<span>把小票指令直接发给小票机，最快、不弹框，POS58 等热敏机通用</span></label>
+    <label><input type="radio" name="mode" value="driver"> 用打印机驱动出票<span>直接出票乱码或不出纸时再选这个</span></label>
+    <label><input type="radio" name="mode" value="off"> 这台电脑不出票<span>没接小票机，或小票由“打印小助手”在别的电脑上出</span></label>
+  </div>
+  <div class="row" style="margin-top:10px"><button id="test">打印测试页</button><div class="msg" id="printMsg" style="margin:0"></div></div>
+
+  <label>其他</label>
+  <div class="checks">
+    <label class="check"><input type="checkbox" id="drawer"> 现金收款后自动弹钱箱 <span>钱箱接在小票机上时勾选</span></label>
+    <label class="check"><input type="checkbox" id="autoStart"> 开机自动打开收银系统</label>
+    <label class="check"><input type="checkbox" id="fullscreen"> 打开时全屏 <span>随时按 <kbd>F11</kbd> 切换</span></label>
+  </div>
+
+  <div class="foot">
+    <span class="muted" id="ver"></span>
+    <span class="row"><button id="cancel">取消</button><button id="save" class="primary">保存并打开收银台</button></span>
+  </div>
+  <div class="msg err" id="saveMsg" style="text-align:right"></div>
+</div>
+<script src="setup.js"></script>
+</body>
+</html>
