@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
 from . import db as dbmod
-from .routers import auth, catalog, customer, orders, print_agent, reports, requisitions, settings, stores
+from .routers import auth, catalog, customer, orders, print_agent, reports, requisitions, settings, shifts, stores
 from .seed import init_db
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="收银系统 API", version="0.1.0", lifespan=lifespan)
 
-for r in (auth, catalog, stores, orders, customer, reports, settings, print_agent, requisitions):
+for r in (auth, catalog, stores, orders, customer, reports, settings, print_agent, requisitions, shifts):
     app.include_router(r.router)
 
 

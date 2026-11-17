@@ -358,26 +358,81 @@ const Orders = {
 
 // ---------------- 交班汇总 ----------------
 const Shift = {
-  props: ['storeId'],
+  props: ['storeId', 'user'],
   template: `
-  <div class="ws-body"><div class="page-pad">
-    <div class="panel" style="max-width:720px">
-      <div class="toolbar"><b>交班汇总（我今天经手的收款）</b><span class="grow"></span><el-date-picker v-model="day" type="date" value-format="YYYY-MM-DD" @change="load" /></div>
-      <el-table :data="rows" border>
+  <div class="ws-body"><div class="page-pad" style="display:flex;flex-direction:column;gap:16px;max-width:820px">
+    <div v-if="loaded && !cur" class="panel">
+      <div class="toolbar"><b>开班</b><span class="muted">点清钱箱里的备用金（找零用的钱）后开班，交班时按这一班的收款核对现金。</span></div>
+      <el-form inline @submit.prevent><el-form-item label="备用金"><el-input v-model="opening" style="width:160px"><template #append>元</template></el-input></el-form-item>
+        <el-form-item><el-button type="primary" :loading="busy" @click="openShift">开班</el-button></el-form-item></el-form>
+      <div class="muted">不开班也能收银；开班后才能按收银员交班、算现金差额。</div>
+    </div>
+    <div v-if="cur" class="panel">
+      <div class="toolbar"><b>当班中 · {{cur.cashier}}</b><span class="muted">{{cur.started_at}} 开班 · 备用金 ¥{{yuan(cur.opening_cash)}}</span><span class="grow"></span><el-button @click="loadCur">刷新</el-button></div>
+      <el-table :data="Object.values(cur.methods)" border size="small">
         <el-table-column prop="method_text" label="方式" />
-        <el-table-column prop="pay_count" label="收款笔数" />
+        <el-table-column prop="pay_count" label="收款笔数" width="90" />
         <el-table-column label="收款"><template #default="{row}">{{yuan(row.pay)}}</template></el-table-column>
         <el-table-column label="退款"><template #default="{row}">{{yuan(row.refund)}}</template></el-table-column>
         <el-table-column label="净额"><template #default="{row}"><b>{{yuan(row.pay - row.refund)}}</b></template></el-table-column>
       </el-table>
-      <div style="margin-top:14px;font-size:18px">合计净收 <b>¥{{yuan(net)}}</b></div>
+      <div class="shift-sum">
+        <div><span>本班单数</span><b>{{cur.orders}}</b></div>
+        <div><span>本班净收</span><b>¥{{yuan(cur.net)}}</b></div>
+        <div><span>钱箱应有现金</span><b>¥{{yuan(cur.expected_cash)}}</b><em>备用金 + 现金收款 − 现金退款</em></div>
+      </div>
+      <el-form inline style="margin-top:12px" @submit.prevent>
+        <el-form-item label="实点现金"><el-input v-model="counted" style="width:150px"><template #append>元</template></el-input></el-form-item>
+        <el-form-item v-if="diff !== null"><span :style="{fontWeight: 650, color: diff === 0 ? 'var(--success)' : 'var(--danger)'}">{{ diff === 0 ? '对上了' : (diff > 0 ? '长款 ¥' + yuan(diff) : '短款 ¥' + yuan(-diff)) }}</span></el-form-item>
+        <el-form-item label="备注"><el-input v-model="remark" placeholder="差额原因等，选填" style="width:220px" /></el-form-item>
+        <el-form-item><el-button type="primary" :loading="busy" @click="closeShift">交班</el-button></el-form-item>
+      </el-form>
+    </div>
+    <div v-if="last" class="panel">
+      <div class="toolbar"><b>交班完成</b><span class="muted">{{last.started_at}} — {{last.ended_at}}</span></div>
+      <div class="shift-sum">
+        <div><span>单数</span><b>{{last.orders}}</b></div><div><span>净收</span><b>¥{{yuan(last.net)}}</b></div>
+        <div><span>应有现金</span><b>¥{{yuan(last.expected_cash)}}</b></div><div><span>实点现金</span><b>¥{{yuan(last.counted_cash)}}</b></div>
+        <div><span>差额</span><b :style="{color: last.cash_diff ? 'var(--danger)' : 'var(--success)'}">{{ last.cash_diff === 0 ? '0' : (last.cash_diff > 0 ? '长 ' : '短 ') + yuan(Math.abs(last.cash_diff)) }}</b></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="toolbar"><b>我的交班记录</b></div>
+      <el-table :data="history" size="small" border>
+        <el-table-column label="时间" min-width="200"><template #default="{row}">{{row.started_at}}<br><span class="muted">{{row.ended_at || '当班中'}}</span></template></el-table-column>
+        <el-table-column prop="orders" label="单数" width="70" />
+        <el-table-column label="净收" width="100"><template #default="{row}">{{yuan(row.net)}}</template></el-table-column>
+        <el-table-column label="备用金" width="90"><template #default="{row}">{{yuan(row.opening_cash)}}</template></el-table-column>
+        <el-table-column label="应有 / 实点" width="150"><template #default="{row}">{{yuan(row.expected_cash)}} / {{row.counted_cash == null ? '—' : yuan(row.counted_cash)}}</template></el-table-column>
+        <el-table-column label="差额" width="90"><template #default="{row}"><span v-if="row.cash_diff != null" :style="{color: row.cash_diff ? 'var(--danger)' : ''}">{{ row.cash_diff > 0 ? '+' : '' }}{{yuan(row.cash_diff)}}</span></template></el-table-column>
+      </el-table>
     </div>
   </div></div>`,
   setup(props) {
-    const day = ref(today()), rows = ref([]), net = ref(0);
-    const load = async () => { try { const r = await api.get('/api/pos/summary', { store_id: props.storeId, day: day.value }); rows.value = Object.values(r.methods); net.value = r.net; } catch (e) { err(e); } };
-    onMounted(load);
-    return { day, rows, net, load, yuan };
+    const cur = ref(null), loaded = ref(false), opening = ref(''), counted = ref(''), remark = ref(''), busy = ref(false), last = ref(null), history = ref([]);
+    const parse = (v) => Shouyin.parseMoney(v);
+    const diff = computed(() => { if (!cur.value || String(counted.value).trim() === '') return null; const c = parse(counted.value); return c === null ? null : c - cur.value.expected_cash; });
+    const loadCur = async () => { try { cur.value = (await api.get('/api/shifts/current', { store_id: props.storeId })).shift; loaded.value = true; } catch (e) { err(e); } };
+    const loadHistory = async () => { try { history.value = (await api.get('/api/shifts', { store_id: props.storeId, mine: true })).slice(0, 20); } catch (e) {} };
+    const openShift = async () => {
+      const v = String(opening.value).trim() === '' ? 0 : parse(opening.value);
+      if (v === null) return ElMessage.warning('备用金请填数字，没有填 0');
+      busy.value = true;
+      try { cur.value = await api.post('/api/shifts/open', { store_id: props.storeId, opening_cash: v }); last.value = null; ElMessage.success('已开班'); loadHistory(); }
+      catch (e) { err(e); } finally { busy.value = false; }
+    };
+    const closeShift = async () => {
+      const c = parse(counted.value);
+      if (String(counted.value).trim() === '' || c === null) return ElMessage.warning('请先点钱箱，填实点现金');
+      await loadCur();
+      const d = c - cur.value.expected_cash;
+      try { await ElMessageBox.confirm(`应有现金 ¥${yuan(cur.value.expected_cash)}，实点 ¥${yuan(c)}，${d === 0 ? '没有差额' : (d > 0 ? '长款 ¥' + yuan(d) : '短款 ¥' + yuan(-d))}。确定交班吗？`, '交班', { type: d ? 'warning' : 'info' }); } catch (e) { return; }
+      busy.value = true;
+      try { last.value = await api.post('/api/shifts/' + cur.value.id + '/close', { counted_cash: c, remark: remark.value }); cur.value = null; counted.value = ''; remark.value = ''; opening.value = ''; ElMessage.success('已交班'); loadHistory(); }
+      catch (e) { err(e); } finally { busy.value = false; }
+    };
+    onMounted(() => { loadCur(); loadHistory(); });
+    return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, yuan };
   },
 };
 
@@ -525,7 +580,7 @@ const App = {
     <template v-else>
       <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" />
       <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
-      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" />
+      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" />
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" />
       <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" />
     </template>

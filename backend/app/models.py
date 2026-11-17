@@ -337,6 +337,23 @@ class RequisitionLine(Base):
     sent_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)  # 实际调拨的数量
 
 
+class Shift(Base):
+    """收银员交班：开班时点备用金，交班时按这段时间自己经手的收款算应有现金，填实点现金算差额。"""
+    __tablename__ = "shifts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open 当班 / closed 已交班
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    opening_cash: Mapped[int] = mapped_column(Integer, default=0)  # 备用金（分）
+    counted_cash: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 交班实点现金
+    expected_cash: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 应有现金 = 备用金 + 现金收款 − 现金退款
+    cash_diff: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 实点 − 应有（正为长款，负为短款）
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)  # 交班时各收款方式的汇总快照
+    remark: Mapped[str] = mapped_column(String(200), default="")
+
+
 # ---------------- 订单 ----------------
 
 class Customer(Base, TimestampMixin):

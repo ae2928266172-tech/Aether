@@ -1158,6 +1158,53 @@ const Rules = {
   },
 };
 
+// ---------------- 交班记录 ----------------
+const Shifts = {
+  props: ['meta'],
+  template: `
+  <div class="panel">
+    <div class="toolbar">
+      <el-select v-model="q.store_id" placeholder="全部门店" clearable style="width:160px" @change="load"><el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
+      <el-date-picker v-model="q.range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
+      <el-button @click="load">查询</el-button><el-button @click="exp">导出</el-button>
+      <span class="grow"></span><span class="muted">收银员在门店工作台“交班”里开班、交班；差额 = 实点现金 − 应有现金</span>
+    </div>
+    <div class="stats" style="margin-bottom:14px">
+      <div class="stat"><div class="k">班次</div><div class="v">{{rows.length}}</div><div class="s">当班中 {{rows.filter(r => r.status === 'open').length}}</div></div>
+      <div class="stat"><div class="k">合计净收</div><div class="v">¥{{yuan(rows.reduce((a, r) => a + r.net, 0))}}</div></div>
+      <div class="stat"><div class="k">有差额的班次</div><div class="v" :style="diffRows.length ? 'color:var(--danger)' : ''">{{diffRows.length}}</div><div class="s">差额合计 ¥{{yuan(diffRows.reduce((a, r) => a + r.cash_diff, 0))}}</div></div>
+    </div>
+    <el-table :data="rows" size="small">
+      <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
+        <el-table :data="Object.values(row.methods)" size="small" border>
+          <el-table-column prop="method_text" label="方式" /><el-table-column prop="pay_count" label="收款笔数" width="90" />
+          <el-table-column label="收款" width="110"><template #default="{row: m}">{{yuan(m.pay)}}</template></el-table-column>
+          <el-table-column label="退款" width="110"><template #default="{row: m}">{{yuan(m.refund)}}</template></el-table-column>
+          <el-table-column label="净额" width="110"><template #default="{row: m}"><b>{{yuan(m.pay - m.refund)}}</b></template></el-table-column>
+        </el-table><div v-if="row.remark" class="muted" style="margin-top:6px">备注：{{row.remark}}</div></div></template></el-table-column>
+      <el-table-column label="收银员" min-width="150"><template #default="{row}"><div class="c-main">{{row.cashier}}</div><div class="c-sub">{{row.store_name}}</div></template></el-table-column>
+      <el-table-column label="时间" min-width="180"><template #default="{row}">{{row.started_at}}<div class="c-sub">{{row.ended_at || '当班中'}}</div></template></el-table-column>
+      <el-table-column prop="orders" label="单数" width="70" align="right" />
+      <el-table-column label="净收" width="100" align="right"><template #default="{row}">{{yuan(row.net)}}</template></el-table-column>
+      <el-table-column label="备用金" width="90" align="right"><template #default="{row}">{{yuan(row.opening_cash)}}</template></el-table-column>
+      <el-table-column label="应有现金" width="100" align="right"><template #default="{row}">{{yuan(row.expected_cash)}}</template></el-table-column>
+      <el-table-column label="实点现金" width="100" align="right"><template #default="{row}">{{row.counted_cash == null ? '—' : yuan(row.counted_cash)}}</template></el-table-column>
+      <el-table-column label="差额" width="100" align="right"><template #default="{row}">
+        <el-tag v-if="row.status === 'open'" size="small" type="warning">当班中</el-tag>
+        <b v-else :style="{color: row.cash_diff ? 'var(--danger)' : 'var(--success)'}">{{ row.cash_diff > 0 ? '+' : '' }}{{yuan(row.cash_diff)}}</b></template></el-table-column>
+    </el-table>
+  </div>`,
+  setup() {
+    const q = reactive({ store_id: null, range: [daysAgo(6), today()] }), rows = ref([]), stores = ref([]);
+    const params = () => ({ store_id: q.store_id || undefined, begin: (q.range || [])[0], end: (q.range || [])[1] });
+    const load = async () => { try { rows.value = await api.get('/api/shifts', params()); } catch (e) { err(e); } };
+    const exp = async () => { try { await api.download('/api/shifts', params()); } catch (e) { err(e); } };
+    const diffRows = computed(() => rows.value.filter(r => r.status === 'closed' && r.cash_diff));
+    onMounted(async () => { try { stores.value = await api.get('/api/stores'); } catch (e) {} load(); });
+    return { q, rows, stores, diffRows, load, exp, yuan };
+  },
+};
+
 // ---------------- 经营概览 ----------------
 const Dashboard = {
   props: ['meta', 'go'],
@@ -1239,6 +1286,7 @@ const MENU = [
   ['dashboard', '经营概览', 'reports', Dashboard, '经营', 'home', '今天和本月的营收、待处理订单'],
   ['orders', '订单', 'reports', Orders, '经营', 'receipt', '所有门店的收银单和小程序订单'],
   ['revenue', '营收报表', 'reports', Revenue, '经营', 'chart', '按门店、日 / 周 / 月统计，可导出'],
+  ['shifts', '交班记录', 'reports', Shifts, '经营', 'clock', '每个收银员每一班的收款、备用金、现金差额'],
   ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '按商品或按分类查卖了多少，展开看逐单明细'],
   ['products', '商品', 'catalog', Products, '商品资料', 'package', '名称、规格、售价、图片、医疗器械资料'],
   ['categories', '商品分类', 'catalog', Categories, '商品资料', 'tag', '大类、小类'],
