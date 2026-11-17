@@ -211,6 +211,7 @@ def refund(oid: int, body: RefundIn, db: Session = Depends(get_db), user: User =
 
 class PrintIn(BaseModel):
     reprint: bool = False
+    escpos: bool = False  # 桌面收银软件：同时返回 ESC/POS 指令（base64），由软件直接发给本机小票机
 
 
 @router.post("/orders/{oid}/print")
@@ -232,6 +233,10 @@ def print_receipt(oid: int, body: PrintIn, db: Session = Depends(get_db), user: 
     svc.log(db, o, "补打小票" if o.print_count > 1 else "打印小票", "", user)
     receipt = build_receipt(db, o, user, reprint=o.print_count > 1)
     db.commit()
+    if body.escpos:
+        import base64
+        from ..services import escpos
+        receipt = {**receipt, "escpos": base64.b64encode(escpos.build(receipt)).decode()}
     return receipt
 
 
