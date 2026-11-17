@@ -9,6 +9,8 @@ const { RawPrinter, printHtml } = require('./printer');
 const { DRAWER, testPage } = require('./escpos');
 
 app.setAppUserModelId('com.shouyin.desktop');
+// 设置、打印脚本固定放在 %APPDATA%\收银系统
+app.setPath('userData', path.join(app.getPath('appData'), '收银系统'));
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 const CONFIG_FILE = () => path.join(app.getPath('userData'), 'config.json');
@@ -84,7 +86,7 @@ function createWindow() {
 function openSetup() {
   if (setupWin) { setupWin.focus(); return; }
   setupWin = new BrowserWindow({
-    width: 620, height: 700, parent: win || undefined, modal: !!win, resizable: false, minimizable: false,
+    width: 640, height: 790, useContentSize: true, parent: win || undefined, modal: !!win, resizable: false, minimizable: false,
     title: '桌面软件设置', backgroundColor: '#ffffff', autoHideMenuBar: true, show: false,
     icon: path.join(__dirname, '..', 'build', 'icon.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload-setup.js'), contextIsolation: true, nodeIntegration: false },

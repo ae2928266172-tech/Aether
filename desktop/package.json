@@ -9,7 +9,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test",
-    "dist": "electron-builder --win nsis --x64 --ia32"
+    "dist": "electron-builder --win nsis --x64 --ia32 --publish never"
   },
   "dependencies": {
     "iconv-lite": "0.6.3"
@@ -23,9 +23,20 @@
     "productName": "收银系统",
     "artifactName": "收银系统-安装-${version}.${ext}",
     "copyright": "收银系统",
-    "directories": { "output": "dist", "buildResources": "build" },
-    "files": ["src/**/*", "package.json"],
-    "win": { "icon": "build/icon.ico", "target": ["nsis"] },
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
     "nsis": {
       "oneClick": false,
       "perMachine": false,
@@ -35,7 +46,10 @@
       "shortcutName": "收银系统",
       "runAfterFinish": true,
       "language": "2052",
-      "installerLanguages": ["zh_CN"]
-    }
+      "installerLanguages": [
+        "zh_CN"
+      ]
+    },
+    "publish": null
   }
 }
