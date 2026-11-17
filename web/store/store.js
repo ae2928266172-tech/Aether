@@ -93,11 +93,12 @@ const Pos = {
   template: `
   <div class="ws-body">
     <div class="pos-left">
-      <div class="scan"><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入商品名称后回车" clearable @keyup.enter="onScan" /></div>
+      <div class="scan"><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入名称 / 拼音首字母（如 zb 找纸杯）" clearable @keyup.enter="onScan" @keyup.esc="scanText=''" /></div>
       <div class="cats"><div class="cat" :class="{on: !cat}" @click="cat=null">全部</div>
         <div v-for="c in topCats" :key="c.id" class="cat" :class="{on: cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
       <div class="grid">
-        <div v-for="p in shown" :key="p.id" class="card" :class="{in: inCart(p)}" @click="pick(p)">
+        <el-empty v-if="scanText.trim() && !shown.length" :image-size="70" :description="'没有找到“' + scanText.trim() + '”'" style="grid-column:1/-1" />
+        <div v-for="p in shown" :key="p.id" class="card" :class="{in: inCart(p)}" @click="tap(p)">
           <span v-if="inCart(p)" class="cnt">{{inCart(p)}}</span>
           <div class="img" :style="p.image ? {backgroundImage: 'url(' + JSON.stringify(p.image) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
           <div class="n">{{p.name}}</div>
@@ -107,7 +108,10 @@ const Pos = {
       </div>
     </div>
     <div class="pos-right">
-      <div class="cart-head"><b>当前订单</b><el-button v-if="cart.length" link type="danger" @click="clear">清空</el-button></div>
+      <div class="cart-head"><b>当前订单</b><span>
+        <el-button v-if="cart.length" link @click="hold">挂单</el-button>
+        <el-button v-if="held.length" link type="primary" @click="heldDlg=true">取单（{{held.length}}）</el-button>
+        <el-button v-if="cart.length" link type="danger" @click="clear">清空</el-button></span></div>
       <div class="cart">
         <el-empty v-if="!cart.length" :image-size="90" description="点商品或扫码加入" />
         <div v-for="(l,i) in cart" :key="l.sku_id" class="line">
@@ -129,6 +133,14 @@ const Pos = {
           @click="add(m.product, m.sku); scanDlg = false"><span>{{m.product.name}}<span v-if="m.sku.name !== '默认'" class="muted">　{{m.sku.name}}</span></span><b>¥{{yuan(m.sku.price)}}</b></el-button>
       </div>
     </el-dialog>
+    <el-dialog v-model="heldDlg" title="已挂起的单" width="520px">
+      <div class="muted" style="margin-bottom:8px">挂单只存在这台电脑上，没有收款、不扣库存。取回后价格按现在的售价。</div>
+      <div v-for="(h, i) in held" :key="h.at" class="held">
+        <div style="flex:1;min-width:0"><b>{{h.time}}</b><span class="muted">　{{h.cart.reduce((a, l) => a + l.qty, 0)}} 件 · ¥{{yuan(h.cart.reduce((a, l) => a + l.qty * l.price, 0))}}</span>
+          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{h.cart.map(l => l.name + (l.sku !== '默认' ? '（' + l.sku + '）' : '') + '×' + l.qty).join('、')}}<span v-if="h.remark">　备注：{{h.remark}}</span></div></div>
+        <el-button type="primary" @click="takeHeld(i)">取回</el-button><el-button link type="danger" @click="dropHeld(i)">删除</el-button>
+      </div>
+    </el-dialog>
     <el-dialog v-model="skuDlg" :title="skuProduct && skuProduct.name" width="460px">
       <div style="display:flex;flex-wrap:wrap;gap:10px">
         <el-button v-for="s in (skuProduct ? skuProduct.skus : [])" :key="s.id" size="large" style="min-width:120px;height:64px" @click="add(skuProduct, s); skuDlg=false">
@@ -146,7 +158,15 @@ const Pos = {
     const payDlg = ref(false), skuDlg = ref(false), skuProduct = ref(null), doneDlg = ref(false), last = ref({}), lastChange = ref(0), scan = ref(null);
     let reqId = rid();
     const topCats = computed(() => cats.value.filter(c => !c.parent_id && c.active));
+    // 边输边搜：名称、助记码（拼音首字母）、货号、规格名、条码
+    const matchKw = (p, t) => {
+      const k = t.toLowerCase();
+      return p.name.toLowerCase().includes(k) || (p.mnemonic || '').includes(k) || (p.code || '').toLowerCase().includes(k)
+        || p.skus.some(s => (s.barcode || '').startsWith(t) || (s.name !== '默认' && s.name.toLowerCase().includes(k)));
+    };
     const shown = computed(() => {
+      const t = scanText.value.trim();
+      if (t) return products.value.filter(p => matchKw(p, t));
       if (!cat.value) return products.value;
       const ids = new Set([cat.value, ...cats.value.filter(c => c.parent_id === cat.value).map(c => c.id)]);
       return products.value.filter(p => (p.category_ids || [p.category_id]).some(id => ids.has(id)));
@@ -154,6 +174,7 @@ const Pos = {
     const priceText = (p) => { const ps = p.skus.map(s => s.price); const a = Math.min(...ps), b = Math.max(...ps); return a === b ? yuan(a) : yuan(a) + ' 起'; };
     const load = async () => { try { [products.value, cats.value] = await Promise.all([api.get('/api/products'), api.get('/api/categories')]); products.value = products.value.filter(p => p.skus.length); } catch (e) { err(e); } };
     const add = (p, s) => { const l = cart.value.find(x => x.sku_id === s.id); if (l) l.qty++; else cart.value.push({ sku_id: s.id, name: p.name, sku: s.name, price: s.price, qty: 1 }); };
+    const tap = (p) => { pick(p); if (scanText.value) { scanText.value = ''; scan.value && scan.value.focus(); } };
     const pick = (p) => { if (p.skus.length === 1) add(p, p.skus[0]); else { skuProduct.value = p; skuDlg.value = true; } };
     const onScan = async () => {
       const t = scanText.value.trim(); if (!t) return;
@@ -164,14 +185,38 @@ const Pos = {
         else { scanMatches.value = ms; scanDlg.value = true; }  // 一个条码对应多个规格：让店员选
       }
       catch (e) {
-        const m = products.value.filter(p => p.name.includes(t));
-        if (m.length === 1) { pick(m[0]); scanText.value = ''; } else if (m.length) { products.value = m.concat(products.value.filter(p => !m.includes(p))); cat.value = null; } else err(e);
+        // 不是条码：只剩一个商品就直接加入，多个就留在列表里让店员点
+        const m = products.value.filter(p => matchKw(p, t));
+        if (m.length === 1) { pick(m[0]); scanText.value = ''; } else if (!m.length) err(e);
       }
     };
     const inCart = (p) => cart.value.filter(l => p.skus.some(s => s.id === l.sku_id)).reduce((a, l) => a + l.qty, 0);
     const dec = (i) => { if (cart.value[i].qty > 1) cart.value[i].qty--; else cart.value.splice(i, 1); };
     const fix = (i) => { const l = cart.value[i]; l.qty = Math.max(1, parseInt(l.qty) || 1); };
     const clear = () => { cart.value = []; remark.value = ''; };
+    // 挂单：顾客临时去拿东西、先收下一位时，把当前购物车存起来（存在本机浏览器）
+    const heldKey = 'shouyin_held_' + props.storeId, held = ref([]), heldDlg = ref(false);
+    try { held.value = JSON.parse(localStorage.getItem(heldKey) || '[]'); } catch (e) { held.value = []; }
+    const saveHeld = () => { try { localStorage.setItem(heldKey, JSON.stringify(held.value)); } catch (e) {} };
+    const hold = () => {
+      if (!cart.value.length) return;
+      const d = new Date();
+      held.value.push({ at: Date.now(), time: d.toTimeString().slice(0, 5), cart: JSON.parse(JSON.stringify(cart.value)), remark: remark.value });
+      saveHeld(); clear(); ElMessage.success('已挂单，点“取单”可以取回');
+    };
+    const takeHeld = (i) => {
+      const h = held.value[i];
+      if (cart.value.length) hold();  // 当前也有商品：先把当前的挂起来
+      const skus = new Map(products.value.flatMap(p => p.skus.map(s => [s.id, s])));
+      const lines = h.cart.filter(l => skus.has(l.sku_id)).map(l => ({ ...l, price: skus.get(l.sku_id).price }));
+      if (lines.length < h.cart.length) ElMessage.warning('有 ' + (h.cart.length - lines.length) + ' 个商品已下架，没有取回');
+      cart.value = lines; remark.value = h.remark || '';
+      held.value.splice(held.value.indexOf(h), 1); saveHeld(); heldDlg.value = false;
+    };
+    const dropHeld = async (i) => {
+      try { await ElMessageBox.confirm('删除这张挂单？', '删除', { type: 'warning' }); } catch (e) { return; }
+      held.value.splice(i, 1); saveHeld(); if (!held.value.length) heldDlg.value = false;
+    };
     const count = computed(() => cart.value.reduce((a, l) => a + l.qty, 0));
     const total = computed(() => cart.value.reduce((a, l) => a + l.qty * l.price, 0));
     const lines = computed(() => cart.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
@@ -192,7 +237,7 @@ const Pos = {
     const reprint = async () => { try { outPrint(await api.post('/api/orders/' + last.value.id + '/print', { reprint: true })); } catch (e) { err(e); } };
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); });
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
-      scanDlg, scanMatches, priceText, add, pick, onScan, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
+      scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan };
   },
 };
 
@@ -313,26 +358,81 @@ const Orders = {
 
 // ---------------- 交班汇总 ----------------
 const Shift = {
-  props: ['storeId'],
+  props: ['storeId', 'user'],
   template: `
-  <div class="ws-body"><div class="page-pad">
-    <div class="panel" style="max-width:720px">
-      <div class="toolbar"><b>交班汇总（我今天经手的收款）</b><span class="grow"></span><el-date-picker v-model="day" type="date" value-format="YYYY-MM-DD" @change="load" /></div>
-      <el-table :data="rows" border>
+  <div class="ws-body"><div class="page-pad" style="display:flex;flex-direction:column;gap:16px;max-width:820px">
+    <div v-if="loaded && !cur" class="panel">
+      <div class="toolbar"><b>开班</b><span class="muted">点清钱箱里的备用金（找零用的钱）后开班，交班时按这一班的收款核对现金。</span></div>
+      <el-form inline @submit.prevent><el-form-item label="备用金"><el-input v-model="opening" style="width:160px"><template #append>元</template></el-input></el-form-item>
+        <el-form-item><el-button type="primary" :loading="busy" @click="openShift">开班</el-button></el-form-item></el-form>
+      <div class="muted">不开班也能收银；开班后才能按收银员交班、算现金差额。</div>
+    </div>
+    <div v-if="cur" class="panel">
+      <div class="toolbar"><b>当班中 · {{cur.cashier}}</b><span class="muted">{{cur.started_at}} 开班 · 备用金 ¥{{yuan(cur.opening_cash)}}</span><span class="grow"></span><el-button @click="loadCur">刷新</el-button></div>
+      <el-table :data="Object.values(cur.methods)" border size="small">
         <el-table-column prop="method_text" label="方式" />
-        <el-table-column prop="pay_count" label="收款笔数" />
+        <el-table-column prop="pay_count" label="收款笔数" width="90" />
         <el-table-column label="收款"><template #default="{row}">{{yuan(row.pay)}}</template></el-table-column>
         <el-table-column label="退款"><template #default="{row}">{{yuan(row.refund)}}</template></el-table-column>
         <el-table-column label="净额"><template #default="{row}"><b>{{yuan(row.pay - row.refund)}}</b></template></el-table-column>
       </el-table>
-      <div style="margin-top:14px;font-size:18px">合计净收 <b>¥{{yuan(net)}}</b></div>
+      <div class="shift-sum">
+        <div><span>本班单数</span><b>{{cur.orders}}</b></div>
+        <div><span>本班净收</span><b>¥{{yuan(cur.net)}}</b></div>
+        <div><span>钱箱应有现金</span><b>¥{{yuan(cur.expected_cash)}}</b><em>备用金 + 现金收款 − 现金退款</em></div>
+      </div>
+      <el-form inline style="margin-top:12px" @submit.prevent>
+        <el-form-item label="实点现金"><el-input v-model="counted" style="width:150px"><template #append>元</template></el-input></el-form-item>
+        <el-form-item v-if="diff !== null"><span :style="{fontWeight: 650, color: diff === 0 ? 'var(--success)' : 'var(--danger)'}">{{ diff === 0 ? '对上了' : (diff > 0 ? '长款 ¥' + yuan(diff) : '短款 ¥' + yuan(-diff)) }}</span></el-form-item>
+        <el-form-item label="备注"><el-input v-model="remark" placeholder="差额原因等，选填" style="width:220px" /></el-form-item>
+        <el-form-item><el-button type="primary" :loading="busy" @click="closeShift">交班</el-button></el-form-item>
+      </el-form>
+    </div>
+    <div v-if="last" class="panel">
+      <div class="toolbar"><b>交班完成</b><span class="muted">{{last.started_at}} — {{last.ended_at}}</span></div>
+      <div class="shift-sum">
+        <div><span>单数</span><b>{{last.orders}}</b></div><div><span>净收</span><b>¥{{yuan(last.net)}}</b></div>
+        <div><span>应有现金</span><b>¥{{yuan(last.expected_cash)}}</b></div><div><span>实点现金</span><b>¥{{yuan(last.counted_cash)}}</b></div>
+        <div><span>差额</span><b :style="{color: last.cash_diff ? 'var(--danger)' : 'var(--success)'}">{{ last.cash_diff === 0 ? '0' : (last.cash_diff > 0 ? '长 ' : '短 ') + yuan(Math.abs(last.cash_diff)) }}</b></div>
+      </div>
+    </div>
+    <div class="panel">
+      <div class="toolbar"><b>我的交班记录</b></div>
+      <el-table :data="history" size="small" border>
+        <el-table-column label="时间" min-width="200"><template #default="{row}">{{row.started_at}}<br><span class="muted">{{row.ended_at || '当班中'}}</span></template></el-table-column>
+        <el-table-column prop="orders" label="单数" width="70" />
+        <el-table-column label="净收" width="100"><template #default="{row}">{{yuan(row.net)}}</template></el-table-column>
+        <el-table-column label="备用金" width="90"><template #default="{row}">{{yuan(row.opening_cash)}}</template></el-table-column>
+        <el-table-column label="应有 / 实点" width="150"><template #default="{row}">{{yuan(row.expected_cash)}} / {{row.counted_cash == null ? '—' : yuan(row.counted_cash)}}</template></el-table-column>
+        <el-table-column label="差额" width="90"><template #default="{row}"><span v-if="row.cash_diff != null" :style="{color: row.cash_diff ? 'var(--danger)' : ''}">{{ row.cash_diff > 0 ? '+' : '' }}{{yuan(row.cash_diff)}}</span></template></el-table-column>
+      </el-table>
     </div>
   </div></div>`,
   setup(props) {
-    const day = ref(today()), rows = ref([]), net = ref(0);
-    const load = async () => { try { const r = await api.get('/api/pos/summary', { store_id: props.storeId, day: day.value }); rows.value = Object.values(r.methods); net.value = r.net; } catch (e) { err(e); } };
-    onMounted(load);
-    return { day, rows, net, load, yuan };
+    const cur = ref(null), loaded = ref(false), opening = ref(''), counted = ref(''), remark = ref(''), busy = ref(false), last = ref(null), history = ref([]);
+    const parse = (v) => Shouyin.parseMoney(v);
+    const diff = computed(() => { if (!cur.value || String(counted.value).trim() === '') return null; const c = parse(counted.value); return c === null ? null : c - cur.value.expected_cash; });
+    const loadCur = async () => { try { cur.value = (await api.get('/api/shifts/current', { store_id: props.storeId })).shift; loaded.value = true; } catch (e) { err(e); } };
+    const loadHistory = async () => { try { history.value = (await api.get('/api/shifts', { store_id: props.storeId, mine: true })).slice(0, 20); } catch (e) {} };
+    const openShift = async () => {
+      const v = String(opening.value).trim() === '' ? 0 : parse(opening.value);
+      if (v === null) return ElMessage.warning('备用金请填数字，没有填 0');
+      busy.value = true;
+      try { cur.value = await api.post('/api/shifts/open', { store_id: props.storeId, opening_cash: v }); last.value = null; ElMessage.success('已开班'); loadHistory(); }
+      catch (e) { err(e); } finally { busy.value = false; }
+    };
+    const closeShift = async () => {
+      const c = parse(counted.value);
+      if (String(counted.value).trim() === '' || c === null) return ElMessage.warning('请先点钱箱，填实点现金');
+      await loadCur();
+      const d = c - cur.value.expected_cash;
+      try { await ElMessageBox.confirm(`应有现金 ¥${yuan(cur.value.expected_cash)}，实点 ¥${yuan(c)}，${d === 0 ? '没有差额' : (d > 0 ? '长款 ¥' + yuan(d) : '短款 ¥' + yuan(-d))}。确定交班吗？`, '交班', { type: d ? 'warning' : 'info' }); } catch (e) { return; }
+      busy.value = true;
+      try { last.value = await api.post('/api/shifts/' + cur.value.id + '/close', { counted_cash: c, remark: remark.value }); cur.value = null; counted.value = ''; remark.value = ''; opening.value = ''; ElMessage.success('已交班'); loadHistory(); }
+      catch (e) { err(e); } finally { busy.value = false; }
+    };
+    onMounted(() => { loadCur(); loadHistory(); });
+    return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, yuan };
   },
 };
 
@@ -345,7 +445,7 @@ const Stock = {
       <div class="toolbar"><b>本店库存</b><el-input v-model="kw" placeholder="搜索" clearable style="width:160px" @keyup.enter="load" /><el-button @click="load">刷新</el-button>
         <span class="grow"></span><el-button v-if="canEdit" type="primary" @click="startAdjust">盘点</el-button></div>
       <el-table :data="rows" border>
-        <el-table-column prop="name" label="库存品" />
+        <el-table-column label="库存品"><template #default="{row}">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">该补货了</el-tag><span v-if="row.earliest_expiry" class="muted" style="margin-left:8px">最早到期 {{row.earliest_expiry}}</span></template></el-table-column>
         <el-table-column prop="unit" label="单位" width="80" />
         <el-table-column prop="qty" label="库存" width="100" />
         <el-table-column v-if="adjusting" label="实盘数" width="140"><template #default="{row}"><el-input v-model="row.real" size="small" /></template></el-table-column>
@@ -367,9 +467,73 @@ const Stock = {
   },
 };
 
+// ---------------- 要货申请 ----------------
+const Requisitions = {
+  props: ['storeId', 'stockVisible'],
+  template: `
+  <div class="ws-body"><div class="page-pad">
+    <div class="panel">
+      <div class="toolbar"><b>向仓库要货</b>
+        <el-radio-group v-model="status" @change="load"><el-radio-button value="">全部</el-radio-button><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button></el-radio-group>
+        <el-button @click="load">刷新</el-button><span class="grow"></span><el-button type="primary" @click="openNew">新建要货单</el-button></div>
+      <el-table :data="rows" border>
+        <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
+          <el-table :data="row.lines" size="small" border>
+            <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="70" />
+            <el-table-column prop="qty" label="要" width="80" align="right" />
+            <el-table-column label="实发" width="80" align="right"><template #default="{row: l}">{{ l.sent_qty == null ? '—' : l.sent_qty }}</template></el-table-column>
+          </el-table></div></template></el-table-column>
+        <el-table-column label="要货单" min-width="190"><template #default="{row}"><div>{{row.no}}</div><div class="muted">{{row.created_at}} · {{row.created_by_name}}</div></template></el-table-column>
+        <el-table-column label="内容" min-width="220"><template #default="{row}">{{ row.lines.filter(l => +l.qty > 0).map(l => l.name + '×' + l.qty).join('、') }}<div v-if="row.remark" class="muted">备注：{{row.remark}}</div></template></el-table-column>
+        <el-table-column label="状态" width="210"><template #default="{row}">
+          <el-tag :type="{pending: 'warning', done: 'success', rejected: 'danger', cancelled: 'info'}[row.status]" size="small">{{row.status_text}}</el-tag>
+          <div v-if="row.status === 'done'" class="muted">{{row.handled_at}} 调拨 {{row.transfer_doc_no}}</div>
+          <div v-if="row.handle_note" class="muted">{{ row.status === 'rejected' ? '驳回原因：' : '仓库备注：' }}{{row.handle_note}}</div></template></el-table-column>
+        <el-table-column width="90"><template #default="{row}"><el-button v-if="row.status === 'pending'" link type="danger" @click="cancel(row)">撤回</el-button></template></el-table-column>
+      </el-table>
+    </div>
+    <el-dialog v-model="dlg" title="新建要货单" width="640px" top="5vh">
+      <div class="toolbar"><el-input v-model="kw" placeholder="搜索库存品" clearable style="width:200px" /><el-input v-model="remark" placeholder="备注（选填）" style="flex:1" /></div>
+      <el-table :data="shown" border size="small" max-height="460">
+        <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="70" />
+        <el-table-column v-if="stockVisible" label="本店现有" width="90" align="right"><template #default="{row}">{{ have[row.id] ?? 0 }}</template></el-table-column>
+        <el-table-column label="要几个" width="120"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+      </el-table>
+      <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submit">提交给仓库</el-button></template>
+    </el-dialog>
+  </div></div>`,
+  setup(props) {
+    const rows = ref([]), status = ref(''), dlg = ref(false), items = ref([]), kw = ref(''), remark = ref(''), saving = ref(false), have = ref({});
+    let reqId = '';
+    const load = async () => { try { rows.value = (await api.get('/api/requisitions', { store_id: props.storeId, status: status.value })).items; } catch (e) { err(e); } };
+    const shown = computed(() => kw.value ? items.value.filter(i => i.name.includes(kw.value)) : items.value);
+    const openNew = async () => {
+      reqId = rid(); remark.value = ''; kw.value = '';
+      try { items.value = (await api.get('/api/stock-items')).filter(i => i.active).map(i => ({ id: i.id, name: i.name, unit: i.unit, qty: '' })); } catch (e) { return err(e); }
+      if (props.stockVisible) { try { have.value = Object.fromEntries((await api.get('/api/stores/' + props.storeId + '/stock')).map(r => [r.stock_item_id, r.qty])); } catch (e) {} }
+      dlg.value = true;
+    };
+    const submit = async () => {
+      const bad = items.value.find(i => String(i.qty).trim() !== '' && !/^\d+(\.\d{1,3})?$/.test(String(i.qty).trim()));
+      if (bad) return ElMessage.warning(bad.name + ' 的数量请填数字');
+      const lines = items.value.filter(i => parseFloat(i.qty) > 0).map(i => ({ stock_item_id: i.id, qty: parseFloat(i.qty) }));
+      if (!lines.length) return ElMessage.warning('请填写要货数量');
+      saving.value = true;
+      try { await api.post('/api/stores/' + props.storeId + '/requisitions', { lines, remark: remark.value, request_id: reqId }); dlg.value = false; ElMessage.success('已提交给仓库'); load(); }
+      catch (e) { err(e); } finally { saving.value = false; }
+    };
+    const cancel = async (row) => {
+      try { await ElMessageBox.confirm('撤回要货单 ' + row.no + '？', '撤回', { type: 'warning' }); } catch (e) { return; }
+      try { await api.post('/api/requisitions/' + row.id + '/cancel'); load(); } catch (e) { err(e); }
+    };
+    onMounted(load);
+    return { rows, status, dlg, kw, remark, saving, have, shown, load, openNew, submit, cancel };
+  },
+};
+
 // ---------------- 主框架 ----------------
 const App = {
-  components: { Pos, Orders, Shift, Stock },
+  components: { Pos, Orders, Shift, Stock, Requisitions },
   template: `
   <div v-if="!user" class="login-wrap">
     <div class="login-hero">
@@ -396,6 +560,7 @@ const App = {
         <div v-if="can('orders') || can('pos')" class="tab" :class="{on: tab==='orders'}" @click="tab='orders'"><span class="ico" v-html="icon('list')"></span>订单<span v-if="pending" class="badge">{{pending}}</span></div>
         <div v-if="can('pos')" class="tab" :class="{on: tab==='shift'}" @click="tab='shift'"><span class="ico" v-html="icon('clock')"></span>交班</div>
         <div v-if="stockVisible" class="tab" :class="{on: tab==='stock'}" @click="tab='stock'"><span class="ico" v-html="icon('box')"></span>库存</div>
+        <div v-if="can('requisition')" class="tab" :class="{on: tab==='req'}" @click="tab='req'"><span class="ico" v-html="icon('truck')"></span>要货</div>
       </div>
       <span class="grow"></span>
       <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
@@ -415,8 +580,9 @@ const App = {
     <template v-else>
       <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" />
       <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
-      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" />
+      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" />
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" />
+      <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" />
     </template>
   </div>`,
   setup() {

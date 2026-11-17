@@ -172,3 +172,6 @@ a:hover { text-decoration: underline; }
   .aside { display: none; }
   .content { padding: 14px; }
 }
+.stat.clickable { cursor: pointer; }
+.el-table .row-void td.el-table__cell { color: var(--muted, #9ca3af); text-decoration: line-through; }
+.badge-n { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: var(--danger); color: #fff; font-size: 12px; line-height: 18px; }

@@ -2,10 +2,10 @@
 
 金额一律以“分”为单位存整数；库存数量用 Decimal（最多 3 位小数），支持“大份扣 2 份”“半份扣 0.5”等扣减量。
 """
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Integer, Numeric,
+from sqlalchemy import (JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric,
                         String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -146,6 +146,8 @@ class StockItem(Base, TimestampMixin):
     unit: Mapped[str] = mapped_column(String(20), default="份")
     cost: Mapped[int] = mapped_column(Integer, default=0)  # 单位成本（分）
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True)
+    # 库存预警：任一仓库 / 门店的库存小于等于这个数时提醒补货；为空不提醒
+    alert_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -155,6 +157,8 @@ class Product(Base, TimestampMixin):
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(100))
     code: Mapped[str] = mapped_column(String(50), default="")  # 货号
+    # 助记码：默认是名称的拼音首字母，可以手改；收银台输入 zb 就能找到“纸杯”
+    mnemonic: Mapped[str] = mapped_column(String(50), default="", index=True)
     category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
     unit: Mapped[str] = mapped_column(String(20), default="件")
     image: Mapped[str] = mapped_column(String(300), default="")
@@ -233,8 +237,14 @@ class StockDoc(Base, TimestampMixin):
     to_location_id: Mapped[int | None] = mapped_column(ForeignKey("locations.id"), nullable=True)
     business_date: Mapped[datetime] = mapped_column(DateTime, default=now)
     supplier_id: Mapped[int | None] = mapped_column(ForeignKey("suppliers.id"), nullable=True)
+    # 出库原因：领用 / 报损 / 退供应商 / 其他（入库为采购入库等，可空）
+    reason: Mapped[str] = mapped_column(String(20), default="")
     remark: Mapped[str] = mapped_column(String(200), default="")
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    # 作废：填错的单据不删除，作废时按原单反向冲回库存，留痕可查
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    voided_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    void_reason: Mapped[str] = mapped_column(String(200), default="")
     # 客户端生成的请求号，防止网络重试导致重复入库
     request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     lines: Mapped[list["StockDocLine"]] = relationship(lazy="selectin")
@@ -245,7 +255,14 @@ class StockDocLine(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     doc_id: Mapped[int] = mapped_column(ForeignKey("stock_docs.id"))
     stock_item_id: Mapped[int] = mapped_column(ForeignKey("stock_items.id"))
-    qty: Mapped[Decimal] = mapped_column(Qty)
+    qty: Mapped[Decimal] = mapped_column(Qty)  # 盘点单为实盘数
+    unit_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 单价（分）：入库为进价，其余按库存品成本
+    amount: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 金额（分）：数量 × 单价；盘点为盈亏金额
+    book_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)  # 盘点时的账面数
+    # 入库批次信息（选填）
+    batch_no: Mapped[str] = mapped_column(String(50), default="")
+    production_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class StockMove(Base):
@@ -262,6 +279,79 @@ class StockMove(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     balance_after: Mapped[Decimal] = mapped_column(Qty)
+    note: Mapped[str] = mapped_column(String(30), default="")  # 如“作废冲回”
+
+
+class StockBatch(Base, TimestampMixin):
+    """批次：某地点某库存品的一个批号 / 有效期，qty 为这个批次还剩多少。
+
+    批次是库存之上的明细：入库时填了批号或日期才有批次；出库、调拨、销售先扣最早到期的批次，
+    调拨时批次跟着走到门店。没有批次信息的库存不在这里（批次合计可以小于库存）。
+    """
+    __tablename__ = "stock_batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), index=True)
+    stock_item_id: Mapped[int] = mapped_column(ForeignKey("stock_items.id"), index=True)
+    batch_no: Mapped[str] = mapped_column(String(50), default="")
+    production_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    qty: Mapped[Decimal] = mapped_column(Qty, default=Decimal(0))
+
+
+class BatchMove(Base):
+    """每笔库存流水动了哪些批次、各多少（作废、退货时按它原样冲回）。"""
+    __tablename__ = "batch_moves"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    move_id: Mapped[int] = mapped_column(ForeignKey("stock_moves.id"), index=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("stock_batches.id"), index=True)
+    qty: Mapped[Decimal] = mapped_column(Qty)
+
+
+class Requisition(Base):
+    """门店要货申请：门店提，仓库照单（可改数量）调拨，调拨单号记在这里。
+
+    status：pending 待处理 / done 已调拨 / rejected 已驳回 / cancelled 门店已撤回
+    """
+    __tablename__ = "requisitions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    no: Mapped[str] = mapped_column(String(32), unique=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    remark: Mapped[str] = mapped_column(String(200), default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    handle_note: Mapped[str] = mapped_column(String(200), default="")  # 驳回原因 / 处理备注
+    transfer_doc_id: Mapped[int | None] = mapped_column(ForeignKey("stock_docs.id"), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    lines: Mapped[list["RequisitionLine"]] = relationship(lazy="selectin", order_by="RequisitionLine.id")
+
+
+class RequisitionLine(Base):
+    __tablename__ = "requisition_lines"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requisition_id: Mapped[int] = mapped_column(ForeignKey("requisitions.id"), index=True)
+    stock_item_id: Mapped[int] = mapped_column(ForeignKey("stock_items.id"))
+    qty: Mapped[Decimal] = mapped_column(Qty)  # 门店要的数量
+    sent_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)  # 实际调拨的数量
+
+
+class Shift(Base):
+    """收银员交班：开班时点备用金，交班时按这段时间自己经手的收款算应有现金，填实点现金算差额。"""
+    __tablename__ = "shifts"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="open", index=True)  # open 当班 / closed 已交班
+    started_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    opening_cash: Mapped[int] = mapped_column(Integer, default=0)  # 备用金（分）
+    counted_cash: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 交班实点现金
+    expected_cash: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 应有现金 = 备用金 + 现金收款 − 现金退款
+    cash_diff: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 实点 − 应有（正为长款，负为短款）
+    summary: Mapped[dict] = mapped_column(JSON, default=dict)  # 交班时各收款方式的汇总快照
+    remark: Mapped[str] = mapped_column(String(200), default="")
 
 
 # ---------------- 订单 ----------------

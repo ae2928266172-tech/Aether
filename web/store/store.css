@@ -91,3 +91,9 @@
   .pos-right { width: 100%; }
   .ws-top .clock, .ws-top .who span:last-child { display: none; }
 }
+.held { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.shift-sum { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
+.shift-sum > div { flex: 1; min-width: 140px; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.shift-sum span { color: var(--muted); font-size: 13px; }
+.shift-sum b { font-size: 20px; }
+.shift-sum em { font-style: normal; color: var(--muted); font-size: 12px; }

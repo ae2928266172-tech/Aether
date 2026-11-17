@@ -19,7 +19,7 @@ from ..models import (Area, Order, OrderItem, OrderLog, Payment, Product, Refund
                       StockItem, Store, User)
 from ..security import has_perm
 from ..settings_store import get_setting
-from .inventory import change_stock
+from .inventory import change_stock, return_alloc
 from .printq import auto_enqueue
 
 PAY_METHODS = {"cash": "现金", "wechat": "微信", "alipay": "支付宝", "other": "其他"}
@@ -154,7 +154,7 @@ def restore_stock(db: Session, order: Order, qty_by_item: dict[int, int], user: 
             back[i.stock_item_id] += Decimal(i.deduct_qty) * q
     for sid, q in back.items():
         change_stock(db, location_id=loc, stock_item_id=sid, qty=q, kind="sale_return", order_id=order.id,
-                     user_id=user.id if user else None)
+                     user_id=user.id if user else None, alloc=return_alloc(db, order.id, loc, sid, q))
 
 
 def _record_payments(db: Session, order: Order, payments: list[dict], user: User | None):

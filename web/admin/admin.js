@@ -15,12 +15,13 @@ const Products = {
   template: `
   <div class="panel">
     <div class="toolbar">
-      <el-input v-model="kw" placeholder="名称 / 货号 / 条码" clearable style="width:220px" @keyup.enter="load" />
+      <el-input v-model="kw" placeholder="名称 / 助记码 / 货号 / 条码" clearable style="width:220px" @keyup.enter="load" />
       <el-select v-model="cat" placeholder="全部分类" clearable style="width:160px" @change="load">
         <el-option v-for="c in meta.categories" :key="c.id" :label="catLabel(c)" :value="c.id" />
       </el-select>
       <el-checkbox v-model="showOff" @change="load">显示已下架</el-checkbox>
       <el-button @click="load">查询</el-button>
+      <el-button @click="exp">导出</el-button>
       <span class="grow"></span>
       <el-button type="primary" @click="edit()">新增商品</el-button>
     </div>
@@ -30,7 +31,7 @@ const Products = {
         <div style="display:flex;align-items:center;gap:12px">
           <div class="thumb"><img v-if="row.image" :src="row.image"><span v-else>{{row.name.slice(0,1)}}</span></div>
           <div style="min-width:0"><div class="c-main">{{row.name}}</div>
-            <div class="c-sub">{{[row.code && '货号 ' + row.code, row.supplier_name].filter(Boolean).join(' · ') || '—'}}</div></div>
+            <div class="c-sub">{{[row.code && '货号 ' + row.code, row.mnemonic && '助记码 ' + row.mnemonic, row.supplier_name].filter(Boolean).join(' · ') || '—'}}</div></div>
         </div></template></el-table-column>
       <el-table-column label="分类" min-width="150"><template #default="{row}">
         <span v-for="n in (row.category_name || '').split('、').filter(Boolean)" :key="n" class="chip">{{n}}</span>
@@ -57,7 +58,8 @@ const Products = {
       <el-form :model="form" label-width="110px">
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="商品名称" required><el-input v-model="form.name" /></el-form-item></el-col>
-          <el-col :span="12"><el-form-item label="货号"><el-input v-model="form.code" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="货号"><el-input v-model="form.code" /></el-form-item></el-col>
+          <el-col :span="6"><el-form-item label="助记码" label-width="70px"><el-input v-model="form.mnemonic" placeholder="留空自动生成" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="分类">
             <el-select v-model="form.category_ids" multiple clearable filterable placeholder="可选多个分类" style="width:100%">
               <el-option v-for="c in meta.categories" :key="c.id" :label="catLabel(c)" :value="c.id" /></el-select></el-form-item></el-col>
@@ -124,9 +126,10 @@ const Products = {
     const edit = (row) => {
       Object.keys(form).forEach(k => delete form[k]);
       Object.assign(form, row ? JSON.parse(JSON.stringify(row)) : {
-        name: '', code: '', category_ids: [], min_qty: '', max_qty: '', area_limited: false, area_ids: [], unit: '件', image: '', description: '', online_visible: true, active: true,
+        name: '', code: '', mnemonic: '', category_ids: [], min_qty: '', max_qty: '', area_limited: false, area_ids: [], unit: '件', image: '', description: '', online_visible: true, active: true,
         reg_cert_no: '', production_license_no: '', registrant: '', production_address: '', supplier_id: null, skus: [] });
       form.skus = row ? form.skus.map(s => ({ ...s, price_y: yuan(s.price), cost_y: s.cost == null ? '' : yuan(s.cost) })) : [blankSku()];
+      form._name0 = row ? row.name : ''; form._mn0 = row ? row.mnemonic : '';
       if (row) { form.min_qty = row.min_qty || ''; form.max_qty = row.max_qty || ''; form.area_ids = row.area_ids || []; form.category_ids = row.category_ids || []; }
       dlg.value = true;
     };
@@ -155,13 +158,17 @@ const Products = {
       const body = { ...form, min_qty: minQ, max_qty: maxQ, category_id: (form.category_ids || [])[0] || null, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: money(s.price_y),
         cost: blank(s.cost_y) ? null : money(s.cost_y), stock_item_id: s.stock_item_id || null,
         deduct_qty: parseFloat(s.deduct_qty), active: s.active, sort: i })) };
+      // 改了名称但没动助记码：按新名称重新生成
+      if (form.id && form.name !== form._name0 && form.mnemonic === form._mn0) body.mnemonic = '';
+      delete body._name0; delete body._mn0;
       saving.value = true;
       try { form.id ? await api.put('/api/products/' + form.id, body) : await api.post('/api/products', body); ok(); dlg.value = false; load(); }
       catch (e) { err(e); } finally { saving.value = false; }
     };
     onMounted(load);
     const qtyText = (r) => [r.min_qty > 1 ? r.min_qty + ' 件起' : '', r.max_qty ? '限 ' + r.max_qty + ' 件' : ''].filter(Boolean).join('，') || '不限数量';
-    return { rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, save, catLabel, qtyText, yuan };
+    const exp = async () => { try { await api.download('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
+    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, save, catLabel, qtyText, yuan };
   },
 };
 
@@ -195,6 +202,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
               <el-option v-for="o in f.options(meta, form)" :key="o.id" :label="o.name" :value="o.id" /></el-select>
             <el-input v-else-if="f.type==='money'" v-model="form[f.prop]"><template #append>元</template></el-input>
             <el-input-number v-else-if="f.type==='int'" v-model="form[f.prop]" />
+            <el-input v-else-if="f.type==='qty'" v-model="form[f.prop]" :placeholder="f.placeholder || ''"><template v-if="f.suffix" #append>{{f.suffix}}</template></el-input>
             <el-input v-else v-model="form[f.prop]" />
           </el-form-item>
         </el-form>
@@ -210,7 +218,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
       const load = async () => { try { rows.value = await api.get(url); if (after) after(props.meta, rows.value); } catch (e) { err(e); } };
       const edit = (row) => {
         Object.keys(form).forEach(k => delete form[k]);
-        fields.forEach(f => { form[f.prop] = row ? row[f.prop] : (f.default !== undefined ? f.default : (f.type === 'bool' ? true : '')); if (f.type === 'money' && row) form[f.prop] = yuan(row[f.prop]); });
+        fields.forEach(f => { form[f.prop] = row ? row[f.prop] : (f.default !== undefined ? f.default : (f.type === 'bool' ? true : '')); if (f.type === 'money' && row) form[f.prop] = yuan(row[f.prop]); if (f.type === 'qty' && form[f.prop] == null) form[f.prop] = ''; });
         if (row) form.id = row.id;
         dlg.value = true;
       };
@@ -221,6 +229,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
           if (f.prop === 'name' && !String(v || '').trim()) return ElMessage.warning('请填写名称');
           if (f.type === 'money') { v = money(v); if (v === null) return ElMessage.warning(f.label + '请填数字，例如 0 或 1.5'); }
           if (f.type === 'select' && v === '') v = null;
+          if (f.type === 'qty') { if (blank(v)) v = null; else if (!/^\d+(\.\d{1,3})?$/.test(String(v).trim())) return ElMessage.warning(f.label + '请填数字，不需要就留空'); else v = parseFloat(v); }
           body[f.prop] = v;
         }
         if (saving.value) return;
@@ -254,8 +263,10 @@ const Suppliers = simpleCrud({
 const StockItems = simpleCrud({
   title: '库存品', desc: '库存品是实际占库存的东西；不同商品、不同规格可以绑定同一个库存品，按各自的扣减量扣。', url: '/api/stock-items',
   fields: [{ prop: 'name', label: '名称' }, { prop: 'code', label: '编码' }, { prop: 'unit', label: '单位', default: '份' }, { prop: 'cost', label: '单位成本', type: 'money', default: '0' },
-    { prop: 'supplier_id', label: '供应商', type: 'select', default: null, options: m => m.suppliers }, { prop: 'active', label: '启用', type: 'bool' }],
+    { prop: 'supplier_id', label: '供应商', type: 'select', default: null, options: m => m.suppliers },
+    { prop: 'alert_qty', label: '库存预警', type: 'qty', default: '', placeholder: '库存 ≤ 这个数时提醒补货，留空不提醒' }, { prop: 'active', label: '启用', type: 'bool' }],
   columns: [{ prop: 'name', label: '库存品', width: 220, sub: r => r.code ? '编码 ' + r.code : '' }, { prop: 'unit', label: '单位', width: 80 },
+    { prop: 'alert_qty', label: '预警量', width: 90, fmt: r => r.alert_qty == null ? '' : String(r.alert_qty) },
     { prop: 'cost', label: '单位成本', width: 110, fmt: r => '¥' + yuan(r.cost) }, { prop: 'supplier_id', label: '供应商', width: 160, fmt: (r, m) => (m.suppliers.find(s => s.id === r.supplier_id) || {}).name || '' },
     { prop: 'active', label: '状态', width: 80 }],
   after: (m, rows) => { m.stockItems = rows.filter(r => r.active); },
@@ -439,7 +450,11 @@ const Inventory = {
       <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
       <el-input v-model="kw" placeholder="搜索库存品" clearable style="width:160px" @keyup.enter="load" @clear="load" />
       <el-button @click="load">查询</el-button>
+      <el-button @click="expLedger">导出</el-button>
       <span class="grow"></span>
+      <el-button @click="openReqs">要货申请<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button>
+      <el-button @click="openBatches">批次 / 有效期</el-button>
+      <el-button @click="openDocs">单据记录</el-button>
       <el-button @click="openDoc('in')">入库</el-button>
       <el-button @click="openDoc('out')">出库</el-button>
       <el-button @click="openDoc('adjust')">盘点</el-button>
@@ -450,9 +465,10 @@ const Inventory = {
       <div class="stat"><div class="k">期间入库 + 调入</div><div class="v">{{fmtN(sumOf('in') + sumOf('transfer_in'))}}</div></div>
       <div class="stat"><div class="k">期间销售</div><div class="v">{{fmtN(sumOf('sale') - sumOf('sale_return'))}}</div><div class="s">已扣除退货回补</div></div>
       <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div><div class="s">需要补货或核对</div></div>
+      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--danger)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
     </div>
-    <el-table :data="rows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 ? 'row-low' : ''">
-      <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}</div><div class="c-sub">{{row.unit}}</div></template></el-table-column>
+    <el-table :data="shownRows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 || row.low ? 'row-low' : ''">
+      <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag><el-tag v-if="nearExp(row.earliest_expiry)" type="warning" size="small" style="margin-left:6px">{{ expText(row.earliest_expiry) }}</el-tag></div><div class="c-sub">{{row.unit}}<span v-if="row.earliest_expiry"> · 最早到期 {{row.earliest_expiry}}</span></div></template></el-table-column>
       <el-table-column v-for="c in cols" :key="c[0]" :label="c[1]" min-width="78" align="right">
         <template #default="{row}"><span v-if="!row[c[0]]" class="zero">–</span>
           <el-button v-else link :class="{strong: c[0] === 'closing'}" @click="showMoves(row)">{{fmtN(row[c[0]])}}</el-button></template></el-table-column>
@@ -461,21 +477,107 @@ const Inventory = {
     </el-table>
     <div class="muted" style="margin-top:6px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
 
-    <el-dialog v-model="dDlg" :title="docTitle" width="720px" top="4vh">
+    <el-dialog v-model="dDlg" :title="docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
       <el-form label-width="80px" inline>
         <el-form-item v-if="doc.kind==='out' || doc.kind==='transfer'" label="调出"><el-select v-model="doc.from" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind!=='out'" :label="doc.kind==='transfer' ? '调入' : (doc.kind==='adjust' ? '盘点地点' : '入库到')"><el-select v-model="doc.to" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
-        <el-form-item v-if="doc.kind==='in'" label="供应商"><el-select v-model="doc.supplier_id" clearable style="width:170px"><el-option v-for="s in meta.suppliers" :key="s.id" :label="s.name" :value="s.id" /></el-select></el-form-item>
+        <el-form-item v-if="doc.kind==='out'" label="出库原因"><el-select v-model="doc.reason" clearable placeholder="选填" style="width:170px"><el-option v-for="r in outReasons" :key="r" :label="r" :value="r" /></el-select></el-form-item>
+        <el-form-item v-if="doc.kind==='in' || (doc.kind==='out' && doc.reason==='退供应商')" label="供应商"><el-select v-model="doc.supplier_id" clearable filterable style="width:170px"><el-option v-for="s in meta.suppliers" :key="s.id" :label="s.name" :value="s.id" /></el-select></el-form-item>
         <el-form-item label="备注"><el-input v-model="doc.remark" style="width:170px" /></el-form-item>
       </el-form>
-      <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '填写实际盘点数量，留空表示不盘该项。' : '在数量列直接填数，留空或 0 表示不处理。' }}</div>
+      <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '填写实际盘点数量，留空表示不盘该项。' : (doc.kind==='in' ? '在数量列直接填数，留空或 0 表示不处理。批号、生产日期、有效期至选填；同一库存品有几个批次就点“+批次”分几行。' : '在数量列直接填数，留空或 0 表示不处理。出库、调拨会先出最早到期的批次。') }}</div>
       <el-table :data="doc.lines" border size="small" max-height="420">
         <el-table-column prop="name" label="库存品" />
         <el-table-column prop="unit" label="单位" width="60" />
         <el-table-column label="来源现有" width="90"><template #default="{row}">{{ stockAt(doc.kind==='in' || doc.kind==='adjust' ? doc.to : doc.from, row.id) }}</template></el-table-column>
-        <el-table-column label="数量" width="120"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+        <el-table-column :label="doc.kind==='adjust' ? '实盘数' : '数量'" width="110"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="批号" width="110"><template #default="{row}"><el-input v-model="row.batch_no" size="small" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="生产日期" width="140"><template #default="{row}"><el-date-picker v-model="row.production_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="有效期至" width="140"><template #default="{row}"><el-date-picker v-model="row.expiry_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" width="64"><template #default="{row, $index}"><el-button link size="small" @click="splitLine($index)">+批次</el-button></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="进价（元）" width="110"><template #default="{row}"><el-input v-model="row.price" size="small" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="金额" width="90" align="right"><template #default="{row}">{{ lineAmt(row) == null ? '' : yuan(lineAmt(row)) }}</template></el-table-column>
+        <el-table-column v-if="doc.kind==='adjust'" label="盈亏" width="80" align="right"><template #default="{row}"><span v-if="diffOf(row) != null" :style="{color: diffOf(row) < 0 ? 'var(--danger)' : (diffOf(row) > 0 ? 'var(--success, #16a34a)' : '')}">{{ diffOf(row) > 0 ? '+' : '' }}{{ diffOf(row) }}</span></template></el-table-column>
       </el-table>
+      <div v-if="doc.kind==='in' && docAmt" style="text-align:right;margin-top:8px">进货金额合计 <b class="money">¥{{yuan(docAmt)}}</b></div>
       <template #footer><el-button @click="dDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="rqDlg" title="门店要货申请" width="960px" top="5vh">
+      <div class="toolbar">
+        <el-radio-group v-model="rq.status" @change="loadReqs"><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button><el-radio-button value="">全部</el-radio-button></el-radio-group>
+        <span class="muted">门店在门店工作台“要货”里提交；点“处理”从仓库调拨，数量可以改。</span></div>
+      <el-table :data="reqs" size="small" max-height="540">
+        <el-table-column label="要货单" min-width="180"><template #default="{row}"><div class="c-main">{{row.store_name}}</div><div class="c-sub">{{row.no}} · {{row.created_at}} · {{row.created_by_name}}</div></template></el-table-column>
+        <el-table-column label="要什么" min-width="260"><template #default="{row}">{{ row.lines.filter(l => +l.qty > 0).map(l => l.name + '×' + l.qty).join('、') }}<div v-if="row.remark" class="muted">备注：{{row.remark}}</div></template></el-table-column>
+        <el-table-column label="状态" width="200"><template #default="{row}">
+          <el-tag :type="{pending: 'warning', done: 'success', rejected: 'danger', cancelled: 'info'}[row.status]" size="small">{{row.status_text}}</el-tag>
+          <div v-if="row.transfer_doc_no" class="muted">{{row.transfer_doc_no}}</div><div v-if="row.handle_note" class="muted">{{row.handle_note}}</div></template></el-table-column>
+        <el-table-column width="130" align="right"><template #default="{row}"><template v-if="row.status === 'pending'">
+          <el-button link type="primary" @click="openFulfill(row)">处理</el-button><el-button link type="danger" @click="rejectReq(row)">驳回</el-button></template></template></el-table-column>
+      </el-table>
+    </el-dialog>
+    <el-dialog v-model="ffDlg" :title="'处理要货单：' + (ff.req ? ff.req.store_name : '')" width="680px" top="6vh">
+      <el-form inline><el-form-item label="从"><el-select v-model="ff.from" style="width:160px" @change="fetchBal(ff.from)"><el-option v-for="l in locations.filter(l => l.kind === 'warehouse')" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
+        <el-form-item label="备注"><el-input v-model="ff.note" placeholder="选填，门店能看到" style="width:260px" /></el-form-item></el-form>
+      <el-table :data="ff.lines" size="small" border>
+        <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="60" />
+        <el-table-column prop="asked" label="门店要" width="80" align="right" />
+        <el-table-column label="仓库现有" width="90" align="right"><template #default="{row}">{{ stockAt(ff.from, row.stock_item_id) }}</template></el-table-column>
+        <el-table-column label="实发" width="120"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+      </el-table>
+      <div class="muted" style="margin-top:6px">实发填 0 表示这项不发。提交后生成调拨单，库存立即变化，先出最早到期的批次。</div>
+      <template #footer><el-button @click="ffDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitFulfill">确认调拨</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="bDlg" title="批次 / 有效期" width="900px" top="6vh">
+      <div class="toolbar">
+        <el-select v-model="bq.location_id" placeholder="全部地点" clearable style="width:160px" @change="loadBatches"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
+        <el-checkbox v-model="bq.onlyNear">只看 {{expiryDays}} 天内到期</el-checkbox>
+        <span class="muted">有剩余的批次，最早到期的在前。临期天数在“业务规则”里改。</span>
+      </div>
+      <el-table :data="bq.onlyNear ? batches.filter(b => nearExp(b.expiry_date)) : batches" size="small" max-height="520">
+        <el-table-column prop="location_name" label="仓库 / 门店" width="140" />
+        <el-table-column prop="name" label="库存品" min-width="150" />
+        <el-table-column prop="batch_no" label="批号" width="110" />
+        <el-table-column prop="production_date" label="生产日期" width="110" />
+        <el-table-column label="有效期至" width="170"><template #default="{row}">{{row.expiry_date || '—'}}
+          <el-tag v-if="nearExp(row.expiry_date)" :type="row.expired ? 'danger' : 'warning'" size="small" style="margin-left:4px">{{ expText(row.expiry_date) }}</el-tag></template></el-table-column>
+        <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
+      </el-table>
+    </el-dialog>
+    <el-dialog v-model="lDlg" title="出入库单据" width="980px" top="4vh">
+      <div class="toolbar">
+        <el-select v-model="lq.kind" placeholder="全部类型" clearable style="width:110px" @change="loadDocs"><el-option v-for="(t, k) in kindText" :key="k" :label="t" :value="k" /></el-select>
+        <el-select v-model="lq.location_id" placeholder="全部地点" clearable style="width:140px" @change="loadDocs"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
+        <el-date-picker v-model="lq.range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:240px" @change="loadDocs" />
+        <el-input v-model="lq.keyword" placeholder="单号 / 备注" clearable style="width:150px" @keyup.enter="loadDocs" @clear="loadDocs" />
+        <el-button @click="loadDocs">查询</el-button><el-button @click="expDocs">导出</el-button>
+      </div>
+      <el-table :data="docs" size="small" max-height="560" :row-class-name="({row}) => row.voided ? 'row-void' : ''">
+        <el-table-column type="expand"><template #default="{row}">
+          <div style="padding:4px 12px 10px 48px">
+            <div class="muted" style="margin-bottom:6px">
+              <span v-if="row.supplier_name">供应商：{{row.supplier_name}}　</span><span v-if="row.reason">原因：{{row.reason}}　</span>
+              <span v-if="row.remark">备注：{{row.remark}}　</span><span>制单：{{row.created_by_name}}</span>
+              <span v-if="row.voided" style="color:var(--danger)">　{{row.voided_at}} 由 {{row.voided_by_name}} 作废：{{row.void_reason}}</span></div>
+            <el-table :data="row.lines" size="small" border>
+              <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="60" />
+              <el-table-column v-if="row.kind==='in' && row.lines.some(l => l.batch_no || l.expiry_date)" label="批号 / 有效期" width="190"><template #default="{row: l}">{{ [l.batch_no, l.production_date && '生产 ' + l.production_date, l.expiry_date && '至 ' + l.expiry_date].filter(Boolean).join(' · ') }}</template></el-table-column>
+              <el-table-column v-if="row.kind==='adjust'" prop="book_qty" label="账面" width="80" align="right" />
+              <el-table-column prop="qty" :label="row.kind==='adjust' ? '实盘' : '数量'" width="80" align="right" />
+              <el-table-column v-if="row.kind==='adjust'" label="盈亏" width="80" align="right"><template #default="{row: l}">{{ l.diff > 0 ? '+' : '' }}{{l.diff}}</template></el-table-column>
+              <el-table-column label="单价" width="90" align="right"><template #default="{row: l}">{{ l.unit_cost == null ? '' : yuan(l.unit_cost) }}</template></el-table-column>
+              <el-table-column :label="row.kind==='adjust' ? '盈亏金额' : '金额'" width="100" align="right"><template #default="{row: l}">{{ l.amount == null ? '' : yuan(l.amount) }}</template></el-table-column>
+            </el-table></div></template></el-table-column>
+        <el-table-column label="单号" min-width="170"><template #default="{row}"><div class="c-main">{{row.no}}</div><div class="c-sub">{{row.created_at}}</div></template></el-table-column>
+        <el-table-column label="类型" width="100"><template #default="{row}">{{row.kind_text}}<span v-if="row.reason" class="muted"> · {{row.reason}}</span></template></el-table-column>
+        <el-table-column label="地点" min-width="160"><template #default="{row}">{{ row.kind==='transfer' ? row.from_location + ' → ' + row.to_location : (row.from_location || row.to_location) }}</template></el-table-column>
+        <el-table-column label="数量" width="80" align="right"><template #default="{row}">{{ row.kind==='adjust' && row.total_qty > 0 ? '+' : '' }}{{row.total_qty}}</template></el-table-column>
+        <el-table-column label="金额" width="100" align="right"><template #default="{row}">{{ row.total_amount == null ? '' : yuan(row.total_amount) }}</template></el-table-column>
+        <el-table-column label="状态" width="120" align="right"><template #default="{row}">
+          <el-tag v-if="row.voided" type="info" size="small">已作废</el-tag>
+          <el-button v-else link type="danger" @click="voidDoc(row)">作废</el-button></template></el-table-column>
+      </el-table>
+      <div class="muted" style="margin-top:6px">填错的单据点“作废”：库存按原单反向冲回，单据保留可查。盘点单作废只冲回当时的盈亏数量。</div>
     </el-dialog>
     <el-dialog v-model="mDlg" :title="mTitle" width="640px">
       <el-table :data="moves" border size="small" max-height="460">
@@ -490,7 +592,55 @@ const Inventory = {
   setup(props) {
     const locations = ref([]), loc = ref(null), range = ref([today(), today()]), kw = ref(''), rows = ref([]);
     const cols = [['opening', '期初'], ['in', '入库'], ['out', '出库'], ['transfer_in', '调入'], ['transfer_out', '调出'], ['sale', '销售'], ['sale_return', '退货回补'], ['adjust', '盘点'], ['closing', '结余']];
-    const dDlg = ref(false), saving = ref(false), doc = reactive({ kind: 'in', from: null, to: null, remark: '', supplier_id: null, lines: [], rid: '' });
+    const dDlg = ref(false), saving = ref(false), doc = reactive({ kind: 'in', from: null, to: null, remark: '', reason: '', supplier_id: null, lines: [], rid: '' });
+    const outReasons = ['领用', '报损', '退供应商', '其他'], kindText = { in: '入库', out: '出库', transfer: '调拨', adjust: '盘点' };
+    const lineAmt = (r) => { const q = parseFloat(r.qty), p = money(r.price); return q > 0 && p !== null ? Math.round(q * p) : null; };
+    const docAmt = computed(() => doc.kind === 'in' ? doc.lines.reduce((a, r) => a + (lineAmt(r) || 0), 0) : 0);
+    const diffOf = (r) => { if (!balances[doc.to] || blank(r.qty) || !isFinite(parseFloat(r.qty))) return null; return +(parseFloat(r.qty) - (+stockAt(doc.to, r.id) || 0)).toFixed(3); };
+    const expiryDays = ref(30), bDlg = ref(false), batches = ref([]), bq = reactive({ location_id: null, onlyNear: false });
+    api.get('/api/settings/rules').then(r => { expiryDays.value = r.expiry_alert_days ?? 30; }).catch(() => {});
+    const daysTo = (d) => Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000);
+    const nearExp = (d) => !!d && daysTo(d) <= expiryDays.value;
+    const expText = (d) => { const n = daysTo(d); return n < 0 ? '已过期 ' + (-n) + ' 天' : (n === 0 ? '今天到期' : n + ' 天后到期'); };
+    const loadBatches = async () => { try { batches.value = await api.get('/api/stock-batches', { location_id: bq.location_id || undefined }); } catch (e) { err(e); } };
+    const openBatches = () => { bq.location_id = loc.value; bDlg.value = true; loadBatches(); };
+    const splitLine = (i) => { const r = doc.lines[i]; doc.lines.splice(i + 1, 0, { ...r, qty: '', batch_no: '', production_date: null, expiry_date: null, split: true }); };
+    const reqPending = ref(0), rqDlg = ref(false), reqs = ref([]), rq = reactive({ status: 'pending' }), ffDlg = ref(false), ff = reactive({ req: null, from: null, note: '', lines: [], rid: '' });
+    const countReqs = async () => { try { reqPending.value = (await api.get('/api/requisitions', { status: 'pending', size: 1 })).total; } catch (e) {} };
+    const loadReqs = async () => { try { reqs.value = (await api.get('/api/requisitions', { status: rq.status, size: 200 })).items; } catch (e) { err(e); } countReqs(); };
+    const openReqs = () => { rqDlg.value = true; loadReqs(); };
+    const openFulfill = (row) => {
+      const wh = locations.value.find(l => l.kind === 'warehouse');
+      Object.assign(ff, { req: row, from: wh ? wh.id : null, note: '', rid: rid(),
+        lines: row.lines.map(l => ({ stock_item_id: l.stock_item_id, name: l.name, unit: l.unit, asked: l.qty, qty: String(l.qty) })) });
+      Object.keys(balances).forEach(k => delete balances[k]); fetchBal(ff.from).catch(() => {});
+      ffDlg.value = true;
+    };
+    const submitFulfill = async () => {
+      const bad = ff.lines.find(l => !/^\d+(\.\d{1,3})?$/.test(String(l.qty).trim()));
+      if (bad) return ElMessage.warning(bad.name + ' 的实发数量请填数字（不发填 0）');
+      saving.value = true;
+      try { await api.post('/api/requisitions/' + ff.req.id + '/fulfill', { from_location_id: ff.from, note: ff.note, request_id: ff.rid,
+          lines: ff.lines.map(l => ({ stock_item_id: l.stock_item_id, qty: parseFloat(l.qty) })) });
+        ok('已调拨到 ' + ff.req.store_name); ffDlg.value = false; loadReqs(); load(); }
+      catch (e) { err(e); } finally { saving.value = false; }
+    };
+    const rejectReq = async (row) => {
+      let reason; try { ({ value: reason } = await ElMessageBox.prompt('驳回 ' + row.store_name + ' 的要货单，原因（门店能看到）：', '驳回', { inputValidator: v => !blank(v) || '请写原因' })); } catch (e) { return; }
+      try { await api.post('/api/requisitions/' + row.id + '/reject', { reason }); ok('已驳回'); loadReqs(); } catch (e) { err(e); }
+    };
+    const lDlg = ref(false), docs = ref([]), lq = reactive({ kind: '', location_id: null, range: [daysAgo(30), today()], keyword: '' });
+    const docParams = () => ({ kind: lq.kind || undefined, location_id: lq.location_id || undefined, begin: (lq.range || [])[0], end: (lq.range || [])[1], keyword: lq.keyword });
+    const loadDocs = async () => { try { docs.value = await api.get('/api/stock-docs', docParams()); } catch (e) { err(e); } };
+    const openDocs = () => { lq.location_id = loc.value; lDlg.value = true; loadDocs(); };
+    const expDocs = async () => { try { await api.download('/api/stock-docs', docParams()); } catch (e) { err(e); } };
+    const expLedger = async () => { try { await api.download('/api/stock-ledger', { location_id: loc.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value }); } catch (e) { err(e); } };
+    const voidDoc = async (row) => {
+      let reason;
+      try { ({ value: reason } = await ElMessageBox.prompt(`作废 ${row.kind_text}单 ${row.no}？库存会按原单反向冲回（${row.kind === 'adjust' ? '冲回当时的盈亏' : '共 ' + row.total_qty}），作废后不能恢复。请写明原因：`, '作废单据',
+        { type: 'warning', confirmButtonText: '作废', inputValidator: v => !blank(v) || '请写原因' })); } catch (e) { return; }
+      try { await api.post('/api/stock-docs/' + row.id + '/void', { reason }); ok('已作废，库存已冲回'); loadDocs(); load(); } catch (e) { err(e); }
+    };
     const balances = reactive({});
     const mDlg = ref(false), moves = ref([]), mTitle = ref('');
     const loadLocs = async () => { locations.value = await api.get('/api/locations'); if (!loc.value && locations.value.length) loc.value = locations.value[0].id; };
@@ -499,8 +649,11 @@ const Inventory = {
       try { rows.value = await api.get('/api/stock-ledger', { location_id: loc.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value }); } catch (e) { err(e); }
     };
     const fmtN = (v) => +(+v || 0).toFixed(3);
-    const sumOf = (k) => rows.value.reduce((a, r) => a + (+r[k] || 0), 0);
+    const sumOf = (k) => shownRows.value.reduce((a, r) => a + (+r[k] || 0), 0);
     const lowCount = computed(() => rows.value.filter(r => r.current <= 0).length);
+    const onlyLow = ref(false);
+    const alertCount = computed(() => rows.value.filter(r => r.low).length);
+    const shownRows = computed(() => onlyLow.value ? rows.value.filter(r => r.low) : rows.value);
     // 合计行：各列数量相加（不同单位相加只用于核对，和表格里点出来的流水对得上即可）
     const summary = ({ columns }) => columns.map((c, i) => {
       if (i === 0) return '合计';
@@ -514,29 +667,37 @@ const Inventory = {
     const openDoc = async (kind) => {
       Object.keys(balances).forEach(k => delete balances[k]);
       const wh = locations.value.find(l => l.kind === 'warehouse'), st = locations.value.find(l => l.kind === 'store');
-      Object.assign(doc, { kind, remark: '', supplier_id: null, rid: rid(),
+      Object.assign(doc, { kind, remark: '', reason: '', supplier_id: null, rid: rid(),
         from: kind === 'out' ? loc.value : (kind === 'transfer' ? (wh || {}).id : null),
         to: kind === 'transfer' ? (st || {}).id : (kind === 'out' ? null : loc.value) });
+      // 地点没变时 watch 不会触发，这里主动取一次现有库存
+      fetchBal(doc.from).catch(() => {}); fetchBal(doc.to).catch(() => {});
       // 停用的库存品也列出来（排在后面），方便把剩余库存出库或盘为 0
       let all = props.meta.stockItems;
       try { all = await api.get('/api/stock-items'); } catch (e) {}
       doc.lines = [...all.filter(i => i.active), ...all.filter(i => !i.active)]
-        .map(i => ({ id: i.id, name: i.name + (i.active ? '' : '（已停用）'), unit: i.unit, qty: '' }));
+        .map(i => ({ id: i.id, name: i.name + (i.active ? '' : '（已停用）'), unit: i.unit, qty: '', price: i.cost == null ? '' : yuan(i.cost), batch_no: '', production_date: null, expiry_date: null }));
       dDlg.value = true;
     };
     const submitDoc = async () => {
       const bad = doc.lines.find(l => String(l.qty).trim() !== '' && !(isFinite(parseFloat(l.qty)) && /^\d+(\.\d{1,3})?$/.test(String(l.qty).trim())));
       if (bad) return ElMessage.warning(bad.name + ' 的数量请填数字');
-      const lines = doc.lines.filter(l => String(l.qty).trim() !== '' && (doc.kind === 'adjust' || parseFloat(l.qty) > 0)).map(l => ({ stock_item_id: l.id, qty: parseFloat(l.qty) }));
+      const picked = doc.lines.filter(l => String(l.qty).trim() !== '' && (doc.kind === 'adjust' || parseFloat(l.qty) > 0));
+      if (doc.kind === 'in') { const badP = picked.find(l => !blank(l.price) && money(l.price) === null); if (badP) return ElMessage.warning(badP.name + ' 的进价请填数字'); }
+      if (doc.kind === 'in') { const badD = picked.find(l => l.production_date && l.expiry_date && l.expiry_date < l.production_date); if (badD) return ElMessage.warning(badD.name + '：有效期至不能早于生产日期'); }
+      const lines = picked.map(l => ({ stock_item_id: l.id, qty: parseFloat(l.qty), unit_cost: doc.kind === 'in' && !blank(l.price) ? money(l.price) : null,
+        ...(doc.kind === 'in' ? { batch_no: (l.batch_no || '').trim(), production_date: l.production_date || null, expiry_date: l.expiry_date || null } : {}) }));
       if (!lines.length) return ElMessage.warning('请填写数量');
       const locName = (id) => (locations.value.find(l => l.id === id) || {}).name || '';
       const where = { in: '入库到 ' + locName(doc.to), out: '从 ' + locName(doc.from) + ' 出库', transfer: '从 ' + locName(doc.from) + ' 调拨到 ' + locName(doc.to), adjust: '盘点 ' + locName(doc.to) }[doc.kind];
       const total = lines.reduce((a, l) => a + l.qty, 0);
-      try { await ElMessageBox.confirm(`${where}：共 ${lines.length} 项，合计 ${+total.toFixed(3)}。提交后库存立即变化，确定吗？`, '确认' + docTitle.value, { type: 'warning' }); } catch (e) { return; }
+      const extra = doc.kind === 'in' && docAmt.value ? `，金额 ¥${yuan(docAmt.value)}` : (doc.kind === 'adjust' ? `，盘盈 ${picked.filter(l => diffOf(l) > 0).length} 项、盘亏 ${picked.filter(l => diffOf(l) < 0).length} 项` : '');
+      try { await ElMessageBox.confirm(`${where}：共 ${lines.length} 项，合计 ${+total.toFixed(3)}${extra}。提交后库存立即变化，确定吗？`, '确认' + docTitle.value, { type: 'warning' }); } catch (e) { return; }
       saving.value = true;
       try {
         await api.post('/api/stock-docs', { kind: doc.kind, from_location_id: doc.kind === 'out' || doc.kind === 'transfer' ? doc.from : null,
-          to_location_id: doc.kind === 'out' ? null : doc.to, supplier_id: doc.supplier_id, remark: doc.remark, request_id: doc.rid, lines });
+          to_location_id: doc.kind === 'out' ? null : doc.to, supplier_id: doc.kind === 'in' || doc.reason === '退供应商' ? doc.supplier_id : null,
+          reason: doc.kind === 'out' ? (doc.reason || '') : '', remark: doc.remark, request_id: doc.rid, lines });
         ok('已提交'); dDlg.value = false; load();
       } catch (e) { err(e); } finally { saving.value = false; }
     };
@@ -548,8 +709,9 @@ const Inventory = {
       let name; try { ({ value: name } = await ElMessageBox.prompt('仓库名称', '新增仓库')); } catch (e) { return; }
       try { await api.post('/api/warehouses', { name }); ok(); loadLocs(); } catch (e) { err(e); }
     };
-    onMounted(async () => { try { await loadLocs(); load(); } catch (e) { err(e); } });
-    return { locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
+    onMounted(async () => { try { await loadLocs(); load(); countReqs(); } catch (e) { err(e); } });
+    return { reqPending, rqDlg, reqs, rq, ffDlg, ff, loadReqs, openReqs, openFulfill, submitFulfill, rejectReq, fetchBal, expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
+      locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
 
@@ -982,6 +1144,7 @@ const Rules = {
       <el-form-item label="区域叫法"><el-input v-model="f.area_label" placeholder="如：病区、楼层" /></el-form-item>
       <el-form-item label="位置叫法"><el-input v-model="f.location_label" placeholder="如：床号、桌号" /></el-form-item>
       <el-form-item label="小程序下单必须填位置"><el-switch v-model="f.online_location_required" /></el-form-item>
+      <el-form-item label="临期提醒"><el-input-number v-model="f.expiry_alert_days" :min="0" :max="3650" /><span class="muted" style="margin-left:8px">天内到期（含已过期）的批次在经营概览和库存页提醒</span></el-form-item>
       <el-form-item label="顾客访问网址"><el-input v-model="f.public_url" placeholder="如 https://shop.example.com，上线后填正式域名" />
         <div class="hint" style="margin-top:2px">区域二维码用这个网址生成。留空时用当前打开后台的地址，那样生成的码顾客在外面扫不开。</div></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button></el-form-item>
@@ -992,6 +1155,54 @@ const Rules = {
     onMounted(async () => { try { Object.assign(f, await api.get('/api/settings/rules')); } catch (e) { err(e); } });
     const save = async () => { try { await api.put('/api/settings/rules', { ...f }); ok(); } catch (e) { err(e); } };
     return { f, save };
+  },
+};
+
+// ---------------- 交班记录 ----------------
+const Shifts = {
+  props: ['meta'],
+  template: `
+  <div class="panel">
+    <div class="toolbar">
+      <el-select v-model="q.store_id" placeholder="全部门店" clearable style="width:160px" @change="load"><el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
+      <el-date-picker v-model="q.range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
+      <el-button @click="load">查询</el-button><el-button @click="exp">导出</el-button>
+      <span class="grow"></span><span class="muted">收银员在门店工作台“交班”里开班、交班；差额 = 实点现金 − 应有现金</span>
+    </div>
+    <div class="stats" style="margin-bottom:14px">
+      <div class="stat"><div class="k">班次</div><div class="v">{{rows.length}}</div><div class="s">当班中 {{rows.filter(r => r.status === 'open').length}}</div></div>
+      <div class="stat"><div class="k">合计净收</div><div class="v">¥{{yuan(rows.reduce((a, r) => a + r.net, 0))}}</div></div>
+      <div class="stat"><div class="k">有差额的班次</div><div class="v" :style="diffRows.length ? 'color:var(--danger)' : ''">{{diffRows.length}}</div><div class="s">{{ diffSum === 0 ? '长短款相抵为 0' : (diffSum > 0 ? '合计长款 ¥' + yuan(diffSum) : '合计短款 ¥' + yuan(-diffSum)) }}</div></div>
+    </div>
+    <el-table :data="rows" size="small">
+      <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
+        <el-table :data="Object.values(row.methods)" size="small" border>
+          <el-table-column prop="method_text" label="方式" /><el-table-column prop="pay_count" label="收款笔数" width="90" />
+          <el-table-column label="收款" width="110"><template #default="{row: m}">{{yuan(m.pay)}}</template></el-table-column>
+          <el-table-column label="退款" width="110"><template #default="{row: m}">{{yuan(m.refund)}}</template></el-table-column>
+          <el-table-column label="净额" width="110"><template #default="{row: m}"><b>{{yuan(m.pay - m.refund)}}</b></template></el-table-column>
+        </el-table><div v-if="row.remark" class="muted" style="margin-top:6px">备注：{{row.remark}}</div></div></template></el-table-column>
+      <el-table-column label="收银员" min-width="150"><template #default="{row}"><div class="c-main">{{row.cashier}}</div><div class="c-sub">{{row.store_name}}</div></template></el-table-column>
+      <el-table-column label="时间" min-width="180"><template #default="{row}">{{row.started_at}}<div class="c-sub">{{row.ended_at || '当班中'}}</div></template></el-table-column>
+      <el-table-column prop="orders" label="单数" width="70" align="right" />
+      <el-table-column label="净收" width="100" align="right"><template #default="{row}">{{yuan(row.net)}}</template></el-table-column>
+      <el-table-column label="备用金" width="90" align="right"><template #default="{row}">{{yuan(row.opening_cash)}}</template></el-table-column>
+      <el-table-column label="应有现金" width="100" align="right"><template #default="{row}">{{yuan(row.expected_cash)}}</template></el-table-column>
+      <el-table-column label="实点现金" width="100" align="right"><template #default="{row}">{{row.counted_cash == null ? '—' : yuan(row.counted_cash)}}</template></el-table-column>
+      <el-table-column label="差额" width="100" align="right"><template #default="{row}">
+        <el-tag v-if="row.status === 'open'" size="small" type="warning">当班中</el-tag>
+        <b v-else :style="{color: row.cash_diff ? 'var(--danger)' : 'var(--success)'}">{{ row.cash_diff > 0 ? '+' : '' }}{{yuan(row.cash_diff)}}</b></template></el-table-column>
+    </el-table>
+  </div>`,
+  setup() {
+    const q = reactive({ store_id: null, range: [daysAgo(6), today()] }), rows = ref([]), stores = ref([]);
+    const params = () => ({ store_id: q.store_id || undefined, begin: (q.range || [])[0], end: (q.range || [])[1] });
+    const load = async () => { try { rows.value = await api.get('/api/shifts', params()); } catch (e) { err(e); } };
+    const exp = async () => { try { await api.download('/api/shifts', params()); } catch (e) { err(e); } };
+    const diffRows = computed(() => rows.value.filter(r => r.status === 'closed' && r.cash_diff));
+    const diffSum = computed(() => diffRows.value.reduce((a, r) => a + r.cash_diff, 0));
+    onMounted(async () => { try { stores.value = await api.get('/api/stores'); } catch (e) {} load(); });
+    return { q, rows, stores, diffRows, diffSum, load, exp, yuan };
   },
 };
 
@@ -1021,15 +1232,41 @@ const Dashboard = {
         <div class="panel-title">常用</div><div class="panel-desc">&nbsp;</div>
         <div class="quick">
           <div class="q" @click="go('products')"><b>新增商品</b><span>规格、库存品、扣减量</span></div>
-          <div class="q" @click="go('inventory')"><b>调拨到门店</b><span>仓库每日出库</span></div>
+          <div class="q" @click="go('inventory')"><b>调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></b><span>{{ reqPending ? reqPending + ' 张要货申请待处理' : '仓库每日出库' }}</span></div>
           <div class="q" @click="go('revenue')"><b>营收报表</b><span>日报 / 周报 / 月报</span></div>
           <div class="q" @click="go('stores')"><b>区域二维码</b><span>打印贴到区域</span></div>
         </div>
       </div>
     </div>
+    <div v-if="alerts !== null" class="panel" style="margin-top:16px">
+      <div class="panel-title">库存预警 <span v-if="alerts.length" style="color:var(--danger)">{{alerts.length}}</span></div>
+      <div class="panel-desc">库存小于等于预警量的库存品；预警量在“库存品”里设置</div>
+      <el-table v-if="alerts.length" :data="alerts.slice(0, 20)" size="small">
+        <el-table-column prop="location_name" label="仓库 / 门店" width="160" />
+        <el-table-column prop="name" label="库存品" />
+        <el-table-column label="现有" width="90" align="right"><template #default="{row}"><b style="color:var(--danger)">{{row.qty}}</b> {{row.unit}}</template></el-table-column>
+        <el-table-column prop="alert_qty" label="预警量" width="80" align="right" />
+      </el-table>
+      <div v-if="alerts.length > 20" class="muted" style="margin-top:6px">还有 {{alerts.length - 20}} 条，到“仓库与库存”里查看</div>
+      <el-empty v-if="!alerts.length" :image-size="50" description="没有低于预警量的库存品" />
+    </div>
+    <div v-if="expiring !== null" class="panel" style="margin-top:16px">
+      <div class="panel-title">临期提醒 <span v-if="expiring.length" style="color:var(--danger)">{{expiring.length}}</span></div>
+      <div class="panel-desc">快到期或已过期、还有剩余的批次；提醒天数在“业务规则”里设置</div>
+      <el-table v-if="expiring.length" :data="expiring.slice(0, 20)" size="small">
+        <el-table-column prop="location_name" label="仓库 / 门店" width="160" />
+        <el-table-column prop="name" label="库存品" />
+        <el-table-column prop="batch_no" label="批号" width="110" />
+        <el-table-column label="有效期至" width="190"><template #default="{row}">{{row.expiry_date}}
+          <el-tag :type="row.expired ? 'danger' : 'warning'" size="small" style="margin-left:4px">{{ row.expired ? '已过期 ' + (-row.days_left) + ' 天' : (row.days_left ? row.days_left + ' 天后' : '今天到期') }}</el-tag></template></el-table-column>
+        <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
+      </el-table>
+      <div v-if="expiring.length > 20" class="muted" style="margin-top:6px">还有 {{expiring.length - 20}} 条，到“仓库与库存 → 批次 / 有效期”里查看</div>
+      <el-empty v-if="!expiring.length" :image-size="50" description="没有临期的批次" />
+    </div>
   </div>`,
   setup() {
-    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]);
+    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null), reqPending = ref(0);
     onMounted(async () => {
       const d = today();
       try {
@@ -1037,8 +1274,10 @@ const Dashboard = {
           api.get('/api/reports/revenue', { begin: d.slice(0, 8) + '01', end: d, group: 'month' }), api.get('/api/orders', { status: 'pending', size: 1 })]);
         t.value = a.total; m.value = b.total; pending.value = p.total; byStore.value = a.rows;
       } catch (e) { err(e); }
+      try { alerts.value = await api.get('/api/stock-alerts'); expiring.value = await api.get('/api/expiry-alerts');
+        reqPending.value = (await api.get('/api/requisitions', { status: 'pending', size: 1 })).total; } catch (e) { alerts.value = null; }  // 没有库存权限的账号不显示
     });
-    return { t, m, pending, byStore, yuan };
+    return { t, m, pending, byStore, alerts, expiring, reqPending, yuan };
   },
 };
 
@@ -1048,6 +1287,7 @@ const MENU = [
   ['dashboard', '经营概览', 'reports', Dashboard, '经营', 'home', '今天和本月的营收、待处理订单'],
   ['orders', '订单', 'reports', Orders, '经营', 'receipt', '所有门店的收银单和小程序订单'],
   ['revenue', '营收报表', 'reports', Revenue, '经营', 'chart', '按门店、日 / 周 / 月统计，可导出'],
+  ['shifts', '交班记录', 'reports', Shifts, '经营', 'clock', '每个收银员每一班的收款、备用金、现金差额'],
   ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '按商品或按分类查卖了多少，展开看逐单明细'],
   ['products', '商品', 'catalog', Products, '商品资料', 'package', '名称、规格、售价、图片、医疗器械资料'],
   ['categories', '商品分类', 'catalog', Categories, '商品资料', 'tag', '大类、小类'],

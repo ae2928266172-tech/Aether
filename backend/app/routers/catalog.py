@@ -12,6 +12,7 @@ from ..db import get_db
 from ..models import Area, Category, Product, ProductCategory, Sku, StockItem, Supplier, User
 from ..security import current_user, has_perm, require
 from ..serialize import product_out, stock_item_out
+from ..services.mnemonic import make_mnemonic
 
 router = APIRouter(prefix="/api", tags=["商品资料"])
 MEDIA_DIR = os.environ.get("SHOUYIN_MEDIA") or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "media")
@@ -106,12 +107,13 @@ class StockItemIn(BaseModel):
     unit: str = "份"
     cost: int = 0
     supplier_id: int | None = None
+    alert_qty: Decimal | None = Field(None, ge=0)  # 库存预警量，为空不提醒
     active: bool = True
 
 
 @router.get("/stock-items")
 def list_stock_items(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    if not (has_perm(user, "catalog") or has_perm(user, "inventory") or has_perm(user, "stock_view")):
+    if not any(has_perm(user, p) for p in ("catalog", "inventory", "stock_view", "requisition")):
         raise HTTPException(403, "没有权限")
     rows = [stock_item_out(i) for i in db.scalars(select(StockItem).order_by(StockItem.id))]
     if not has_perm(user, "catalog"):
@@ -158,6 +160,7 @@ class SkuIn(BaseModel):
 class ProductIn(BaseModel):
     name: str = Field(min_length=1)
     code: str = ""
+    mnemonic: str = Field("", max_length=50)  # 留空时按名称自动生成拼音首字母
     category_id: int | None = None
     unit: str = "件"
     image: str = ""
@@ -215,6 +218,7 @@ def _apply_product(db: Session, p: Product, body: ProductIn):
     ids = _cat_ids(body)
     for k, v in body.model_dump(exclude={"skus", "category_ids", "area_ids", "category_id"}).items():
         setattr(p, k, v)
+    p.mnemonic = (body.mnemonic or "").strip().lower() or make_mnemonic(body.name)
     p.category_id = ids[0] if ids else None
     p.categories = [db.get(Category, i) for i in ids]
     p.areas = [db.get(Area, i) for i in body.area_ids] if body.area_limited else []
@@ -242,19 +246,42 @@ def _apply_skus(db: Session, p: Product, skus: list[SkuIn]):
 
 @router.get("/products")
 def list_products(keyword: str = "", category_id: int | None = None, include_inactive: bool = False,
-                  db: Session = Depends(get_db), user: User = Depends(current_user)):
+                  export: bool = False, db: Session = Depends(get_db), user: User = Depends(current_user)):
     q = select(Product).order_by(Product.sort, Product.id)
     if keyword:
         q = q.where(Product.name.contains(keyword) | Product.code.contains(keyword)
+                    | Product.mnemonic.contains(keyword.strip().lower())
                     | Product.id.in_(select(Sku.product_id).where(Sku.barcode == keyword)))
     if category_id:
         cats = select(Category.id).where((Category.parent_id == category_id) | (Category.id == category_id))
         q = q.where(Product.category_id.in_(cats)
                     | Product.id.in_(select(ProductCategory.product_id).where(ProductCategory.category_id.in_(cats))))
     admin = has_perm(user, "catalog")
+    if export and not admin:
+        raise HTTPException(403, "没有权限")
     if not (admin and include_inactive):
         q = q.where(Product.active.is_(True))
+    if export:
+        return _export_products(db.scalars(q).all())
     return [product_out(p, admin=admin) for p in db.scalars(q)]
+
+
+def _export_products(products: list[Product]):
+    """商品资料导出：每个规格一行（备份、核对、发给别人看）。"""
+    from .reports import _xlsx
+    yuan = lambda v: None if v is None else v / 100
+    rows = []
+    for p in products:
+        d = product_out(p)
+        for s in d["skus"]:
+            rows.append([d["name"], d["code"], d["mnemonic"], d["category_name"] or "", d["unit"], s["name"],
+                         s["barcode"], yuan(s["price"]), yuan(s["cost"]), s["stock_item_name"] or "", s["deduct_qty"],
+                         d["supplier_name"] or "", "是" if d["online_visible"] else "否",
+                         "启用" if d["active"] and s["active"] else "停用", d["reg_cert_no"],
+                         d["production_license_no"], d["registrant"], d["production_address"]])
+    header = ["商品名称", "货号", "助记码", "分类", "单位", "规格", "条码", "售价", "成本", "库存品", "扣减量", "供应商",
+              "小程序可见", "状态", "注册证号 / 备案号", "生产许可证号", "注册人 / 备案人", "生产地址"]
+    return _xlsx("商品资料", header, rows, "商品资料")
 
 
 @router.get("/products/by-barcode/{code}")
