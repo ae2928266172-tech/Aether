@@ -108,7 +108,25 @@
     </style></head><body>${page.repeat(Math.max(1, r.copies || 1))}</body></html>`;
   }
 
-  function printReceipt(r) {
+  // 桌面收银软件（Windows）里打开时有 window.ShouyinDesktop：小票直接发给本机小票机，不弹打印框
+  const desk = window.ShouyinDesktop || null;
+  let deskInfo = null;
+  try { deskInfo = desk ? desk.info() : null; } catch (e) { deskInfo = null; }
+  // 取小票时要不要服务端一并生成 ESC/POS 指令
+  const printOpts = () => (deskInfo && deskInfo.printMode === 'raw' ? { escpos: true } : {});
+  // 这台电脑能不能出票（桌面软件可设为“不出票”）
+  const canPrintHere = () => !deskInfo || deskInfo.printMode !== 'off';
+
+  async function printReceipt(r) {
+    if (deskInfo) {
+      if (deskInfo.printMode === 'off') throw new Error('这台电脑设置为不出票，可在“桌面软件设置”里修改');
+      if (r.escpos && deskInfo.printMode === 'raw') return desk.printRaw(r.escpos);
+      return desk.printHtml(receiptHtml(r));
+    }
+    return browserPrint(r);
+  }
+
+  function browserPrint(r) {
     return new Promise(resolve => {
       const f = document.createElement('iframe');
       f.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0';
@@ -171,5 +189,5 @@
   };
   const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ''}</svg>`;
 
-  window.Shouyin = { api, yuan, toFen, parseMoney, rid, today, esc, receiptHtml, printReceipt, beep, speak, icon };
+  window.Shouyin = { api, yuan, toFen, parseMoney, rid, today, esc, receiptHtml, printReceipt, beep, speak, icon, desk, deskInfo, printOpts, canPrintHere };
 })();
