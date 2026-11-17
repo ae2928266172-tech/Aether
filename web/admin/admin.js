@@ -1172,7 +1172,7 @@ const Shifts = {
     <div class="stats" style="margin-bottom:14px">
       <div class="stat"><div class="k">班次</div><div class="v">{{rows.length}}</div><div class="s">当班中 {{rows.filter(r => r.status === 'open').length}}</div></div>
       <div class="stat"><div class="k">合计净收</div><div class="v">¥{{yuan(rows.reduce((a, r) => a + r.net, 0))}}</div></div>
-      <div class="stat"><div class="k">有差额的班次</div><div class="v" :style="diffRows.length ? 'color:var(--danger)' : ''">{{diffRows.length}}</div><div class="s">差额合计 ¥{{yuan(diffRows.reduce((a, r) => a + r.cash_diff, 0))}}</div></div>
+      <div class="stat"><div class="k">有差额的班次</div><div class="v" :style="diffRows.length ? 'color:var(--danger)' : ''">{{diffRows.length}}</div><div class="s">{{ diffSum === 0 ? '长短款相抵为 0' : (diffSum > 0 ? '合计长款 ¥' + yuan(diffSum) : '合计短款 ¥' + yuan(-diffSum)) }}</div></div>
     </div>
     <el-table :data="rows" size="small">
       <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
@@ -1200,8 +1200,9 @@ const Shifts = {
     const load = async () => { try { rows.value = await api.get('/api/shifts', params()); } catch (e) { err(e); } };
     const exp = async () => { try { await api.download('/api/shifts', params()); } catch (e) { err(e); } };
     const diffRows = computed(() => rows.value.filter(r => r.status === 'closed' && r.cash_diff));
+    const diffSum = computed(() => diffRows.value.reduce((a, r) => a + r.cash_diff, 0));
     onMounted(async () => { try { stores.value = await api.get('/api/stores'); } catch (e) {} load(); });
-    return { q, rows, stores, diffRows, load, exp, yuan };
+    return { q, rows, stores, diffRows, diffSum, load, exp, yuan };
   },
 };
 
