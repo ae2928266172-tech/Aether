@@ -222,8 +222,10 @@ def _balances(db: Session, location_id: int, keyword: str = ""):
         q = q.where(StockItem.name.contains(keyword) | StockItem.code.contains(keyword))
     bal = dict(db.execute(select(StockBalance.stock_item_id, StockBalance.qty)
                           .where(StockBalance.location_id == location_id)).all())
+    exp = inv.earliest_expiry(db, location_id)
     return [{"stock_item_id": i.id, "name": i.name, "code": i.code, "unit": i.unit, "qty": num(bal.get(i.id)),
-             "alert_qty": None if i.alert_qty is None else num(i.alert_qty), "low": inv.is_low(bal.get(i.id), i.alert_qty)}
+             "alert_qty": None if i.alert_qty is None else num(i.alert_qty), "low": inv.is_low(bal.get(i.id), i.alert_qty),
+             "earliest_expiry": exp[i.id].isoformat() if i.id in exp else None}
             for i in db.scalars(q) if i.active or bal.get(i.id)]
 
 
@@ -242,6 +244,10 @@ class DocLineIn(BaseModel):
     stock_item_id: int
     qty: float
     unit_cost: int | None = None  # 单价（分），入库填进价；不填按库存品成本
+    # 入库批次（选填）
+    batch_no: str = Field("", max_length=50)
+    production_date: date | None = None
+    expiry_date: date | None = None
 
 
 class DocIn(BaseModel):
@@ -272,7 +278,9 @@ def _doc_out(db: Session, d: StockDoc, ctx: dict | None = None):
     for ln in d.lines:
         name, unit = names.get(ln.stock_item_id, ("", ""))
         row = {"stock_item_id": ln.stock_item_id, "name": name, "unit": unit, "qty": num(ln.qty),
-               "unit_cost": ln.unit_cost, "amount": ln.amount}
+               "unit_cost": ln.unit_cost, "amount": ln.amount, "batch_no": ln.batch_no or "",
+               "production_date": ln.production_date.isoformat() if ln.production_date else None,
+               "expiry_date": ln.expiry_date.isoformat() if ln.expiry_date else None}
         if d.kind == "adjust":  # 盘点：qty 是实盘数，diff 是盈亏数量（正为盘盈），amount 是盈亏金额
             row["book_qty"] = None if ln.book_qty is None else num(ln.book_qty)
             row["diff"] = None if ln.book_qty is None else num(ln.qty - ln.book_qty)
@@ -384,9 +392,45 @@ def stock_ledger(location_id: int, begin: date | None = None, end: date | None =
         out = [[r["name"], r["code"], r["unit"], *[num(r[c]) for c in cols],
                 None if r["alert_qty"] is None else num(r["alert_qty"]), "是" if r["low"] else ""] for r in rows]
         return _xlsx("库存台账", header, out, f"库存台账_{loc.name if loc else location_id}_{b}_{e}")
+    exp = inv.earliest_expiry(db, location_id)
     return [{k: (num(v) if k not in ("name", "code", "unit", "stock_item_id", "low", "alert_qty") else v)
-             for k, v in r.items()} | {"alert_qty": None if r["alert_qty"] is None else num(r["alert_qty"])}
+             for k, v in r.items()} | {"alert_qty": None if r["alert_qty"] is None else num(r["alert_qty"]),
+                                       "earliest_expiry": exp[r["stock_item_id"]].isoformat()
+                                       if r["stock_item_id"] in exp else None}
             for r in rows]
+
+
+def _batch_out(b, names: dict, locs: dict, today: date) -> dict:
+    name, unit = names.get(b.stock_item_id, ("", ""))
+    left = (b.expiry_date - today).days if b.expiry_date else None
+    return {"id": b.id, "location_id": b.location_id, "location_name": locs.get(b.location_id, ""),
+            "stock_item_id": b.stock_item_id, "name": name, "unit": unit, "batch_no": b.batch_no,
+            "production_date": b.production_date.isoformat() if b.production_date else None,
+            "expiry_date": b.expiry_date.isoformat() if b.expiry_date else None,
+            "days_left": left, "expired": left is not None and left < 0, "qty": num(b.qty)}
+
+
+@router.get("/stock-batches")
+def stock_batches(location_id: int | None = None, stock_item_id: int | None = None,
+                  db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
+    """各地点还有剩余的批次，最早到期的在前。"""
+    ctx = _doc_ctx(db)
+    today = now().date()
+    return [_batch_out(b, ctx["names"], ctx["locs"], today) for b in inv.batches_at(db, location_id, stock_item_id)]
+
+
+@router.get("/expiry-alerts")
+def expiry_alerts(location_id: int | None = None, days: int | None = None, db: Session = Depends(get_db),
+                  _: User = Depends(require("inventory"))):
+    """临期提醒：有效期在提醒天数以内（含已过期）、还有剩余的批次。天数在“业务规则”里设置。"""
+    from ..settings_store import get_setting
+    if days is None:
+        days = int(get_setting(db, "rules").get("expiry_alert_days", 30))
+    ctx = _doc_ctx(db)
+    today = now().date()
+    limit = today + timedelta(days=days)
+    return [_batch_out(b, ctx["names"], ctx["locs"], today) for b in inv.batches_at(db, location_id)
+            if b.expiry_date and b.expiry_date <= limit]
 
 
 @router.get("/stock-alerts")

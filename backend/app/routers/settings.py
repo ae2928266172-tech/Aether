@@ -78,6 +78,13 @@ def get_rules(db: Session = Depends(get_db), _: User = Depends(current_user)):
 def put_rules(body: dict, db: Session = Depends(get_db), _: User = Depends(require("stores"))):
     if "online_deduct_on" in body and body["online_deduct_on"] not in ("create", "accept"):
         raise HTTPException(400, "扣库存时机只能是下单时或接单时")
+    if "expiry_alert_days" in body:
+        try:
+            body["expiry_alert_days"] = int(body["expiry_alert_days"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, "临期提醒天数请填整数")
+        if not 0 <= body["expiry_alert_days"] <= 3650:
+            raise HTTPException(400, "临期提醒天数要在 0 到 3650 之间")
     if "public_url" in body:
         body["public_url"] = str(body["public_url"] or "").strip().rstrip("/")
         if body["public_url"] and not body["public_url"].startswith(("http://", "https://")):

@@ -390,7 +390,7 @@ const Stock = {
       <div class="toolbar"><b>本店库存</b><el-input v-model="kw" placeholder="搜索" clearable style="width:160px" @keyup.enter="load" /><el-button @click="load">刷新</el-button>
         <span class="grow"></span><el-button v-if="canEdit" type="primary" @click="startAdjust">盘点</el-button></div>
       <el-table :data="rows" border>
-        <el-table-column label="库存品"><template #default="{row}">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">该补货了</el-tag></template></el-table-column>
+        <el-table-column label="库存品"><template #default="{row}">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">该补货了</el-tag><span v-if="row.earliest_expiry" class="muted" style="margin-left:8px">最早到期 {{row.earliest_expiry}}</span></template></el-table-column>
         <el-table-column prop="unit" label="单位" width="80" />
         <el-table-column prop="qty" label="库存" width="100" />
         <el-table-column v-if="adjusting" label="实盘数" width="140"><template #default="{row}"><el-input v-model="row.real" size="small" /></template></el-table-column>

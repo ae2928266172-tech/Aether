@@ -2,10 +2,10 @@
 
 金额一律以“分”为单位存整数；库存数量用 Decimal（最多 3 位小数），支持“大份扣 2 份”“半份扣 0.5”等扣减量。
 """
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import (JSON, Boolean, DateTime, ForeignKey, Integer, Numeric,
+from sqlalchemy import (JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric,
                         String, Text, UniqueConstraint)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -259,6 +259,10 @@ class StockDocLine(Base):
     unit_cost: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 单价（分）：入库为进价，其余按库存品成本
     amount: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 金额（分）：数量 × 单价；盘点为盈亏金额
     book_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)  # 盘点时的账面数
+    # 入库批次信息（选填）
+    batch_no: Mapped[str] = mapped_column(String(50), default="")
+    production_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
 
 class StockMove(Base):
@@ -276,6 +280,31 @@ class StockMove(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     balance_after: Mapped[Decimal] = mapped_column(Qty)
     note: Mapped[str] = mapped_column(String(30), default="")  # 如“作废冲回”
+
+
+class StockBatch(Base, TimestampMixin):
+    """批次：某地点某库存品的一个批号 / 有效期，qty 为这个批次还剩多少。
+
+    批次是库存之上的明细：入库时填了批号或日期才有批次；出库、调拨、销售先扣最早到期的批次，
+    调拨时批次跟着走到门店。没有批次信息的库存不在这里（批次合计可以小于库存）。
+    """
+    __tablename__ = "stock_batches"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    location_id: Mapped[int] = mapped_column(ForeignKey("locations.id"), index=True)
+    stock_item_id: Mapped[int] = mapped_column(ForeignKey("stock_items.id"), index=True)
+    batch_no: Mapped[str] = mapped_column(String(50), default="")
+    production_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    expiry_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    qty: Mapped[Decimal] = mapped_column(Qty, default=Decimal(0))
+
+
+class BatchMove(Base):
+    """每笔库存流水动了哪些批次、各多少（作废、退货时按它原样冲回）。"""
+    __tablename__ = "batch_moves"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    move_id: Mapped[int] = mapped_column(ForeignKey("stock_moves.id"), index=True)
+    batch_id: Mapped[int] = mapped_column(ForeignKey("stock_batches.id"), index=True)
+    qty: Mapped[Decimal] = mapped_column(Qty)
 
 
 # ---------------- 订单 ----------------

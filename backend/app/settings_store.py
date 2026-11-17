@@ -21,6 +21,8 @@ DEFAULTS: dict[str, dict] = {
         "online_location_required": True,
         "location_label": "床号",
         "area_label": "病区",
+        # 临期提醒：批次有效期在多少天以内（含已过期）时提醒
+        "expiry_alert_days": 30,
         # 顾客扫码打开的正式网址（如 https://shop.example.com）。留空时用当前打开后台的地址，
         # 那样在本机或内网地址下生成的二维码，顾客在外面扫不开
         "public_url": "",

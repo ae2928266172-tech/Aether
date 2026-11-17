@@ -452,6 +452,7 @@ const Inventory = {
       <el-button @click="load">查询</el-button>
       <el-button @click="expLedger">导出</el-button>
       <span class="grow"></span>
+      <el-button @click="openBatches">批次 / 有效期</el-button>
       <el-button @click="openDocs">单据记录</el-button>
       <el-button @click="openDoc('in')">入库</el-button>
       <el-button @click="openDoc('out')">出库</el-button>
@@ -466,7 +467,7 @@ const Inventory = {
       <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--danger)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
     </div>
     <el-table :data="shownRows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 || row.low ? 'row-low' : ''">
-      <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag></div><div class="c-sub">{{row.unit}}</div></template></el-table-column>
+      <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag><el-tag v-if="nearExp(row.earliest_expiry)" type="warning" size="small" style="margin-left:6px">{{ expText(row.earliest_expiry) }}</el-tag></div><div class="c-sub">{{row.unit}}<span v-if="row.earliest_expiry"> · 最早到期 {{row.earliest_expiry}}</span></div></template></el-table-column>
       <el-table-column v-for="c in cols" :key="c[0]" :label="c[1]" min-width="78" align="right">
         <template #default="{row}"><span v-if="!row[c[0]]" class="zero">–</span>
           <el-button v-else link :class="{strong: c[0] === 'closing'}" @click="showMoves(row)">{{fmtN(row[c[0]])}}</el-button></template></el-table-column>
@@ -475,7 +476,7 @@ const Inventory = {
     </el-table>
     <div class="muted" style="margin-top:6px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
 
-    <el-dialog v-model="dDlg" :title="docTitle" width="720px" top="4vh">
+    <el-dialog v-model="dDlg" :title="docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
       <el-form label-width="80px" inline>
         <el-form-item v-if="doc.kind==='out' || doc.kind==='transfer'" label="调出"><el-select v-model="doc.from" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind!=='out'" :label="doc.kind==='transfer' ? '调入' : (doc.kind==='adjust' ? '盘点地点' : '入库到')"><el-select v-model="doc.to" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
@@ -483,18 +484,38 @@ const Inventory = {
         <el-form-item v-if="doc.kind==='in' || (doc.kind==='out' && doc.reason==='退供应商')" label="供应商"><el-select v-model="doc.supplier_id" clearable filterable style="width:170px"><el-option v-for="s in meta.suppliers" :key="s.id" :label="s.name" :value="s.id" /></el-select></el-form-item>
         <el-form-item label="备注"><el-input v-model="doc.remark" style="width:170px" /></el-form-item>
       </el-form>
-      <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '填写实际盘点数量，留空表示不盘该项。' : '在数量列直接填数，留空或 0 表示不处理。' }}</div>
+      <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '填写实际盘点数量，留空表示不盘该项。' : (doc.kind==='in' ? '在数量列直接填数，留空或 0 表示不处理。批号、生产日期、有效期至选填；同一库存品有几个批次就点“+批次”分几行。' : '在数量列直接填数，留空或 0 表示不处理。出库、调拨会先出最早到期的批次。') }}</div>
       <el-table :data="doc.lines" border size="small" max-height="420">
         <el-table-column prop="name" label="库存品" />
         <el-table-column prop="unit" label="单位" width="60" />
         <el-table-column label="来源现有" width="90"><template #default="{row}">{{ stockAt(doc.kind==='in' || doc.kind==='adjust' ? doc.to : doc.from, row.id) }}</template></el-table-column>
         <el-table-column :label="doc.kind==='adjust' ? '实盘数' : '数量'" width="110"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="批号" width="110"><template #default="{row}"><el-input v-model="row.batch_no" size="small" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="生产日期" width="140"><template #default="{row}"><el-date-picker v-model="row.production_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" label="有效期至" width="140"><template #default="{row}"><el-date-picker v-model="row.expiry_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" width="64"><template #default="{row, $index}"><el-button link size="small" @click="splitLine($index)">+批次</el-button></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="进价（元）" width="110"><template #default="{row}"><el-input v-model="row.price" size="small" /></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="金额" width="90" align="right"><template #default="{row}">{{ lineAmt(row) == null ? '' : yuan(lineAmt(row)) }}</template></el-table-column>
         <el-table-column v-if="doc.kind==='adjust'" label="盈亏" width="80" align="right"><template #default="{row}"><span v-if="diffOf(row) != null" :style="{color: diffOf(row) < 0 ? 'var(--danger)' : (diffOf(row) > 0 ? 'var(--success, #16a34a)' : '')}">{{ diffOf(row) > 0 ? '+' : '' }}{{ diffOf(row) }}</span></template></el-table-column>
       </el-table>
       <div v-if="doc.kind==='in' && docAmt" style="text-align:right;margin-top:8px">进货金额合计 <b class="money">¥{{yuan(docAmt)}}</b></div>
       <template #footer><el-button @click="dDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="bDlg" title="批次 / 有效期" width="900px" top="6vh">
+      <div class="toolbar">
+        <el-select v-model="bq.location_id" placeholder="全部地点" clearable style="width:160px" @change="loadBatches"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
+        <el-checkbox v-model="bq.onlyNear">只看 {{expiryDays}} 天内到期</el-checkbox>
+        <span class="muted">有剩余的批次，最早到期的在前。临期天数在“业务规则”里改。</span>
+      </div>
+      <el-table :data="bq.onlyNear ? batches.filter(b => nearExp(b.expiry_date)) : batches" size="small" max-height="520">
+        <el-table-column prop="location_name" label="仓库 / 门店" width="140" />
+        <el-table-column prop="name" label="库存品" min-width="150" />
+        <el-table-column prop="batch_no" label="批号" width="110" />
+        <el-table-column prop="production_date" label="生产日期" width="110" />
+        <el-table-column label="有效期至" width="170"><template #default="{row}">{{row.expiry_date || '—'}}
+          <el-tag v-if="nearExp(row.expiry_date)" :type="row.expired ? 'danger' : 'warning'" size="small" style="margin-left:4px">{{ expText(row.expiry_date) }}</el-tag></template></el-table-column>
+        <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
+      </el-table>
     </el-dialog>
     <el-dialog v-model="lDlg" title="出入库单据" width="980px" top="4vh">
       <div class="toolbar">
@@ -513,6 +534,7 @@ const Inventory = {
               <span v-if="row.voided" style="color:var(--danger)">　{{row.voided_at}} 由 {{row.voided_by_name}} 作废：{{row.void_reason}}</span></div>
             <el-table :data="row.lines" size="small" border>
               <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="60" />
+              <el-table-column v-if="row.kind==='in' && row.lines.some(l => l.batch_no || l.expiry_date)" label="批号 / 有效期" width="190"><template #default="{row: l}">{{ [l.batch_no, l.production_date && '生产 ' + l.production_date, l.expiry_date && '至 ' + l.expiry_date].filter(Boolean).join(' · ') }}</template></el-table-column>
               <el-table-column v-if="row.kind==='adjust'" prop="book_qty" label="账面" width="80" align="right" />
               <el-table-column prop="qty" :label="row.kind==='adjust' ? '实盘' : '数量'" width="80" align="right" />
               <el-table-column v-if="row.kind==='adjust'" label="盈亏" width="80" align="right"><template #default="{row: l}">{{ l.diff > 0 ? '+' : '' }}{{l.diff}}</template></el-table-column>
@@ -548,6 +570,14 @@ const Inventory = {
     const lineAmt = (r) => { const q = parseFloat(r.qty), p = money(r.price); return q > 0 && p !== null ? Math.round(q * p) : null; };
     const docAmt = computed(() => doc.kind === 'in' ? doc.lines.reduce((a, r) => a + (lineAmt(r) || 0), 0) : 0);
     const diffOf = (r) => { if (!balances[doc.to] || blank(r.qty) || !isFinite(parseFloat(r.qty))) return null; return +(parseFloat(r.qty) - (+stockAt(doc.to, r.id) || 0)).toFixed(3); };
+    const expiryDays = ref(30), bDlg = ref(false), batches = ref([]), bq = reactive({ location_id: null, onlyNear: false });
+    api.get('/api/settings/rules').then(r => { expiryDays.value = r.expiry_alert_days ?? 30; }).catch(() => {});
+    const daysTo = (d) => Math.round((new Date(d + 'T00:00:00') - new Date(today() + 'T00:00:00')) / 86400000);
+    const nearExp = (d) => !!d && daysTo(d) <= expiryDays.value;
+    const expText = (d) => { const n = daysTo(d); return n < 0 ? '已过期 ' + (-n) + ' 天' : (n === 0 ? '今天到期' : n + ' 天后到期'); };
+    const loadBatches = async () => { try { batches.value = await api.get('/api/stock-batches', { location_id: bq.location_id || undefined }); } catch (e) { err(e); } };
+    const openBatches = () => { bq.location_id = loc.value; bDlg.value = true; loadBatches(); };
+    const splitLine = (i) => { const r = doc.lines[i]; doc.lines.splice(i + 1, 0, { ...r, qty: '', batch_no: '', production_date: null, expiry_date: null, split: true }); };
     const lDlg = ref(false), docs = ref([]), lq = reactive({ kind: '', location_id: null, range: [daysAgo(30), today()], keyword: '' });
     const docParams = () => ({ kind: lq.kind || undefined, location_id: lq.location_id || undefined, begin: (lq.range || [])[0], end: (lq.range || [])[1], keyword: lq.keyword });
     const loadDocs = async () => { try { docs.value = await api.get('/api/stock-docs', docParams()); } catch (e) { err(e); } };
@@ -595,7 +625,7 @@ const Inventory = {
       let all = props.meta.stockItems;
       try { all = await api.get('/api/stock-items'); } catch (e) {}
       doc.lines = [...all.filter(i => i.active), ...all.filter(i => !i.active)]
-        .map(i => ({ id: i.id, name: i.name + (i.active ? '' : '（已停用）'), unit: i.unit, qty: '', price: i.cost == null ? '' : yuan(i.cost) }));
+        .map(i => ({ id: i.id, name: i.name + (i.active ? '' : '（已停用）'), unit: i.unit, qty: '', price: i.cost == null ? '' : yuan(i.cost), batch_no: '', production_date: null, expiry_date: null }));
       dDlg.value = true;
     };
     const submitDoc = async () => {
@@ -603,7 +633,9 @@ const Inventory = {
       if (bad) return ElMessage.warning(bad.name + ' 的数量请填数字');
       const picked = doc.lines.filter(l => String(l.qty).trim() !== '' && (doc.kind === 'adjust' || parseFloat(l.qty) > 0));
       if (doc.kind === 'in') { const badP = picked.find(l => !blank(l.price) && money(l.price) === null); if (badP) return ElMessage.warning(badP.name + ' 的进价请填数字'); }
-      const lines = picked.map(l => ({ stock_item_id: l.id, qty: parseFloat(l.qty), unit_cost: doc.kind === 'in' && !blank(l.price) ? money(l.price) : null }));
+      if (doc.kind === 'in') { const badD = picked.find(l => l.production_date && l.expiry_date && l.expiry_date < l.production_date); if (badD) return ElMessage.warning(badD.name + '：有效期至不能早于生产日期'); }
+      const lines = picked.map(l => ({ stock_item_id: l.id, qty: parseFloat(l.qty), unit_cost: doc.kind === 'in' && !blank(l.price) ? money(l.price) : null,
+        ...(doc.kind === 'in' ? { batch_no: (l.batch_no || '').trim(), production_date: l.production_date || null, expiry_date: l.expiry_date || null } : {}) }));
       if (!lines.length) return ElMessage.warning('请填写数量');
       const locName = (id) => (locations.value.find(l => l.id === id) || {}).name || '';
       const where = { in: '入库到 ' + locName(doc.to), out: '从 ' + locName(doc.from) + ' 出库', transfer: '从 ' + locName(doc.from) + ' 调拨到 ' + locName(doc.to), adjust: '盘点 ' + locName(doc.to) }[doc.kind];
@@ -627,7 +659,7 @@ const Inventory = {
       try { await api.post('/api/warehouses', { name }); ok(); loadLocs(); } catch (e) { err(e); }
     };
     onMounted(async () => { try { await loadLocs(); load(); } catch (e) { err(e); } });
-    return { outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
+    return { expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
       locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
@@ -1061,6 +1093,7 @@ const Rules = {
       <el-form-item label="区域叫法"><el-input v-model="f.area_label" placeholder="如：病区、楼层" /></el-form-item>
       <el-form-item label="位置叫法"><el-input v-model="f.location_label" placeholder="如：床号、桌号" /></el-form-item>
       <el-form-item label="小程序下单必须填位置"><el-switch v-model="f.online_location_required" /></el-form-item>
+      <el-form-item label="临期提醒"><el-input-number v-model="f.expiry_alert_days" :min="0" :max="3650" /><span class="muted" style="margin-left:8px">天内到期（含已过期）的批次在经营概览和库存页提醒</span></el-form-item>
       <el-form-item label="顾客访问网址"><el-input v-model="f.public_url" placeholder="如 https://shop.example.com，上线后填正式域名" />
         <div class="hint" style="margin-top:2px">区域二维码用这个网址生成。留空时用当前打开后台的地址，那样生成的码顾客在外面扫不开。</div></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button></el-form-item>
@@ -1118,9 +1151,23 @@ const Dashboard = {
       <div v-if="alerts.length > 20" class="muted" style="margin-top:6px">还有 {{alerts.length - 20}} 条，到“仓库与库存”里查看</div>
       <el-empty v-if="!alerts.length" :image-size="50" description="没有低于预警量的库存品" />
     </div>
+    <div v-if="expiring !== null" class="panel" style="margin-top:16px">
+      <div class="panel-title">临期提醒 <span v-if="expiring.length" style="color:var(--danger)">{{expiring.length}}</span></div>
+      <div class="panel-desc">快到期或已过期、还有剩余的批次；提醒天数在“业务规则”里设置</div>
+      <el-table v-if="expiring.length" :data="expiring.slice(0, 20)" size="small">
+        <el-table-column prop="location_name" label="仓库 / 门店" width="160" />
+        <el-table-column prop="name" label="库存品" />
+        <el-table-column prop="batch_no" label="批号" width="110" />
+        <el-table-column label="有效期至" width="190"><template #default="{row}">{{row.expiry_date}}
+          <el-tag :type="row.expired ? 'danger' : 'warning'" size="small" style="margin-left:4px">{{ row.expired ? '已过期 ' + (-row.days_left) + ' 天' : (row.days_left ? row.days_left + ' 天后' : '今天到期') }}</el-tag></template></el-table-column>
+        <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
+      </el-table>
+      <div v-if="expiring.length > 20" class="muted" style="margin-top:6px">还有 {{expiring.length - 20}} 条，到“仓库与库存 → 批次 / 有效期”里查看</div>
+      <el-empty v-if="!expiring.length" :image-size="50" description="没有临期的批次" />
+    </div>
   </div>`,
   setup() {
-    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null);
+    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null);
     onMounted(async () => {
       const d = today();
       try {
@@ -1128,9 +1175,9 @@ const Dashboard = {
           api.get('/api/reports/revenue', { begin: d.slice(0, 8) + '01', end: d, group: 'month' }), api.get('/api/orders', { status: 'pending', size: 1 })]);
         t.value = a.total; m.value = b.total; pending.value = p.total; byStore.value = a.rows;
       } catch (e) { err(e); }
-      try { alerts.value = await api.get('/api/stock-alerts'); } catch (e) { alerts.value = null; }  // 没有库存权限的账号不显示
+      try { alerts.value = await api.get('/api/stock-alerts'); expiring.value = await api.get('/api/expiry-alerts'); } catch (e) { alerts.value = null; }  // 没有库存权限的账号不显示
     });
-    return { t, m, pending, byStore, alerts, yuan };
+    return { t, m, pending, byStore, alerts, expiring, yuan };
   },
 };
 
