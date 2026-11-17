@@ -97,3 +97,14 @@
 .shift-sum span { color: var(--muted); font-size: 13px; }
 .shift-sum b { font-size: 20px; }
 .shift-sum em { font-style: normal; color: var(--muted); font-size: 12px; }
+
+/* 键盘收银 */
+kbd { display: inline-block; font: 600 11px/1 Consolas, "SF Mono", monospace; color: var(--text-2); background: #fff; border: 1px solid var(--border);
+  border-bottom-width: 2px; border-radius: 4px; padding: 2px 5px; margin-right: 4px; vertical-align: 1px; }
+.keys { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--muted); padding-top: 2px; }
+.keys span { white-space: nowrap; }
+.line.sel { background: var(--primary-soft); margin: 0 -18px; padding-left: 18px; padding-right: 18px; box-shadow: inset 3px 0 0 var(--primary); }
+.paybox .methods .m kbd { margin: 0 0 0 6px; }
+.paybox .keyhint { float: left; line-height: 40px; font-size: 12px; }
+.el-button kbd { margin-right: 2px; }
+.desk-box { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }

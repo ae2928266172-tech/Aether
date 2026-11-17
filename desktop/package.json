@@ -1,0 +1,55 @@
+{
+  "name": "shouyin-desktop",
+  "productName": "收银系统",
+  "version": "1.0.0",
+  "description": "收银系统 · 门店收银桌面软件（Windows）",
+  "main": "src/main.js",
+  "private": true,
+  "author": "收银系统",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test",
+    "dist": "electron-builder --win nsis --x64 --ia32 --publish never"
+  },
+  "dependencies": {
+    "iconv-lite": "0.6.3"
+  },
+  "devDependencies": {
+    "electron": "22.3.27",
+    "electron-builder": "24.13.3"
+  },
+  "build": {
+    "appId": "com.shouyin.desktop",
+    "productName": "收银系统",
+    "artifactName": "收银系统-安装-${version}.${ext}",
+    "copyright": "收银系统",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true,
+      "shortcutName": "收银系统",
+      "runAfterFinish": true,
+      "language": "2052",
+      "installerLanguages": [
+        "zh_CN"
+      ]
+    },
+    "publish": null
+  }
+}
