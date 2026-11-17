@@ -31,6 +31,7 @@ PERMISSIONS = {
     "reprint": "补打小票",
     "stock_view": "查看本店库存（还需门店设置允许）",
     "stock_edit": "修改本店库存（还需门店设置允许）",
+    "requisition": "要货申请（向仓库要货）",
 }
 ADMIN_ONLY = {"catalog", "inventory", "stores", "users", "receipt_config", "reports"}
 

@@ -113,7 +113,7 @@ class StockItemIn(BaseModel):
 
 @router.get("/stock-items")
 def list_stock_items(db: Session = Depends(get_db), user: User = Depends(current_user)):
-    if not (has_perm(user, "catalog") or has_perm(user, "inventory") or has_perm(user, "stock_view")):
+    if not any(has_perm(user, p) for p in ("catalog", "inventory", "stock_view", "requisition")):
         raise HTTPException(403, "没有权限")
     rows = [stock_item_out(i) for i in db.scalars(select(StockItem).order_by(StockItem.id))]
     if not has_perm(user, "catalog"):

@@ -412,9 +412,73 @@ const Stock = {
   },
 };
 
+// ---------------- 要货申请 ----------------
+const Requisitions = {
+  props: ['storeId', 'stockVisible'],
+  template: `
+  <div class="ws-body"><div class="page-pad">
+    <div class="panel">
+      <div class="toolbar"><b>向仓库要货</b>
+        <el-radio-group v-model="status" @change="load"><el-radio-button value="">全部</el-radio-button><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button></el-radio-group>
+        <el-button @click="load">刷新</el-button><span class="grow"></span><el-button type="primary" @click="openNew">新建要货单</el-button></div>
+      <el-table :data="rows" border>
+        <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
+          <el-table :data="row.lines" size="small" border>
+            <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="70" />
+            <el-table-column prop="qty" label="要" width="80" align="right" />
+            <el-table-column label="实发" width="80" align="right"><template #default="{row: l}">{{ l.sent_qty == null ? '—' : l.sent_qty }}</template></el-table-column>
+          </el-table></div></template></el-table-column>
+        <el-table-column label="要货单" min-width="190"><template #default="{row}"><div>{{row.no}}</div><div class="muted">{{row.created_at}} · {{row.created_by_name}}</div></template></el-table-column>
+        <el-table-column label="内容" min-width="220"><template #default="{row}">{{ row.lines.filter(l => +l.qty > 0).map(l => l.name + '×' + l.qty).join('、') }}<div v-if="row.remark" class="muted">备注：{{row.remark}}</div></template></el-table-column>
+        <el-table-column label="状态" width="210"><template #default="{row}">
+          <el-tag :type="{pending: 'warning', done: 'success', rejected: 'danger', cancelled: 'info'}[row.status]" size="small">{{row.status_text}}</el-tag>
+          <div v-if="row.status === 'done'" class="muted">{{row.handled_at}} 调拨 {{row.transfer_doc_no}}</div>
+          <div v-if="row.handle_note" class="muted">{{ row.status === 'rejected' ? '驳回原因：' : '仓库备注：' }}{{row.handle_note}}</div></template></el-table-column>
+        <el-table-column width="90"><template #default="{row}"><el-button v-if="row.status === 'pending'" link type="danger" @click="cancel(row)">撤回</el-button></template></el-table-column>
+      </el-table>
+    </div>
+    <el-dialog v-model="dlg" title="新建要货单" width="640px" top="5vh">
+      <div class="toolbar"><el-input v-model="kw" placeholder="搜索库存品" clearable style="width:200px" /><el-input v-model="remark" placeholder="备注（选填）" style="flex:1" /></div>
+      <el-table :data="shown" border size="small" max-height="460">
+        <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="70" />
+        <el-table-column v-if="stockVisible" label="本店现有" width="90" align="right"><template #default="{row}">{{ have[row.id] ?? 0 }}</template></el-table-column>
+        <el-table-column label="要几个" width="120"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+      </el-table>
+      <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submit">提交给仓库</el-button></template>
+    </el-dialog>
+  </div></div>`,
+  setup(props) {
+    const rows = ref([]), status = ref(''), dlg = ref(false), items = ref([]), kw = ref(''), remark = ref(''), saving = ref(false), have = ref({});
+    let reqId = '';
+    const load = async () => { try { rows.value = (await api.get('/api/requisitions', { store_id: props.storeId, status: status.value })).items; } catch (e) { err(e); } };
+    const shown = computed(() => kw.value ? items.value.filter(i => i.name.includes(kw.value)) : items.value);
+    const openNew = async () => {
+      reqId = rid(); remark.value = ''; kw.value = '';
+      try { items.value = (await api.get('/api/stock-items')).filter(i => i.active).map(i => ({ id: i.id, name: i.name, unit: i.unit, qty: '' })); } catch (e) { return err(e); }
+      if (props.stockVisible) { try { have.value = Object.fromEntries((await api.get('/api/stores/' + props.storeId + '/stock')).map(r => [r.stock_item_id, r.qty])); } catch (e) {} }
+      dlg.value = true;
+    };
+    const submit = async () => {
+      const bad = items.value.find(i => String(i.qty).trim() !== '' && !/^\d+(\.\d{1,3})?$/.test(String(i.qty).trim()));
+      if (bad) return ElMessage.warning(bad.name + ' 的数量请填数字');
+      const lines = items.value.filter(i => parseFloat(i.qty) > 0).map(i => ({ stock_item_id: i.id, qty: parseFloat(i.qty) }));
+      if (!lines.length) return ElMessage.warning('请填写要货数量');
+      saving.value = true;
+      try { await api.post('/api/stores/' + props.storeId + '/requisitions', { lines, remark: remark.value, request_id: reqId }); dlg.value = false; ElMessage.success('已提交给仓库'); load(); }
+      catch (e) { err(e); } finally { saving.value = false; }
+    };
+    const cancel = async (row) => {
+      try { await ElMessageBox.confirm('撤回要货单 ' + row.no + '？', '撤回', { type: 'warning' }); } catch (e) { return; }
+      try { await api.post('/api/requisitions/' + row.id + '/cancel'); load(); } catch (e) { err(e); }
+    };
+    onMounted(load);
+    return { rows, status, dlg, kw, remark, saving, have, shown, load, openNew, submit, cancel };
+  },
+};
+
 // ---------------- 主框架 ----------------
 const App = {
-  components: { Pos, Orders, Shift, Stock },
+  components: { Pos, Orders, Shift, Stock, Requisitions },
   template: `
   <div v-if="!user" class="login-wrap">
     <div class="login-hero">
@@ -441,6 +505,7 @@ const App = {
         <div v-if="can('orders') || can('pos')" class="tab" :class="{on: tab==='orders'}" @click="tab='orders'"><span class="ico" v-html="icon('list')"></span>订单<span v-if="pending" class="badge">{{pending}}</span></div>
         <div v-if="can('pos')" class="tab" :class="{on: tab==='shift'}" @click="tab='shift'"><span class="ico" v-html="icon('clock')"></span>交班</div>
         <div v-if="stockVisible" class="tab" :class="{on: tab==='stock'}" @click="tab='stock'"><span class="ico" v-html="icon('box')"></span>库存</div>
+        <div v-if="can('requisition')" class="tab" :class="{on: tab==='req'}" @click="tab='req'"><span class="ico" v-html="icon('truck')"></span>要货</div>
       </div>
       <span class="grow"></span>
       <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
@@ -462,6 +527,7 @@ const App = {
       <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
       <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" />
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" />
+      <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" />
     </template>
   </div>`,
   setup() {

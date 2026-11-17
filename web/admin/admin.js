@@ -452,6 +452,7 @@ const Inventory = {
       <el-button @click="load">查询</el-button>
       <el-button @click="expLedger">导出</el-button>
       <span class="grow"></span>
+      <el-button @click="openReqs">要货申请<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button>
       <el-button @click="openBatches">批次 / 有效期</el-button>
       <el-button @click="openDocs">单据记录</el-button>
       <el-button @click="openDoc('in')">入库</el-button>
@@ -500,6 +501,32 @@ const Inventory = {
       </el-table>
       <div v-if="doc.kind==='in' && docAmt" style="text-align:right;margin-top:8px">进货金额合计 <b class="money">¥{{yuan(docAmt)}}</b></div>
       <template #footer><el-button @click="dDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="rqDlg" title="门店要货申请" width="960px" top="5vh">
+      <div class="toolbar">
+        <el-radio-group v-model="rq.status" @change="loadReqs"><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button><el-radio-button value="">全部</el-radio-button></el-radio-group>
+        <span class="muted">门店在门店工作台“要货”里提交；点“处理”从仓库调拨，数量可以改。</span></div>
+      <el-table :data="reqs" size="small" max-height="540">
+        <el-table-column label="要货单" min-width="180"><template #default="{row}"><div class="c-main">{{row.store_name}}</div><div class="c-sub">{{row.no}} · {{row.created_at}} · {{row.created_by_name}}</div></template></el-table-column>
+        <el-table-column label="要什么" min-width="260"><template #default="{row}">{{ row.lines.filter(l => +l.qty > 0).map(l => l.name + '×' + l.qty).join('、') }}<div v-if="row.remark" class="muted">备注：{{row.remark}}</div></template></el-table-column>
+        <el-table-column label="状态" width="200"><template #default="{row}">
+          <el-tag :type="{pending: 'warning', done: 'success', rejected: 'danger', cancelled: 'info'}[row.status]" size="small">{{row.status_text}}</el-tag>
+          <div v-if="row.transfer_doc_no" class="muted">{{row.transfer_doc_no}}</div><div v-if="row.handle_note" class="muted">{{row.handle_note}}</div></template></el-table-column>
+        <el-table-column width="130" align="right"><template #default="{row}"><template v-if="row.status === 'pending'">
+          <el-button link type="primary" @click="openFulfill(row)">处理</el-button><el-button link type="danger" @click="rejectReq(row)">驳回</el-button></template></template></el-table-column>
+      </el-table>
+    </el-dialog>
+    <el-dialog v-model="ffDlg" :title="'处理要货单：' + (ff.req ? ff.req.store_name : '')" width="680px" top="6vh">
+      <el-form inline><el-form-item label="从"><el-select v-model="ff.from" style="width:160px" @change="fetchBal(ff.from)"><el-option v-for="l in locations.filter(l => l.kind === 'warehouse')" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
+        <el-form-item label="备注"><el-input v-model="ff.note" placeholder="选填，门店能看到" style="width:260px" /></el-form-item></el-form>
+      <el-table :data="ff.lines" size="small" border>
+        <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="60" />
+        <el-table-column prop="asked" label="门店要" width="80" align="right" />
+        <el-table-column label="仓库现有" width="90" align="right"><template #default="{row}">{{ stockAt(ff.from, row.stock_item_id) }}</template></el-table-column>
+        <el-table-column label="实发" width="120"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+      </el-table>
+      <div class="muted" style="margin-top:6px">实发填 0 表示这项不发。提交后生成调拨单，库存立即变化，先出最早到期的批次。</div>
+      <template #footer><el-button @click="ffDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitFulfill">确认调拨</el-button></template>
     </el-dialog>
     <el-dialog v-model="bDlg" title="批次 / 有效期" width="900px" top="6vh">
       <div class="toolbar">
@@ -578,6 +605,30 @@ const Inventory = {
     const loadBatches = async () => { try { batches.value = await api.get('/api/stock-batches', { location_id: bq.location_id || undefined }); } catch (e) { err(e); } };
     const openBatches = () => { bq.location_id = loc.value; bDlg.value = true; loadBatches(); };
     const splitLine = (i) => { const r = doc.lines[i]; doc.lines.splice(i + 1, 0, { ...r, qty: '', batch_no: '', production_date: null, expiry_date: null, split: true }); };
+    const reqPending = ref(0), rqDlg = ref(false), reqs = ref([]), rq = reactive({ status: 'pending' }), ffDlg = ref(false), ff = reactive({ req: null, from: null, note: '', lines: [], rid: '' });
+    const countReqs = async () => { try { reqPending.value = (await api.get('/api/requisitions', { status: 'pending', size: 1 })).total; } catch (e) {} };
+    const loadReqs = async () => { try { reqs.value = (await api.get('/api/requisitions', { status: rq.status, size: 200 })).items; } catch (e) { err(e); } countReqs(); };
+    const openReqs = () => { rqDlg.value = true; loadReqs(); };
+    const openFulfill = (row) => {
+      const wh = locations.value.find(l => l.kind === 'warehouse');
+      Object.assign(ff, { req: row, from: wh ? wh.id : null, note: '', rid: rid(),
+        lines: row.lines.map(l => ({ stock_item_id: l.stock_item_id, name: l.name, unit: l.unit, asked: l.qty, qty: String(l.qty) })) });
+      Object.keys(balances).forEach(k => delete balances[k]); fetchBal(ff.from).catch(() => {});
+      ffDlg.value = true;
+    };
+    const submitFulfill = async () => {
+      const bad = ff.lines.find(l => !/^\d+(\.\d{1,3})?$/.test(String(l.qty).trim()));
+      if (bad) return ElMessage.warning(bad.name + ' 的实发数量请填数字（不发填 0）');
+      saving.value = true;
+      try { await api.post('/api/requisitions/' + ff.req.id + '/fulfill', { from_location_id: ff.from, note: ff.note, request_id: ff.rid,
+          lines: ff.lines.map(l => ({ stock_item_id: l.stock_item_id, qty: parseFloat(l.qty) })) });
+        ok('已调拨到 ' + ff.req.store_name); ffDlg.value = false; loadReqs(); load(); }
+      catch (e) { err(e); } finally { saving.value = false; }
+    };
+    const rejectReq = async (row) => {
+      let reason; try { ({ value: reason } = await ElMessageBox.prompt('驳回 ' + row.store_name + ' 的要货单，原因（门店能看到）：', '驳回', { inputValidator: v => !blank(v) || '请写原因' })); } catch (e) { return; }
+      try { await api.post('/api/requisitions/' + row.id + '/reject', { reason }); ok('已驳回'); loadReqs(); } catch (e) { err(e); }
+    };
     const lDlg = ref(false), docs = ref([]), lq = reactive({ kind: '', location_id: null, range: [daysAgo(30), today()], keyword: '' });
     const docParams = () => ({ kind: lq.kind || undefined, location_id: lq.location_id || undefined, begin: (lq.range || [])[0], end: (lq.range || [])[1], keyword: lq.keyword });
     const loadDocs = async () => { try { docs.value = await api.get('/api/stock-docs', docParams()); } catch (e) { err(e); } };
@@ -658,8 +709,8 @@ const Inventory = {
       let name; try { ({ value: name } = await ElMessageBox.prompt('仓库名称', '新增仓库')); } catch (e) { return; }
       try { await api.post('/api/warehouses', { name }); ok(); loadLocs(); } catch (e) { err(e); }
     };
-    onMounted(async () => { try { await loadLocs(); load(); } catch (e) { err(e); } });
-    return { expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
+    onMounted(async () => { try { await loadLocs(); load(); countReqs(); } catch (e) { err(e); } });
+    return { reqPending, rqDlg, reqs, rq, ffDlg, ff, loadReqs, openReqs, openFulfill, submitFulfill, rejectReq, fetchBal, expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
       locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
@@ -1133,7 +1184,7 @@ const Dashboard = {
         <div class="panel-title">常用</div><div class="panel-desc">&nbsp;</div>
         <div class="quick">
           <div class="q" @click="go('products')"><b>新增商品</b><span>规格、库存品、扣减量</span></div>
-          <div class="q" @click="go('inventory')"><b>调拨到门店</b><span>仓库每日出库</span></div>
+          <div class="q" @click="go('inventory')"><b>调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></b><span>{{ reqPending ? reqPending + ' 张要货申请待处理' : '仓库每日出库' }}</span></div>
           <div class="q" @click="go('revenue')"><b>营收报表</b><span>日报 / 周报 / 月报</span></div>
           <div class="q" @click="go('stores')"><b>区域二维码</b><span>打印贴到区域</span></div>
         </div>
@@ -1167,7 +1218,7 @@ const Dashboard = {
     </div>
   </div>`,
   setup() {
-    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null);
+    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null), reqPending = ref(0);
     onMounted(async () => {
       const d = today();
       try {
@@ -1175,9 +1226,10 @@ const Dashboard = {
           api.get('/api/reports/revenue', { begin: d.slice(0, 8) + '01', end: d, group: 'month' }), api.get('/api/orders', { status: 'pending', size: 1 })]);
         t.value = a.total; m.value = b.total; pending.value = p.total; byStore.value = a.rows;
       } catch (e) { err(e); }
-      try { alerts.value = await api.get('/api/stock-alerts'); expiring.value = await api.get('/api/expiry-alerts'); } catch (e) { alerts.value = null; }  // 没有库存权限的账号不显示
+      try { alerts.value = await api.get('/api/stock-alerts'); expiring.value = await api.get('/api/expiry-alerts');
+        reqPending.value = (await api.get('/api/requisitions', { status: 'pending', size: 1 })).total; } catch (e) { alerts.value = null; }  // 没有库存权限的账号不显示
     });
-    return { t, m, pending, byStore, alerts, expiring, yuan };
+    return { t, m, pending, byStore, alerts, expiring, reqPending, yuan };
   },
 };
 

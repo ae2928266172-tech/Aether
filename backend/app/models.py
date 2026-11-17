@@ -307,6 +307,36 @@ class BatchMove(Base):
     qty: Mapped[Decimal] = mapped_column(Qty)
 
 
+class Requisition(Base):
+    """门店要货申请：门店提，仓库照单（可改数量）调拨，调拨单号记在这里。
+
+    status：pending 待处理 / done 已调拨 / rejected 已驳回 / cancelled 门店已撤回
+    """
+    __tablename__ = "requisitions"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    no: Mapped[str] = mapped_column(String(32), unique=True)
+    store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    remark: Mapped[str] = mapped_column(String(200), default="")
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    handled_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    handled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    handle_note: Mapped[str] = mapped_column(String(200), default="")  # 驳回原因 / 处理备注
+    transfer_doc_id: Mapped[int | None] = mapped_column(ForeignKey("stock_docs.id"), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    lines: Mapped[list["RequisitionLine"]] = relationship(lazy="selectin", order_by="RequisitionLine.id")
+
+
+class RequisitionLine(Base):
+    __tablename__ = "requisition_lines"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    requisition_id: Mapped[int] = mapped_column(ForeignKey("requisitions.id"), index=True)
+    stock_item_id: Mapped[int] = mapped_column(ForeignKey("stock_items.id"))
+    qty: Mapped[Decimal] = mapped_column(Qty)  # 门店要的数量
+    sent_qty: Mapped[Decimal | None] = mapped_column(Qty, nullable=True)  # 实际调拨的数量
+
+
 # ---------------- 订单 ----------------
 
 class Customer(Base, TimestampMixin):

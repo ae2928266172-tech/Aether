@@ -8,7 +8,7 @@ from .db import Base
 from .models import Location, Role, User
 from .security import PERMISSIONS, hash_password
 
-STORE_PERMS = ["pos", "orders", "refund", "discount", "adjust_amount", "reprint", "stock_view"]
+STORE_PERMS = ["pos", "orders", "refund", "discount", "adjust_amount", "reprint", "stock_view", "requisition"]
 
 
 def _add_missing_columns(engine):
@@ -44,7 +44,27 @@ def init_db(engine, session_factory):
     with session_factory() as db:
         seed(db)
         fill_mnemonics(db)
+        migrate_perms(db)
         db.commit()
+
+
+def migrate_perms(db: Session):
+    """新版本加的权限，一次性补给已有角色（之后管理员取消勾选不会被加回来）。"""
+    from .models import Setting
+    row = db.get(Setting, "_migrations")
+    done = set((row.value or {}).get("done", [])) if row else set()
+    if "requisition_perm" not in done:
+        for r in db.scalars(select(Role)):
+            perms = list(r.permissions or [])
+            # 后台管理员全给；能收银的门店角色给“要货申请”
+            if (r.is_admin and "inventory" in perms) or (not r.is_admin and "pos" in perms):
+                if "requisition" not in perms:
+                    r.permissions = perms + ["requisition"]
+        done.add("requisition_perm")
+    if row:
+        row.value = {"done": sorted(done)}
+    else:
+        db.add(Setting(key="_migrations", value={"done": sorted(done)}))
 
 
 def fill_mnemonics(db: Session):
