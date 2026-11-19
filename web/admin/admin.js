@@ -9,9 +9,41 @@ const err = (e) => ElMessage.error(e.message || String(e));
 const daysAgo = (n) => { const d = new Date(Date.now() - n * 86400000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const ok = (m) => ElMessage.success(m || '已保存');
 
+// 图片框：从电脑里把图片拖进来、点一下选文件、或复制图片后在框上按 Ctrl+V，都能上传
+const ImageDrop = {
+  props: { modelValue: String, size: { type: Number, default: 96 }, hint: { type: String, default: '' } },
+  emits: ['update:modelValue'],
+  template: `
+  <div class="img-drop" :class="{over, has: !!modelValue, busy}" :style="{width: size + 'px', height: size + 'px'}" tabindex="0"
+    :title="(modelValue ? '拖入新图片替换，' : '') + '可拖入图片、点击选择或 Ctrl+V 粘贴'"
+    @click="pick" @dragenter.prevent="over = true" @dragover.prevent="over = true" @dragleave.prevent="over = false" @drop.prevent="drop" @paste="paste">
+    <img v-if="modelValue" :src="modelValue">
+    <div v-else class="tip"><b>＋</b><span v-if="size >= 80">{{hint || '拖入图片'}}<br>或点击选择</span></div>
+    <div v-if="busy" class="mask">上传中…</div>
+    <button v-if="modelValue && !busy" type="button" class="rm" title="移除图片" @click.stop="$emit('update:modelValue', '')">×</button>
+    <input ref="file" type="file" accept="image/*" hidden @change="choose">
+  </div>`,
+  setup(props, { emit }) {
+    const over = ref(false), busy = ref(false), file = ref(null);
+    const send = async (f) => {
+      over.value = false;
+      if (!f) return;
+      if (!/^image\//.test(f.type)) return ElMessage.warning('请拖入图片文件（jpg、png、gif、webp）');
+      busy.value = true;
+      try { emit('update:modelValue', (await api.upload(f)).url); } catch (e) { err(e); } finally { busy.value = false; }
+    };
+    const pick = () => { if (!busy.value) file.value.click(); };
+    const choose = (ev) => { send(ev.target.files[0]); ev.target.value = ''; };
+    const drop = (ev) => send(Array.from(ev.dataTransfer.files || []).find(f => /^image\//.test(f.type)) || (ev.dataTransfer.files || [])[0]);
+    const paste = (ev) => { const it = Array.from(ev.clipboardData.items || []).find(i => i.type.startsWith('image/')); if (it) { ev.preventDefault(); send(it.getAsFile()); } };
+    return { over, busy, file, pick, choose, drop, paste };
+  },
+};
+
 // ---------------- 商品 ----------------
 const Products = {
   props: ['meta'],
+  components: { ImageDrop },
   template: `
   <div class="panel">
     <div class="toolbar">
@@ -68,22 +100,22 @@ const Products = {
           <el-col :span="12"><el-form-item label="上架"><el-switch v-model="form.active" /></el-form-item></el-col>
         </el-row>
         <el-form-item label="图片">
-          <el-image v-if="form.image" :src="form.image" style="width:80px;height:80px;margin-right:12px" fit="cover" />
-          <input type="file" accept="image/*" @change="upload" />
-          <el-button v-if="form.image" link @click="form.image=''">移除</el-button>
+          <image-drop v-model="form.image" :size="110" hint="拖入商品图片" />
+          <span class="muted" style="margin-left:14px;font-size:12px;line-height:1.7">把图片从电脑文件夹拖到框里即可，<br>也可以点框选择，或复制图片后点框按 Ctrl+V。</span>
         </el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
 
-        <div class="form-section">规格（每个规格可以绑定库存品和扣减量，不同商品可以绑定同一个库存品）</div>
+        <div class="form-section">规格（每个规格可以绑定库存品和扣减量，不同商品可以绑定同一个库存品；图片可拖进格子，不传就用商品图片）</div>
         <el-table :data="form.skus" border size="small">
+          <el-table-column label="图片" width="76"><template #default="{row}"><image-drop v-model="row.image" :size="52" style="margin:0 auto" /></template></el-table-column>
           <el-table-column label="规格名称" min-width="110"><template #default="{row}"><el-input v-model="row.name" size="small" /></template></el-table-column>
           <el-table-column label="条码" min-width="120"><template #default="{row}"><el-input v-model="row.barcode" size="small" /></template></el-table-column>
-          <el-table-column label="售价（元）" width="110"><template #default="{row}"><el-input v-model="row.price_y" size="small" /></template></el-table-column>
-          <el-table-column label="成本（元）" width="110"><template #default="{row}"><el-input v-model="row.cost_y" size="small" placeholder="按库存品" /></template></el-table-column>
+          <el-table-column label="售价（元）" width="96"><template #default="{row}"><el-input v-model="row.price_y" size="small" /></template></el-table-column>
+          <el-table-column label="成本（元）" width="96"><template #default="{row}"><el-input v-model="row.cost_y" size="small" placeholder="按库存品" /></template></el-table-column>
           <el-table-column label="库存品" min-width="150"><template #default="{row}">
             <el-select v-model="row.stock_item_id" size="small" clearable filterable placeholder="不扣库存">
               <el-option v-for="i in meta.stockItems" :key="i.id" :label="i.name + '（' + i.unit + '）'" :value="i.id" /></el-select></template></el-table-column>
-          <el-table-column label="扣减量" width="90"><template #default="{row}"><el-input v-model="row.deduct_qty" size="small" /></template></el-table-column>
+          <el-table-column label="扣减量" width="76"><template #default="{row}"><el-input v-model="row.deduct_qty" size="small" /></template></el-table-column>
           <el-table-column label="启用" width="60"><template #default="{row}"><el-checkbox v-model="row.active" /></template></el-table-column>
           <el-table-column width="60"><template #default="{$index}"><el-button link type="danger" @click="form.skus.splice($index,1)">删除</el-button></template></el-table-column>
         </el-table>
@@ -122,7 +154,7 @@ const Products = {
     const form = reactive({});
     const catLabel = (c) => { const p = props.meta.categories.find(x => x.id === c.parent_id); return p ? p.name + ' / ' + c.name : c.name; };
     const load = async () => { try { rows.value = await api.get('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
-    const blankSku = () => ({ name: '默认', barcode: '', price_y: '', cost_y: '', stock_item_id: null, deduct_qty: 1, active: true });
+    const blankSku = () => ({ name: '默认', barcode: '', price_y: '', cost_y: '', stock_item_id: null, deduct_qty: 1, image: '', active: true });
     const edit = (row) => {
       Object.keys(form).forEach(k => delete form[k]);
       Object.assign(form, row ? JSON.parse(JSON.stringify(row)) : {
@@ -134,7 +166,6 @@ const Products = {
       dlg.value = true;
     };
     const addSku = () => form.skus.push({ ...blankSku(), name: '' });
-    const upload = async (ev) => { const f = ev.target.files[0]; if (!f) return; try { form.image = (await api.upload(f)).url; } catch (e) { err(e); } ev.target.value = ''; };
     const save = async () => {
       if (!String(form.name || '').trim()) return ElMessage.warning('请填写商品名称');
       if (!form.skus.length) return ElMessage.warning('至少一个规格');
@@ -157,7 +188,7 @@ const Products = {
       if (zero) { try { await ElMessageBox.confirm('有规格的售价是 0 元，确定要保存吗？', '售价为 0', { type: 'warning' }); } catch (e) { return; } }
       const body = { ...form, min_qty: minQ, max_qty: maxQ, category_id: (form.category_ids || [])[0] || null, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: money(s.price_y),
         cost: blank(s.cost_y) ? null : money(s.cost_y), stock_item_id: s.stock_item_id || null,
-        deduct_qty: parseFloat(s.deduct_qty), active: s.active, sort: i })) };
+        deduct_qty: parseFloat(s.deduct_qty), image: s.image || '', active: s.active, sort: i })) };
       // 改了名称但没动助记码：按新名称重新生成
       if (form.id && form.name !== form._name0 && form.mnemonic === form._mn0) body.mnemonic = '';
       delete body._name0; delete body._mn0;
@@ -168,7 +199,7 @@ const Products = {
     onMounted(load);
     const qtyText = (r) => [r.min_qty > 1 ? r.min_qty + ' 件起' : '', r.max_qty ? '限 ' + r.max_qty + ' 件' : ''].filter(Boolean).join('，') || '不限数量';
     const exp = async () => { try { await api.download('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
-    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, save, catLabel, qtyText, yuan };
+    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, save, catLabel, qtyText, yuan };
   },
 };
 

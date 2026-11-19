@@ -29,6 +29,8 @@
     .item .d { color: var(--m); font-size: 12px; margin: 2px 0 6px; }
     .sku { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
     .sku .pr { color: var(--p); font-weight: 600; }
+    .sku .sn { display: flex; align-items: center; min-width: 0; }
+    .sku .simg { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; margin-right: 8px; flex-shrink: 0; background: #eef3f2; }
     .qty { display: flex; align-items: center; gap: 8px; }
     .qty button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--p); background: #fff; color: var(--p); font-size: 18px; line-height: 1; }
     .qty button.add { background: var(--p); color: #fff; }
@@ -62,7 +64,7 @@
           <div class="info">
             <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div><div class="lim" v-if="p.min_qty > 1 || p.max_qty">{{limText(p)}}</div>
             <div v-for="s in p.skus" :key="s.id" class="sku">
-              <span>{{s.name !== '默认' ? s.name + '　' : ''}}<span class="pr">¥{{yuan(s.price)}}</span></span>
+              <span class="sn"><img v-if="s.image" :src="s.image" class="simg">{{s.name !== '默认' ? s.name + '　' : ''}}<span class="pr">¥{{yuan(s.price)}}</span></span>
               <span class="qty"><button v-if="qty[s.id]" @click="dec(p, s.id)">−</button><span v-if="qty[s.id]">{{qty[s.id]}}</span><button class="add" @click="inc(p, s.id)">＋</button></span>
             </div>
           </div>

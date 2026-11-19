@@ -34,14 +34,14 @@ const PayDialog = {
     </div>
     <div v-if="canDiscount" class="opt"><span>打折</span>
       <span><el-button v-for="r in [95,90,88,85,80]" :key="r" size="small" :type="rate===r?'primary':''" @click="rate = rate===r ? null : r">{{r/10}}折</el-button>
-        <el-input ref="rateRef" v-model="rateInput" size="small" style="width:86px;margin-left:6px" placeholder="自定" @change="v => rate = v ? Math.round(parseFloat(v)*10) : null"><template #append>折</template></el-input></span></div>
+        <el-input ref="rateRef" v-model="rateInput" inputmode="decimal" size="small" style="width:86px;margin-left:6px" placeholder="自定" @change="v => rate = v ? Math.round(parseFloat(v)*10) : null"><template #append>折</template></el-input></span></div>
     <div v-if="canAdjust" class="opt"><span>改本次应收</span>
       <span><el-button size="small" @click="roundDown(100)">抹角</el-button><el-button size="small" @click="roundDown(1000)">抹到十元</el-button>
-        <el-input ref="payableRef" v-model="payableInput" size="small" style="width:116px;margin-left:6px" placeholder="不改" @change="quote"><template #append>元</template></el-input></span></div>
+        <el-input ref="payableRef" v-model="payableInput" inputmode="decimal" size="small" style="width:116px;margin-left:6px" placeholder="不改" @change="quote"><template #append>元</template></el-input></span></div>
     <div v-if="limitText" class="hint" style="text-align:right;margin-top:0">{{limitText}}；只影响本单，不改商品价格</div>
     <div class="methods"><div v-for="(t,k,i) in methods" :key="k" class="m" :class="{on: method===k}" @click="method=k">{{t}}<kbd>F{{i+1}}</kbd></div></div>
     <div v-if="method==='cash'">
-      <el-input ref="receivedRef" v-model="received" size="large" placeholder="不填按应收，回车确认"><template #prepend>实收现金</template><template #append>元</template></el-input>
+      <el-input ref="receivedRef" v-model="received" inputmode="decimal" size="large" placeholder="不填按应收，回车确认"><template #prepend>实收现金</template><template #append>元</template></el-input>
       <div class="quickcash"><el-button v-for="v in quick" :key="v" @click="received = v">¥{{v}}</el-button></div>
       <div class="change"><span>找零</span><b class="money">¥{{change}}</b></div>
     </div>
@@ -143,7 +143,7 @@ const Pos = {
         <el-empty v-if="!cart.length" :image-size="90" description="点商品或扫码加入" />
         <div v-for="(l,i) in cart" :key="l.sku_id" class="line" :class="{sel: i===sel}" @click="sel=i">
           <div class="info"><div>{{l.name}}</div><div class="muted">{{l.sku !== '默认' ? l.sku + ' · ' : ''}}¥{{yuan(l.price)}}</div></div>
-          <div class="qty"><button @click="dec(i)">−</button><input :ref="el => qtyEls[i] = el" v-model.number="l.qty" @change="fix(i)" @focus="noteQty(l, i)" /><button @click="l.qty++">＋</button></div>
+          <div class="qty"><button @click="dec(i)">−</button><input :ref="el => qtyEls[i] = el" v-model.number="l.qty" inputmode="numeric" @change="fix(i)" @focus="noteQty(l, i)" /><button @click="l.qty++">＋</button></div>
           <div class="amt money">{{yuan(l.price * l.qty)}}</div>
         </div>
       </div>
@@ -154,10 +154,14 @@ const Pos = {
       </div>
     </div>
     <pay-dialog v-model="payDlg" :user="user" :lines="lines" @pay="pay" />
-    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，按数字键选择" width="480px">
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <el-button v-for="m in scanMatches" :key="m.sku.id" size="large" style="margin:0;justify-content:space-between;height:52px"
-          @click="add(m.product, m.sku); scanDlg = false"><span><kbd>{{scanMatches.indexOf(m) + 1}}</kbd> {{m.product.name}}<span v-if="m.sku.name !== '默认'" class="muted">　{{m.sku.name}}</span></span><b>¥{{yuan(m.sku.price)}}</b></el-button>
+    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，按数字键选择" :width="pickWidth(scanMatches.length)" class="pick-dlg">
+      <div class="pick-grid">
+        <div v-for="(m, i) in scanMatches" :key="m.sku.id" class="pick" @click="add(m.product, m.sku); scanDlg = false">
+          <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
+          <div class="pimg" :style="bg(m.sku.image || m.product.image)">{{(m.sku.image || m.product.image) ? '' : m.product.name.slice(0, 1)}}</div>
+          <div class="pn">{{m.product.name}}</div><div class="ps">{{m.sku.name !== '默认' ? m.sku.name : ''}}</div>
+          <div class="pp">¥{{yuan(m.sku.price)}}</div>
+        </div>
       </div>
     </el-dialog>
     <el-dialog v-model="heldDlg" title="已挂起的单" width="520px">
@@ -168,10 +172,15 @@ const Pos = {
         <el-button type="primary" @click="takeHeld(i)">取回</el-button><el-button link type="danger" @click="dropHeld(i)">删除</el-button>
       </div>
     </el-dialog>
-    <el-dialog v-model="skuDlg" :title="(skuProduct && skuProduct.name) + '　按数字键选规格'" width="460px">
-      <div style="display:flex;flex-wrap:wrap;gap:10px">
-        <el-button v-for="(s, i) in (skuProduct ? skuProduct.skus : [])" :key="s.id" size="large" style="min-width:120px;height:64px" @click="add(skuProduct, s); skuDlg=false">
-          <kbd v-if="i < 9">{{i + 1}}</kbd>&nbsp;{{s.name}}<br>¥{{yuan(s.price)}}</el-button>
+    <el-dialog v-model="skuDlg" :width="pickWidth(skuProduct ? skuProduct.skus.length : 1)" class="pick-dlg">
+      <template #header><span class="pick-title">{{skuProduct && skuProduct.name}}</span><span class="muted pick-tip">点选或按数字键选规格</span></template>
+      <div class="pick-grid">
+        <div v-for="(s, i) in (skuProduct ? skuProduct.skus : [])" :key="s.id" class="pick" @click="add(skuProduct, s); skuDlg=false">
+          <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
+          <div class="pimg" :style="bg(s.image || skuProduct.image)">{{(s.image || skuProduct.image) ? '' : (s.name !== '默认' ? s.name : skuProduct.name).slice(0, 1)}}</div>
+          <div class="pn">{{s.name}}</div>
+          <div class="pp">¥{{yuan(s.price)}}</div>
+        </div>
       </div>
     </el-dialog>
     <el-dialog v-model="doneDlg" title="收款成功" width="380px">
@@ -348,7 +357,10 @@ const Pos = {
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
-      sel, qtyEls, remarkRef, posKeys: K.POS_KEYS, noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
+      sel, qtyEls, remarkRef, posKeys: K.POS_KEYS,
+      // 选规格框：每格 200px 左右，一行最多 4 个
+      pickWidth: (n) => Math.min(4, Math.max(2, n)) * 196 + 72 + 'px',
+      bg: (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(img) + ')' } : {}), noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
   },
 };
 
@@ -474,7 +486,7 @@ const Shift = {
   <div class="ws-body"><div class="page-pad" style="display:flex;flex-direction:column;gap:16px;max-width:820px">
     <div v-if="loaded && !cur" class="panel">
       <div class="toolbar"><b>开班</b><span class="muted">点清钱箱里的备用金（找零用的钱）后开班，交班时按这一班的收款核对现金。</span></div>
-      <el-form inline @submit.prevent><el-form-item label="备用金"><el-input v-model="opening" style="width:160px"><template #append>元</template></el-input></el-form-item>
+      <el-form inline @submit.prevent><el-form-item label="备用金"><el-input v-model="opening" inputmode="decimal" style="width:160px"><template #append>元</template></el-input></el-form-item>
         <el-form-item><el-button type="primary" :loading="busy" @click="openShift">开班</el-button></el-form-item></el-form>
       <div class="muted">不开班也能收银；开班后才能按收银员交班、算现金差额。</div>
     </div>
@@ -493,7 +505,7 @@ const Shift = {
         <div><span>钱箱应有现金</span><b>¥{{yuan(cur.expected_cash)}}</b><em>备用金 + 现金收款 − 现金退款</em></div>
       </div>
       <el-form inline style="margin-top:12px" @submit.prevent>
-        <el-form-item label="实点现金"><el-input v-model="counted" style="width:150px"><template #append>元</template></el-input></el-form-item>
+        <el-form-item label="实点现金"><el-input v-model="counted" inputmode="decimal" style="width:150px"><template #append>元</template></el-input></el-form-item>
         <el-form-item v-if="diff !== null"><span :style="{fontWeight: 650, color: diff === 0 ? 'var(--success)' : 'var(--danger)'}">{{ diff === 0 ? '对上了' : (diff > 0 ? '长款 ¥' + yuan(diff) : '短款 ¥' + yuan(-diff)) }}</span></el-form-item>
         <el-form-item label="备注"><el-input v-model="remark" placeholder="差额原因等，选填" style="width:220px" /></el-form-item>
         <el-form-item><el-button type="primary" :loading="busy" @click="closeShift">交班</el-button></el-form-item>
@@ -559,7 +571,7 @@ const Stock = {
         <el-table-column label="库存品"><template #default="{row}">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">该补货了</el-tag><span v-if="row.earliest_expiry" class="muted" style="margin-left:8px">最早到期 {{row.earliest_expiry}}</span></template></el-table-column>
         <el-table-column prop="unit" label="单位" width="80" />
         <el-table-column prop="qty" label="库存" width="100" />
-        <el-table-column v-if="adjusting" label="实盘数" width="140"><template #default="{row}"><el-input v-model="row.real" size="small" /></template></el-table-column>
+        <el-table-column v-if="adjusting" label="实盘数" width="140"><template #default="{row}"><el-input v-model="row.real" inputmode="decimal" size="small" /></template></el-table-column>
       </el-table>
       <div v-if="adjusting" style="margin-top:10px"><el-button @click="adjusting=false">取消</el-button><el-button type="primary" @click="submit">提交盘点</el-button></div>
     </div>
@@ -608,7 +620,7 @@ const Requisitions = {
       <el-table :data="shown" border size="small" max-height="460">
         <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="70" />
         <el-table-column v-if="stockVisible" label="本店现有" width="90" align="right"><template #default="{row}">{{ have[row.id] ?? 0 }}</template></el-table-column>
-        <el-table-column label="要几个" width="120"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+        <el-table-column label="要几个" width="120"><template #default="{row}"><el-input v-model="row.qty" inputmode="decimal" size="small" /></template></el-table-column>
       </el-table>
       <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submit">提交给仓库</el-button></template>
     </el-dialog>
@@ -658,6 +670,7 @@ const App = {
       <el-input v-model="lf.username" placeholder="账号" size="large" />
       <el-input v-model="lf.password" type="password" placeholder="密码" size="large" show-password @keyup.enter="login" />
       <el-button type="primary" size="large" style="width:100%;margin-top:6px" :loading="busy" @click="login">登录</el-button>
+      <div class="switch"><a href="javascript:;" @mousedown.prevent @click="toggleOsk">打开屏幕键盘</a></div>
       <div class="switch">管理员请使用 <a href="/web/admin/" target="_blank">后台管理</a></div>
       <div v-if="desk" class="switch">服务器 {{desk.server}} · <a href="javascript:;" @click="openDeskSettings">桌面软件设置</a></div>
     </div></div>
@@ -676,9 +689,12 @@ const App = {
       </div>
       <span class="grow"></span>
       <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
+      <el-button class="ghost" @mousedown.prevent @click="toggleOsk" title="打开 / 收起屏幕键盘">键盘</el-button>
       <el-popover placement="bottom" :width="280" trigger="click">
         <template #reference><el-button class="ghost">本机设置</el-button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
+        <div class="osk-set"><span>屏幕键盘</span><el-radio-group v-model="settings.osk" size="small">
+          <el-radio-button value="auto">触摸时弹出</el-radio-button><el-radio-button value="always">总是弹出</el-radio-button><el-radio-button value="off">关闭</el-radio-button></el-radio-group></div>
         <div v-if="cur.print_mode === 'agent'" class="hint" style="margin:0 0 6px">本店小票由接小票机那台电脑上的“打印小助手”出票（后台设置），下面两项打印选项在本机不起作用。</div>
         <div v-else-if="desk && desk.printMode === 'off'" class="hint" style="margin:0 0 6px">这台电脑设置为不出票，下面两项不起作用。</div>
         <div><el-checkbox v-model="settings.autoPrintOnline">新订单自动打印小票</el-checkbox></div>
@@ -711,7 +727,11 @@ const App = {
     const pending = ref(0), tick = ref(0), clock = ref('');
     const tickClock = () => { const d = new Date(); clock.value = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
     tickClock(); const clockTimer = setInterval(tickClock, 15000);
-    const settings = reactive({ sound: pref('sound', true), autoPrintOnline: pref('autoPrintOnline', true), autoPrintPos: pref('autoPrintPos', true) });
+    const settings = reactive({ sound: pref('sound', true), autoPrintOnline: pref('autoPrintOnline', true), autoPrintPos: pref('autoPrintPos', true), osk: pref('osk', 'auto') });
+    // 屏幕键盘（触摸屏用）：auto 手指点输入框时弹出，always 一点输入框就弹，off 不用
+    const osk = ShouyinOSK.create({ mode: () => settings.osk });
+    const toggleOsk = () => osk.toggle(() => document.querySelector('.scan input') || document.querySelector('.login-card input'));
+    watch(() => settings.osk, (v) => { if (v === 'off') osk.hide(); });
     watch(settings, () => Object.entries(settings).forEach(([k, v]) => setPref(k, v)), { deep: true });
     const can = (p) => user.value && user.value.permissions.includes(p);
     const cur = computed(() => stores.value.find(s => s.id === storeId.value) || {});
@@ -775,7 +795,7 @@ const App = {
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
     return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, switchStore,
-      desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS };
+      desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };
 
