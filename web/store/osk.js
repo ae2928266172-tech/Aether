@@ -133,6 +133,7 @@
       if (k === 'shift') { upper = !upper; return render(false); }
       if (k === 'enter') { fire(el, 'keydown', 'Enter'); fire(el, 'keyup', 'Enter'); el.dispatchEvent(new Event('change', { bubbles: true })); return; }
       const key = k === 'space' ? ' ' : (upper && /^[a-z]$/.test(k) ? k.toUpperCase() : k);
+      if (key === '.' && isNumeric(el) && String(el.value).includes('.')) return;  // 金额、数量只能有一个小数点
       let a = null, b = null;
       try { a = el.selectionStart; b = el.selectionEnd; } catch (e) {}
       const r = applyKey(el.value, a, b, key);
