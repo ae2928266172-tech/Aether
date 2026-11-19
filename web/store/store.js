@@ -156,13 +156,14 @@ const Pos = {
     <div class="pos-left">
       <div class="grid">
         <el-empty v-if="scanText.trim() && !shown.length" :image-size="70" :description="'没有找到“' + scanText.trim() + '”'" style="grid-column:1/-1" />
-        <div v-for="p in shown" :key="p.id" class="card" :class="{in: inCart(p)}" @click="tap(p)">
+        <div v-for="p in visible" :key="p.id" class="card" :class="{in: inCart(p)}" @click="tap(p)">
           <span v-if="inCart(p)" class="cnt">{{inCart(p)}}</span>
-          <div class="img" :style="p.image ? {backgroundImage: 'url(' + JSON.stringify(p.image) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
+          <div class="img"><img v-if="p.image" :src="thumb(p.image, 200)" loading="lazy" decoding="async" alt="" draggable="false"><template v-else>{{p.name.slice(0,1)}}</template></div>
           <div class="n">{{p.name}}</div>
           <div class="sub">{{p.skus.length > 1 ? p.skus.length + ' 个规格' : (p.skus[0].name !== '默认' ? p.skus[0].name : p.unit)}}</div>
           <div class="p">¥{{priceText(p)}}</div>
         </div>
+        <div v-if="visible.length < shown.length" ref="more" class="more">加载更多……</div>
       </div>
       <div class="dock">
         <div class="dock-l">
@@ -291,7 +292,21 @@ const Pos = {
         if (m.length === 1) { pick(m[0]); scanText.value = ''; } else if (!m.length) err(e);
       }
     };
-    const inCart = (p) => cart.value.filter(l => p.skus.some(s => s.id === l.sku_id)).reduce((a, l) => a + l.qty, 0);
+    // 每个商品在购物车里的件数：购物车一变只算一次，不用每张卡片各自去翻购物车
+    const cartQty = computed(() => { const m = new Map(); for (const l of cart.value) m.set(l.sku_id, (m.get(l.sku_id) || 0) + l.qty); return m; });
+    const inCart = (p) => { const m = cartQty.value; if (!m.size) return 0; let n = 0; for (const s of p.skus) n += m.get(s.id) || 0; return n; };
+    // 商品多时先画前 36 个，滚到底再接着画，切分类、搜索时回到前 36 个
+    const PAGE = 36, limit = ref(PAGE), more = ref(null);
+    const visible = computed(() => shown.value.length > limit.value ? shown.value.slice(0, limit.value) : shown.value);
+    watch([cat, scanText], () => { limit.value = PAGE; const g = document.querySelector('.pos .grid'); if (g) g.scrollTop = 0; });
+    let io = null;
+    watch(more, (el) => {
+      if (io) io.disconnect();
+      if (!el) return;
+      io = new IntersectionObserver((es) => { if (es.some(e => e.isIntersecting)) limit.value += PAGE; }, { root: el.parentElement, rootMargin: '1500px' });
+      io.observe(el);
+    });
+    onUnmounted(() => io && io.disconnect());
     const dec = (i) => { if (cart.value[i].qty > 1) cart.value[i].qty--; else remove(i); };
     const remove = (i) => { cart.value.splice(i, 1); sel.value = Math.min(sel.value, cart.value.length - 1); };
     const fix = (i) => { const l = cart.value[i]; l.qty = Math.max(1, parseInt(l.qty) || 1); };
@@ -427,10 +442,10 @@ const Pos = {
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
-      sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, KB, kbPress,
+      visible, more, thumb: Shouyin.thumb, sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, KB, kbPress,
       // 选规格框：每格 200px 左右，一行最多 4 个
       pickWidth: (n) => Math.min(4, Math.max(2, n)) * 196 + 72 + 'px',
-      bg: (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(img) + ')' } : {}), noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
+      bg: (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(Shouyin.thumb(img, 200)) + ')' } : {}), noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
   },
 };
 

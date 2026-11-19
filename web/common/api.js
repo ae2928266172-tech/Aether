@@ -195,5 +195,13 @@
   };
   const icon = (n) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[n] || ''}</svg>`;
 
-  window.Shouyin = { api, yuan, toFen, parseMoney, rid, today, esc, receiptHtml, printReceipt, beep, speak, icon, desk, deskInfo, printOpts, canPrintHere };
+  // 商品图缩略图：本系统上传的图（/media/xxx.jpg）走 /media/t/宽度/xxx.jpg，服务器缩成小图并长期缓存；外部链接原样用
+  const thumb = (url, w) => {
+    const m = /^\/media\/([0-9A-Za-z_\-]+\.(png|jpe?g|webp))$/i.exec(url || '');
+    if (!m) return url || '';
+    const dpr = window.devicePixelRatio || 1, want = (w || 320) * dpr;
+    return '/media/t/' + (want <= 160 ? 160 : want <= 320 ? 320 : 640) + '/' + m[1];
+  };
+
+  window.Shouyin = { thumb, api, yuan, toFen, parseMoney, rid, today, esc, receiptHtml, printReceipt, beep, speak, icon, desk, deskInfo, printOpts, canPrintHere };
 })();

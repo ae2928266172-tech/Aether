@@ -60,11 +60,11 @@
       <div class="cats"><div :class="{on:!cat}" @click="cat=null">全部</div><div v-for="c in topCats" :key="c.id" :class="{on:cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
       <div class="list">
         <div v-for="p in shown" :key="p.id" class="item">
-          <div class="img" :style="p.image ? {backgroundImage:'url(' + JSON.stringify(p.image) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
+          <div class="img" :style="p.image ? {backgroundImage:'url(' + JSON.stringify(thumb(p.image, 160)) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
           <div class="info">
             <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div><div class="lim" v-if="p.min_qty > 1 || p.max_qty">{{limText(p)}}</div>
             <div v-for="s in p.skus" :key="s.id" class="sku">
-              <span class="sn"><img v-if="s.image" :src="s.image" class="simg">{{s.name !== '默认' ? s.name + '　' : ''}}<span class="pr">¥{{yuan(s.price)}}</span></span>
+              <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg">{{s.name !== '默认' ? s.name + '　' : ''}}<span class="pr">¥{{yuan(s.price)}}</span></span>
               <span class="qty"><button v-if="qty[s.id]" @click="dec(p, s.id)">−</button><span v-if="qty[s.id]">{{qty[s.id]}}</span><button class="add" @click="inc(p, s.id)">＋</button></span>
             </div>
           </div>
@@ -97,11 +97,11 @@
 </div>
 <script>window.APP_KIND = 'customer';</script>
 <script src="../vendor/vue.global.prod.js"></script>
-<script src="../common/api.js?v=13"></script>
+<script src="../common/api.js?v=17"></script>
 <script>
 const { createApp, ref, reactive, computed, onMounted } = Vue;
 const { api, yuan, rid } = Shouyin;
-createApp({
+const app = createApp({
   setup() {
     const code = new URLSearchParams(location.search).get('area') || '';
     const area = ref(null), error = ref(''), cats = ref([]), products = ref([]), cat = ref(null), qty = reactive({});
@@ -167,7 +167,9 @@ createApp({
     });
     return { tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
-}).mount('#app');
+});
+app.config.globalProperties.thumb = Shouyin.thumb;
+app.mount('#app');
 </script>
 </body>
 </html>

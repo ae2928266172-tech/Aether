@@ -1,3 +1,8 @@
+/* 触摸屏：去掉点按时的灰色高亮和双击缩放判断；弹框、按钮动画缩短，点了马上有反应 */
+:root { --el-transition-duration: .12s; --el-transition-duration-fast: .08s; }
+html { -webkit-tap-highlight-color: transparent; }
+button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulation; }
+.el-button { transition: none; }
 .ws { height: 100%; display: flex; flex-direction: column; }
 .ws-top { height: 56px; background: #fff; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 16px; padding: 0 20px; flex-shrink: 0; }
 .ws-top .store { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 14px; min-width: 180px; }
@@ -31,12 +36,14 @@
 .cats { display: flex; gap: 8px; flex-wrap: wrap; }
 .grid { flex: 1; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(168px, 1fr)); gap: 12px; align-content: start; padding: 2px; }
 .card { background: #fff; border-radius: 12px; padding: 10px; cursor: pointer; border: 1px solid var(--border); user-select: none; -webkit-user-select: none;
-  position: relative; transition: border-color .12s, transform .08s; touch-action: manipulation; }
+  position: relative; touch-action: manipulation; contain: layout paint style; content-visibility: auto; contain-intrinsic-size: 168px 250px; }
 .card:hover { border-color: #a1a1aa; }
 .card:active { transform: scale(.97); }
 .card.in { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary) inset; }
-.card .img { height: 104px; border-radius: 8px; background: var(--hover) center/cover no-repeat;
+.card .img { height: 104px; border-radius: 8px; background: var(--hover); overflow: hidden;
   margin-bottom: 8px; display: flex; align-items: center; justify-content: center; font-size: 28px; font-weight: 600; color: #a1a1aa; }
+.card .img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.grid .more { grid-column: 1 / -1; text-align: center; color: var(--muted); padding: 12px; }
 .card .n { font-weight: 600; line-height: 1.35; font-size: 15px; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; min-height: 40px; }
 .card .sub { color: var(--muted); font-size: 12px; margin-top: 2px; }
 .card .p { color: var(--text); margin-top: 4px; font-weight: 700; font-size: 16px; }
