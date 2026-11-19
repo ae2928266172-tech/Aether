@@ -1,5 +1,6 @@
 // 屏幕键盘：触摸屏收银机用。点输入框弹出——金额、数量（inputmode=decimal/numeric）弹数字键盘，其他弹字母数字键盘。
 // 键盘按钮不抢焦点，按键直接写进当前输入框并触发 input 事件，Vue 的 v-model 照常更新；“确认”等于按回车。
+// 收银页的搜索框有自己的固定键盘（加了 data-no-osk），这里不再弹。
 // 字母键盘默认停在右侧订单栏底部（不挡左边商品区），拖顶部横条可以挪到别处，双击横条回到默认位置。
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -29,7 +30,7 @@
   const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
   const isNumeric = (el) => /^(decimal|numeric)$/.test(el.getAttribute('inputmode') || '') || el.type === 'number';
-  const usable = (el) => !!el && el.tagName === 'INPUT' && !el.readOnly && !el.disabled && /^(text|search|password|tel|number|)$/.test(el.type || '');
+  const usable = (el) => !!el && el.tagName === 'INPUT' && !el.closest('[data-no-osk]') && !el.readOnly && !el.disabled && /^(text|search|password|tel|number|)$/.test(el.type || '');
 
   function create(opts) {
     const o = Object.assign({ mode: () => 'auto' }, opts || {});
