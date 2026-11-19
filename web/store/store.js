@@ -26,34 +26,46 @@ const PayDialog = {
   props: ['modelValue', 'user', 'lines', 'title'],
   emits: ['update:modelValue', 'pay'],
   template: `
-  <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="560px" class="paybox" @open="reset" @opened="focusReceived">
-    <div class="total">
-      <div class="k">本次应收</div>
-      <div class="v money">¥{{yuan(q.payable_amount)}}</div>
-      <div class="s">商品金额 ¥{{yuan(q.original_amount)}}<span v-if="q.discount_amount">　优惠 −¥{{yuan(q.discount_amount)}}</span></div>
+  <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="900px" class="paybox" @open="reset" @opened="focusReceived">
+    <div class="pay-grid">
+      <div class="pay-l">
+        <div class="total">
+          <div class="k">本次应收</div>
+          <div class="v money">¥{{yuan(q.payable_amount)}}</div>
+          <div class="s">商品金额 ¥{{yuan(q.original_amount)}}<span v-if="q.discount_amount">　优惠 −¥{{yuan(q.discount_amount)}}</span></div>
+        </div>
+        <div v-if="canDiscount" class="opt"><div class="ol">打折</div>
+          <div class="chips"><button v-for="r in [95,90,88,85,80]" :key="r" type="button" class="chip" :class="{on: rate===r}" @click="rate = rate===r ? null : r">{{r/10}} 折</button>
+            <span class="field sm" :class="{on: field==='rate'}" @click="pickField('rate')"><el-input ref="rateRef" v-model="rateInput" data-no-osk inputmode="decimal" placeholder="自定" @focus="field='rate'" @change="applyRate" /><i>折</i></span></div></div>
+        <div v-if="canAdjust" class="opt"><div class="ol">改应收</div>
+          <div class="chips"><button type="button" class="chip" @click="roundDown(100)">抹零头</button><button type="button" class="chip" @click="roundDown(1000)">抹到十元</button>
+            <span class="field sm" :class="{on: field==='payable'}" @click="pickField('payable')"><el-input ref="payableRef" v-model="payableInput" data-no-osk inputmode="decimal" placeholder="不改" @focus="field='payable'" @change="quote" /><i>元</i></span></div></div>
+        <div v-if="limitText" class="hint" style="margin-top:2px">{{limitText}}；只影响本单，不改商品价格</div>
+        <div class="methods"><button v-for="(t,k,i) in methods" :key="k" type="button" class="m" :class="{on: method===k}" @click="method=k; field='received'">{{t}}<kbd>F{{i+1}}</kbd></button></div>
+      </div>
+      <div class="pay-r">
+        <template v-if="method==='cash'">
+          <div class="field big" :class="{on: field==='received'}" @click="pickField('received')"><span class="fl">实收现金</span>
+            <el-input ref="receivedRef" v-model="received" data-no-osk inputmode="decimal" :placeholder="yuan(q.payable_amount)" @focus="field='received'" /><i>元</i></div>
+          <div class="quickcash"><button v-for="v in quick" :key="v" type="button" class="chip" @click="received = v; field = 'received'">¥{{v}}</button></div>
+          <div class="change"><span>找零</span><b class="money">¥{{change}}</b></div>
+        </template>
+        <div v-else class="nocash">请确认顾客已通过<b>{{methods[method]}}</b>付款，再点“确认收款”。<br>目前是店员确认后记账，不是在线支付。</div>
+        <div class="pad">
+          <button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" :data-k="k" @pointerdown.prevent @mousedown.prevent @click="padPress(k)">{{ {back: '⌫', clear: '清空', ok: field === 'received' ? '收款' : '确定'}[k] || k }}</button>
+        </div>
+      </div>
     </div>
-    <div v-if="canDiscount" class="opt"><span>打折</span>
-      <span><el-button v-for="r in [95,90,88,85,80]" :key="r" size="small" :type="rate===r?'primary':''" @click="rate = rate===r ? null : r">{{r/10}}折</el-button>
-        <el-input ref="rateRef" v-model="rateInput" inputmode="decimal" size="small" style="width:86px;margin-left:6px" placeholder="自定" @change="v => rate = v ? Math.round(parseFloat(v)*10) : null"><template #append>折</template></el-input></span></div>
-    <div v-if="canAdjust" class="opt"><span>改本次应收</span>
-      <span><el-button size="small" @click="roundDown(100)">抹角</el-button><el-button size="small" @click="roundDown(1000)">抹到十元</el-button>
-        <el-input ref="payableRef" v-model="payableInput" inputmode="decimal" size="small" style="width:116px;margin-left:6px" placeholder="不改" @change="quote"><template #append>元</template></el-input></span></div>
-    <div v-if="limitText" class="hint" style="text-align:right;margin-top:0">{{limitText}}；只影响本单，不改商品价格</div>
-    <div class="methods"><div v-for="(t,k,i) in methods" :key="k" class="m" :class="{on: method===k}" @click="method=k">{{t}}<kbd>F{{i+1}}</kbd></div></div>
-    <div v-if="method==='cash'">
-      <el-input ref="receivedRef" v-model="received" inputmode="decimal" size="large" placeholder="不填按应收，回车确认"><template #prepend>实收现金</template><template #append>元</template></el-input>
-      <div class="quickcash"><el-button v-for="v in quick" :key="v" @click="received = v">¥{{v}}</el-button></div>
-      <div class="change"><span>找零</span><b class="money">¥{{change}}</b></div>
-    </div>
-    <div v-else class="hint" style="font-size:13px">请确认顾客已通过{{methods[method]}}付款，再点“确认收款”。目前是店员确认后记账，不是在线支付。</div>
-    <template #footer><span class="muted keyhint"><kbd>Enter</kbd> 确认收款　<kbd>Esc</kbd> 取消</span><el-button size="large" @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button size="large" type="primary" :loading="busy" :disabled="!!qErr" @click="submit">确认收款 ¥{{yuan(q.payable_amount)}}</el-button></template>
+    <template #footer><span class="muted keyhint"><kbd>Enter</kbd> 确认收款　<kbd>Esc</kbd> 取消</span><el-button size="large" class="pay-cancel" @click="$emit('update:modelValue', false)">取消</el-button>
+      <el-button size="large" type="primary" class="pay-ok" :loading="busy" :disabled="!!qErr" @click="submit">确认收款 ¥{{yuan(q.payable_amount)}}</el-button></template>
   </el-dialog>`,
   setup(props, { emit }) {
     const q = reactive({ original_amount: 0, payable_amount: 0, discount_amount: 0 }), qErr = ref('');
     const rate = ref(null), rateInput = ref(''), payableInput = ref(''), method = ref('cash'), received = ref(''), busy = ref(false);
     const receivedRef = ref(null), rateRef = ref(null), payableRef = ref(null);
-    const focusReceived = () => setTimeout(() => { if (method.value === 'cash' && receivedRef.value) receivedRef.value.focus(); }, 30);
+    const field = ref('received');  // 数字键盘当前输入到哪个框
+    const focusReceived = () => setTimeout(() => { field.value = 'received'; if (method.value === 'cash' && receivedRef.value) receivedRef.value.focus(); }, 30);
+    const pickField = (f) => { field.value = f; const r = { received: receivedRef, rate: rateRef, payable: payableRef }[f]; if (r && r.value) r.value.focus(); };
     const perms = computed(() => (props.user && props.user.permissions) || []);
     const canDiscount = computed(() => perms.value.includes('discount'));
     const canAdjust = computed(() => perms.value.includes('adjust_amount'));
@@ -75,7 +87,26 @@ const PayDialog = {
       } catch (e) { qErr.value = e.message; err(e); }
     };
     watch(rate, () => { rateInput.value = rate.value && ![95, 90, 88, 85, 80].includes(rate.value) ? rate.value / 10 : ''; payableInput.value = ''; quote(); });
-    const reset = () => { rate.value = null; rateInput.value = ''; payableInput.value = ''; method.value = 'cash'; received.value = ''; quote(); };
+    const applyRate = (v) => { rate.value = String(v == null ? '' : v).trim() ? Math.round(parseFloat(v) * 10) : null; };
+    // 收款框内置数字键盘（触摸屏用）：输入到当前选中的框；“确定”应用折扣 / 改应收，“收款”直接确认收款
+    const PAD = ['7', '8', '9', 'back', '4', '5', '6', 'clear', '1', '2', '3', 'ok', '00', '0', '.'];
+    const models = { received, rate: rateInput, payable: payableInput };
+    const padPress = (k) => {
+      const f = field.value, m = models[f];
+      if (k === 'ok') {
+        if (f === 'rate') applyRate(rateInput.value);
+        else if (f === 'payable') quote();
+        else return submit();
+        return focusReceived();
+      }
+      const v = String(m.value == null ? '' : m.value);
+      if (k === 'back') m.value = v.slice(0, -1);
+      else if (k === 'clear') m.value = '';
+      else if (k === '.' && v.includes('.')) return;
+      else if (/^\d+\.\d\d$/.test(v)) return;  // 最多两位小数
+      else m.value = (v === '0' && k !== '.' ? '' : v) + k;
+    };
+    const reset = () => { field.value = 'received'; rate.value = null; rateInput.value = ''; payableInput.value = ''; method.value = 'cash'; received.value = ''; quote(); };
     const roundDown = async (unit) => { payableInput.value = yuan(Math.floor(q.payable_amount / unit) * unit + (payableInput.value === '' ? 0 : 0)); await quote(); };
     const change = computed(() => { const r = Shouyin.parseMoney(received.value); return r !== null && r >= q.payable_amount ? yuan(r - q.payable_amount) : '0.00'; });
     const quick = computed(() => { const p = q.payable_amount / 100; return [...new Set([p, Math.ceil(p / 10) * 10, Math.ceil(p / 50) * 50, Math.ceil(p / 100) * 100])].map(v => v.toFixed(2)).slice(0, 4); });
@@ -108,7 +139,7 @@ const PayDialog = {
     onMounted(() => window.addEventListener('keydown', onKey, true));
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { q, qErr, rate, rateInput, payableInput, method, received, busy, canDiscount, canAdjust, limitText, quote, reset, roundDown, change, quick, submit, yuan, methods: METHODS,
-      receivedRef, rateRef, payableRef, focusReceived };
+      receivedRef, rateRef, payableRef, focusReceived, field, pickField, applyRate, PAD, padPress };
   },
 };
 
@@ -117,10 +148,12 @@ const Pos = {
   props: ['user', 'storeId', 'settings', 'agent'],
   components: { PayDialog },
   template: `
-  <div class="ws-body">
+  <div class="ws-body pos">
+    <div class="rail">
+      <button type="button" class="rc" :class="{on: !cat}" @click="cat=null">全部</button>
+      <button v-for="c in topCats" :key="c.id" type="button" class="rc" :class="{on: cat===c.id}" @click="cat=c.id">{{c.name}}</button>
+    </div>
     <div class="pos-left">
-      <div class="cats"><div class="cat" :class="{on: !cat}" @click="cat=null">全部</div>
-        <div v-for="c in topCats" :key="c.id" class="cat" :class="{on: cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
       <div class="grid">
         <el-empty v-if="scanText.trim() && !shown.length" :image-size="70" :description="'没有找到“' + scanText.trim() + '”'" style="grid-column:1/-1" />
         <div v-for="p in shown" :key="p.id" class="card" :class="{in: inCart(p)}" @click="tap(p)">
@@ -133,7 +166,10 @@ const Pos = {
       </div>
       <div class="dock">
         <div class="dock-l">
-          <div class="scan" data-no-osk><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入名称 / 拼音首字母（如 zb 找纸杯）　F1" clearable /></div>
+          <div class="scan" data-no-osk><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入名称 / 拼音首字母（如 zb 找纸杯）" clearable>
+            <template #prefix><span class="ico" v-html="icon('scan')"></span></template></el-input></div>
+          <div v-if="scanText.trim()" class="dock-tip">找到 <b>{{shown.length}}</b> 个商品，点商品加入；输入完整条码后点“确认”</div>
+          <div v-else class="dock-tip">扫码枪直接扫，不用先点这里<br>也可以用右边键盘输入拼音首字母，如 <b>ZB</b> 找纸杯</div>
           <div class="keys"><span v-for="k in posKeys" :key="k[0]"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
         </div>
         <div v-if="settings.osk !== 'off'" class="kb" @pointerdown.prevent @mousedown.prevent>
@@ -144,26 +180,37 @@ const Pos = {
       </div>
     </div>
     <div class="pos-right">
-      <div class="cart-head"><b>当前订单</b><span>
-        <el-button v-if="cart.length" link @click="hold">挂单 F3</el-button>
-        <el-button v-if="held.length" link type="primary" @click="heldDlg=true">取单（{{held.length}}）F4</el-button>
-        <el-button v-if="cart.length" link type="danger" @click="clear">清空</el-button></span></div>
+      <div class="cart-head"><b>当前订单</b><span class="muted">{{cart.length ? cart.length + ' 种 · ' + count + ' 件' : ''}}</span></div>
       <div class="cart">
         <el-empty v-if="!cart.length" :image-size="90" description="点商品或扫码加入" />
         <div v-for="(l,i) in cart" :key="l.sku_id" class="line" :class="{sel: i===sel}" @click="sel=i">
-          <div class="info"><div>{{l.name}}</div><div class="muted">{{l.sku !== '默认' ? l.sku + ' · ' : ''}}¥{{yuan(l.price)}}</div></div>
-          <div class="qty"><button @click="dec(i)">−</button><input :ref="el => qtyEls[i] = el" v-model.number="l.qty" inputmode="numeric" @change="fix(i)" @focus="noteQty(l, i)" /><button @click="l.qty++">＋</button></div>
-          <div class="amt money">{{yuan(l.price * l.qty)}}</div>
+          <div class="info"><div class="ln">{{l.name}}</div><div class="muted">{{l.sku !== '默认' ? l.sku + ' · ' : ''}}¥{{yuan(l.price)}}</div>
+            <div class="amt money">¥{{yuan(l.price * l.qty)}}</div></div>
+          <div class="qty"><button type="button" tabindex="-1" @click.stop="dec(i)">−</button><input :ref="el => qtyEls[i] = el" v-model.number="l.qty" inputmode="numeric" @change="fix(i)" @focus="noteQty(l, i)" /><button type="button" tabindex="-1" @click.stop="l.qty++">＋</button></div>
+          <button type="button" tabindex="-1" class="del" title="删除" @click.stop="remove(i)"><span class="ico" v-html="icon('x')"></span></button>
         </div>
       </div>
+      <div class="fn">
+        <button type="button" class="fb" :disabled="!cart.length" @click="hold"><span class="ico" v-html="icon('pause')"></span>挂单<kbd>F3</kbd></button>
+        <button type="button" class="fb" :disabled="!held.length" @click="heldDlg=true"><span class="ico" v-html="icon('inbox')"></span>取单<em v-if="held.length" class="dot">{{held.length}}</em><kbd>F4</kbd></button>
+        <button type="button" class="fb" :class="{set: remark}" @click="openRemark"><span class="ico" v-html="icon('note')"></span>备注<kbd>F7</kbd></button>
+        <button type="button" class="fb" :disabled="!last.id" @click="reprint"><span class="ico" v-html="icon('printer')"></span>补打小票<kbd>F8</kbd></button>
+        <button type="button" class="fb" @click="drawer"><span class="ico" v-html="icon('cash')"></span>开钱箱<kbd>F9</kbd></button>
+        <button type="button" class="fb danger" :disabled="!cart.length" @click="clear"><span class="ico" v-html="icon('trash')"></span>清空</button>
+      </div>
       <div class="sum">
-        <el-input ref="remarkRef" v-model="remark" placeholder="备注（可选）　F7" />
-        <div class="row" style="margin-top:10px"><span>共 {{count}} 件</span><span class="big money">¥{{yuan(total)}}</span></div>
-        <div class="btns"><el-button @click="clear">清空</el-button><el-button type="primary" :disabled="!cart.length" @click="payDlg=true">收款　F2 / Enter</el-button></div>
+        <div v-if="remark" class="rmk" @click="openRemark">备注：{{remark}}</div>
+        <div class="row"><span>合计</span><span class="big money">¥{{yuan(total)}}</span></div>
+        <button type="button" class="paybtn" :disabled="!cart.length" @click="payDlg=true">收款<kbd>F2</kbd></button>
       </div>
     </div>
+    <el-dialog v-model="remarkDlg" title="整单备注" width="520px" @opened="remarkRef && remarkRef.focus()">
+      <el-input ref="remarkRef" v-model="remark" size="large" maxlength="200" placeholder="例如：24 病区 12 床，下午送" clearable />
+      <div class="chips"><button v-for="t in ['送到病房', '自取', '加急', '已电话确认']" :key="t" type="button" class="chip" @click="remark = remark ? remark + '，' + t : t">{{t}}</button></div>
+      <template #footer><el-button size="large" @click="remark = ''; remarkDlg = false">清除备注</el-button><el-button size="large" type="primary" @click="remarkDlg = false">完成</el-button></template>
+    </el-dialog>
     <pay-dialog v-model="payDlg" :user="user" :lines="lines" @pay="pay" />
-    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，按数字键选择" :width="pickWidth(scanMatches.length)" class="pick-dlg">
+    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，请选择" :width="pickWidth(scanMatches.length)" class="pick-dlg">
       <div class="pick-grid">
         <div v-for="(m, i) in scanMatches" :key="m.sku.id" class="pick" @click="add(m.product, m.sku); scanDlg = false">
           <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
@@ -174,15 +221,15 @@ const Pos = {
       </div>
     </el-dialog>
     <el-dialog v-model="heldDlg" title="已挂起的单" width="520px">
-      <div class="muted" style="margin-bottom:8px">挂单只存在这台电脑上，没有收款、不扣库存。取回后价格按现在的售价。按数字键 1、2、3…… 取回对应的单。</div>
+      <div class="muted" style="margin-bottom:8px">挂单只存在这台电脑上，没有收款、不扣库存。取回后价格按现在的售价。</div>
       <div v-for="(h, i) in held" :key="h.at" class="held">
         <div style="flex:1;min-width:0"><kbd>{{i + 1}}</kbd> <b>{{h.time}}</b><span class="muted">　{{h.cart.reduce((a, l) => a + l.qty, 0)}} 件 · ¥{{yuan(h.cart.reduce((a, l) => a + l.qty * l.price, 0))}}</span>
           <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{h.cart.map(l => l.name + (l.sku !== '默认' ? '（' + l.sku + '）' : '') + '×' + l.qty).join('、')}}<span v-if="h.remark">　备注：{{h.remark}}</span></div></div>
-        <el-button type="primary" @click="takeHeld(i)">取回</el-button><el-button link type="danger" @click="dropHeld(i)">删除</el-button>
+        <el-button size="large" @click="dropHeld(i)">删除</el-button><el-button size="large" type="primary" @click="takeHeld(i)">取回</el-button>
       </div>
     </el-dialog>
     <el-dialog v-model="skuDlg" :width="pickWidth(skuProduct ? skuProduct.skus.length : 1)" class="pick-dlg">
-      <template #header><span class="pick-title">{{skuProduct && skuProduct.name}}</span><span class="muted pick-tip">点选或按数字键选规格</span></template>
+      <template #header><span class="pick-title">{{skuProduct && skuProduct.name}}</span><span class="muted pick-tip">点选规格</span></template>
       <div class="pick-grid">
         <div v-for="(s, i) in (skuProduct ? skuProduct.skus : [])" :key="s.id" class="pick" @click="add(skuProduct, s); skuDlg=false">
           <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
@@ -192,9 +239,10 @@ const Pos = {
         </div>
       </div>
     </el-dialog>
-    <el-dialog v-model="doneDlg" title="收款成功" width="380px">
-      <div style="text-align:center;font-size:18px">应收 ¥{{yuan(last.payable_amount)}}<div v-if="lastChange" style="margin-top:6px;font-weight:650;font-size:24px">找零 ¥{{yuan(lastChange)}}</div></div>
-      <template #footer><el-button @click="reprint">补打小票 F8</el-button><el-button type="primary" @click="doneDlg=false">继续收银 Enter</el-button></template>
+    <el-dialog v-model="doneDlg" title="收款成功" width="440px" class="done-dlg">
+      <div class="done"><div class="ok"><span class="ico" v-html="icon('check')"></span></div>
+        <div class="k">实收 ¥{{yuan(last.payable_amount)}}</div><div v-if="lastChange" class="chg">找零 <b class="money">¥{{yuan(lastChange)}}</b></div></div>
+      <template #footer><div class="done-btns"><el-button size="large" @click="reprint">补打小票<kbd>F8</kbd></el-button><el-button size="large" type="primary" @click="doneDlg=false">继续收银<kbd>Enter</kbd></el-button></div></template>
     </el-dialog>
   </div>`,
   setup(props) {
@@ -218,7 +266,9 @@ const Pos = {
     });
     const priceText = (p) => { const ps = p.skus.map(s => s.price); const a = Math.min(...ps), b = Math.max(...ps); return a === b ? yuan(a) : yuan(a) + ' 起'; };
     const load = async () => { try { [products.value, cats.value] = await Promise.all([api.get('/api/products'), api.get('/api/categories')]); products.value = products.value.filter(p => p.skus.length); } catch (e) { err(e); } };
-    const sel = ref(-1), qtyEls = [], remarkRef = ref(null); let qtyBefore = 1;
+    const sel = ref(-1), qtyEls = [], remarkRef = ref(null), remarkDlg = ref(false); let qtyBefore = 1;
+    const openRemark = () => { remarkDlg.value = true; };
+    const drawer = () => openDrawer(false);
     const add = (p, s) => {
       const i = cart.value.findIndex(x => x.sku_id === s.id);
       if (i >= 0) { cart.value[i].qty++; sel.value = i; }
@@ -320,7 +370,7 @@ const Pos = {
     const keyMap = {
       F1: () => { focusScan(); scan.value && scan.value.select(); }, F2: payNow, F3: hold,
       F4: () => (held.value.length ? (heldDlg.value = true) : ElMessage.info('没有挂起的单')),
-      F6: editQty, F7: () => remarkRef.value && remarkRef.value.focus(), F8: reprint, F9: () => openDrawer(false),
+      F6: editQty, F7: openRemark, F8: reprint, F9: () => openDrawer(false),
       'Ctrl+Delete': clear, ArrowUp: () => move(-1), ArrowDown: () => move(1),
     };
     const onKey = (e) => {
@@ -354,6 +404,7 @@ const Pos = {
         if (inScan) { e.preventDefault(); scanText.value.trim() ? onScan() : payNow(); return; }
         if (inRemark) {
           e.preventDefault();
+          remarkDlg.value = false;
           if (code && remark.value.endsWith(code)) { remark.value = remark.value.slice(0, -code.length); scanCode(code); } else focusScan();
           return;
         }
@@ -371,12 +422,12 @@ const Pos = {
       if (fn) { e.preventDefault(); det.reset(); fn(); }
     };
     // 弹框关掉后回到搜索框，接着扫
-    watch([payDlg, skuDlg, scanDlg, heldDlg, doneDlg], (now, before) => { if (now.every(v => !v) && before.some(v => v)) focusScan(); });
+    watch([payDlg, skuDlg, scanDlg, heldDlg, doneDlg, remarkDlg], (now, before) => { if (now.every(v => !v) && before.some(v => v)) focusScan(); });
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); window.addEventListener('keydown', onKey, true); });
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
-      sel, qtyEls, remarkRef, posKeys: K.POS_KEYS, KB, kbPress,
+      sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, KB, kbPress,
       // 选规格框：每格 200px 左右，一行最多 4 个
       pickWidth: (n) => Math.min(4, Math.max(2, n)) * 196 + 72 + 'px',
       bg: (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(img) + ')' } : {}), noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
@@ -712,6 +763,7 @@ const App = {
       <el-popover placement="bottom" :width="280" trigger="click">
         <template #reference><el-button class="ghost">本机设置</el-button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
+        <div><el-checkbox v-model="settings.keyHints">显示键盘快捷键提示</el-checkbox></div>
         <div class="osk-set"><span>屏幕键盘</span><el-radio-group v-model="settings.osk" size="small">
           <el-radio-button value="auto">触摸时弹出</el-radio-button><el-radio-button value="always">总是弹出</el-radio-button><el-radio-button value="off">关闭</el-radio-button></el-radio-group></div>
         <div v-if="cur.print_mode === 'agent'" class="hint" style="margin:0 0 6px">本店小票由接小票机那台电脑上的“打印小助手”出票（后台设置），下面两项打印选项在本机不起作用。</div>
@@ -746,11 +798,13 @@ const App = {
     const pending = ref(0), tick = ref(0), clock = ref('');
     const tickClock = () => { const d = new Date(); clock.value = `${d.getMonth() + 1}月${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
     tickClock(); const clockTimer = setInterval(tickClock, 15000);
-    const settings = reactive({ sound: pref('sound', true), autoPrintOnline: pref('autoPrintOnline', true), autoPrintPos: pref('autoPrintPos', true), osk: pref('osk', 'auto') });
+    const settings = reactive({ sound: pref('sound', true), autoPrintOnline: pref('autoPrintOnline', true), autoPrintPos: pref('autoPrintPos', true), osk: pref('osk', 'auto'), keyHints: pref('keyHints', false) });
     // 屏幕键盘（触摸屏用）：auto 手指点输入框时弹出，always 一点输入框就弹，off 不用
     const osk = ShouyinOSK.create({ mode: () => settings.osk });
     const toggleOsk = () => osk.toggle(() => document.querySelector('.pos-right .sum input') || document.querySelector('.login-card input'));
     watch(() => settings.osk, (v) => { if (v === 'off') osk.hide(); });
+    // 触摸屏收银默认不显示键盘快捷键提示（F1、F2……），接了键盘的电脑可以在本机设置里打开
+    watch(() => settings.keyHints, (v) => document.body.classList.toggle('show-keys', !!v), { immediate: true });
     watch(settings, () => Object.entries(settings).forEach(([k, v]) => setPref(k, v)), { deep: true });
     const can = (p) => user.value && user.value.permissions.includes(p);
     const cur = computed(() => stores.value.find(s => s.id === storeId.value) || {});
