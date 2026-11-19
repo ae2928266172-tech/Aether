@@ -759,7 +759,6 @@ const App = {
       </div>
       <span class="grow"></span>
       <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
-      <el-button class="ghost" @mousedown.prevent @click="toggleOsk" title="打开 / 收起屏幕键盘">键盘</el-button>
       <el-popover placement="bottom" :width="280" trigger="click">
         <template #reference><el-button class="ghost">本机设置</el-button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
@@ -801,7 +800,7 @@ const App = {
     const settings = reactive({ sound: pref('sound', true), autoPrintOnline: pref('autoPrintOnline', true), autoPrintPos: pref('autoPrintPos', true), osk: pref('osk', 'auto'), keyHints: pref('keyHints', false) });
     // 屏幕键盘（触摸屏用）：auto 手指点输入框时弹出，always 一点输入框就弹，off 不用
     const osk = ShouyinOSK.create({ mode: () => settings.osk });
-    const toggleOsk = () => osk.toggle(() => document.querySelector('.pos-right .sum input') || document.querySelector('.login-card input'));
+    const toggleOsk = () => osk.toggle(() => document.querySelector('.login-card input'));  // 登录页“打开屏幕键盘”
     watch(() => settings.osk, (v) => { if (v === 'off') osk.hide(); });
     // 触摸屏收银默认不显示键盘快捷键提示（F1、F2……），接了键盘的电脑可以在本机设置里打开
     watch(() => settings.keyHints, (v) => document.body.classList.toggle('show-keys', !!v), { immediate: true });
