@@ -9,9 +9,41 @@ const err = (e) => ElMessage.error(e.message || String(e));
 const daysAgo = (n) => { const d = new Date(Date.now() - n * 86400000); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0, 10); };
 const ok = (m) => ElMessage.success(m || '已保存');
 
+// 图片框：从电脑里把图片拖进来、点一下选文件、或复制图片后在框上按 Ctrl+V，都能上传
+const ImageDrop = {
+  props: { modelValue: String, size: { type: Number, default: 96 }, hint: { type: String, default: '' } },
+  emits: ['update:modelValue'],
+  template: `
+  <div class="img-drop" :class="{over, has: !!modelValue, busy}" :style="{width: size + 'px', height: size + 'px'}" tabindex="0"
+    :title="(modelValue ? '拖入新图片替换，' : '') + '可拖入图片、点击选择或 Ctrl+V 粘贴'"
+    @click="pick" @dragenter.prevent="over = true" @dragover.prevent="over = true" @dragleave.prevent="over = false" @drop.prevent="drop" @paste="paste">
+    <img v-if="modelValue" :src="modelValue">
+    <div v-else class="tip"><b>＋</b><span v-if="size >= 80">{{hint || '拖入图片'}}<br>或点击选择</span></div>
+    <div v-if="busy" class="mask">上传中…</div>
+    <button v-if="modelValue && !busy" type="button" class="rm" title="移除图片" @click.stop="$emit('update:modelValue', '')">×</button>
+    <input ref="file" type="file" accept="image/*" hidden @change="choose">
+  </div>`,
+  setup(props, { emit }) {
+    const over = ref(false), busy = ref(false), file = ref(null);
+    const send = async (f) => {
+      over.value = false;
+      if (!f) return;
+      if (!/^image\//.test(f.type)) return ElMessage.warning('请拖入图片文件（jpg、png、gif、webp）');
+      busy.value = true;
+      try { emit('update:modelValue', (await api.upload(f)).url); } catch (e) { err(e); } finally { busy.value = false; }
+    };
+    const pick = () => { if (!busy.value) file.value.click(); };
+    const choose = (ev) => { send(ev.target.files[0]); ev.target.value = ''; };
+    const drop = (ev) => send(Array.from(ev.dataTransfer.files || []).find(f => /^image\//.test(f.type)) || (ev.dataTransfer.files || [])[0]);
+    const paste = (ev) => { const it = Array.from(ev.clipboardData.items || []).find(i => i.type.startsWith('image/')); if (it) { ev.preventDefault(); send(it.getAsFile()); } };
+    return { over, busy, file, pick, choose, drop, paste };
+  },
+};
+
 // ---------------- 商品 ----------------
 const Products = {
   props: ['meta'],
+  components: { ImageDrop },
   template: `
   <div class="panel">
     <div class="toolbar">
@@ -68,18 +100,14 @@ const Products = {
           <el-col :span="12"><el-form-item label="上架"><el-switch v-model="form.active" /></el-form-item></el-col>
         </el-row>
         <el-form-item label="图片">
-          <el-image v-if="form.image" :src="form.image" style="width:80px;height:80px;margin-right:12px" fit="cover" />
-          <input type="file" accept="image/*" @change="upload" />
-          <el-button v-if="form.image" link @click="form.image=''">移除</el-button>
+          <image-drop v-model="form.image" :size="110" hint="拖入商品图片" />
+          <span class="muted" style="margin-left:14px;font-size:12px;line-height:1.7">把图片从电脑文件夹拖到框里即可，<br>也可以点框选择，或复制图片后点框按 Ctrl+V。</span>
         </el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
 
-        <div class="form-section">规格（每个规格可以绑定库存品和扣减量，不同商品可以绑定同一个库存品）</div>
+        <div class="form-section">规格（每个规格可以绑定库存品和扣减量，不同商品可以绑定同一个库存品；图片可拖进格子，不传就用商品图片）</div>
         <el-table :data="form.skus" border size="small">
-          <el-table-column label="图片" width="70"><template #default="{row}">
-            <label class="sku-pic" :title="row.image ? '点击更换' : '上传规格图片（不传用商品图片）'"><img v-if="row.image" :src="row.image"><span v-else>＋</span>
-              <input type="file" accept="image/*" hidden @change="e => uploadSku(e, row)" /></label>
-            <el-button v-if="row.image" link size="small" style="display:block;margin:2px auto 0" @click="row.image=''">移除</el-button></template></el-table-column>
+          <el-table-column label="图片" width="76"><template #default="{row}"><image-drop v-model="row.image" :size="52" style="margin:0 auto" /></template></el-table-column>
           <el-table-column label="规格名称" min-width="110"><template #default="{row}"><el-input v-model="row.name" size="small" /></template></el-table-column>
           <el-table-column label="条码" min-width="120"><template #default="{row}"><el-input v-model="row.barcode" size="small" /></template></el-table-column>
           <el-table-column label="售价（元）" width="96"><template #default="{row}"><el-input v-model="row.price_y" size="small" /></template></el-table-column>
@@ -138,8 +166,6 @@ const Products = {
       dlg.value = true;
     };
     const addSku = () => form.skus.push({ ...blankSku(), name: '' });
-    const upload = async (ev) => { const f = ev.target.files[0]; if (!f) return; try { form.image = (await api.upload(f)).url; } catch (e) { err(e); } ev.target.value = ''; };
-    const uploadSku = async (ev, row) => { const f = ev.target.files[0]; if (!f) return; try { row.image = (await api.upload(f)).url; } catch (e) { err(e); } ev.target.value = ''; };
     const save = async () => {
       if (!String(form.name || '').trim()) return ElMessage.warning('请填写商品名称');
       if (!form.skus.length) return ElMessage.warning('至少一个规格');
@@ -173,7 +199,7 @@ const Products = {
     onMounted(load);
     const qtyText = (r) => [r.min_qty > 1 ? r.min_qty + ' 件起' : '', r.max_qty ? '限 ' + r.max_qty + ' 件' : ''].filter(Boolean).join('，') || '不限数量';
     const exp = async () => { try { await api.download('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
-    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, uploadSku, save, catLabel, qtyText, yuan };
+    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, save, catLabel, qtyText, yuan };
   },
 };
 
