@@ -52,6 +52,14 @@ npm run dist             # 生成 dist/收银系统-安装-1.0.0.exe
 
 `desktop/e2e/store-keyboard.js` 用浏览器把键盘收银整套走一遍（需先启动服务端并写入演示数据）。
 
+## 数据库备份与恢复
+
+- 每天自动备份：在收银系统文件夹里运行一次 `.\install_backup_task.ps1`（默认每天 22:30，可加 `-At 23:00`）。电脑那时关机的话，下次开机后补做。
+- 备份放在 `%LOCALAPPDATA%\shouyin\backups`，另存一份到本文件夹的 `数据库备份\`（在 OneDrive 里，会同步到云端），各保留最近 30 份；商品图片一起增量备份。日志在 `%LOCALAPPDATA%\shouyin\backup.log`。
+- 收银进行中也可以备份（用 SQLite 在线备份接口，拷完先做完整性检查再压缩）。手动备份：`.\backup.ps1`。
+- 恢复演练（不动正在用的数据库）：`python scripts\restore_db.py 备份文件夹 --check`，会显示备份里和当前库里的订单、商品等行数。
+- 真正恢复：先停掉服务端，再运行 `python scripts\restore_db.py 备份文件 --yes`。原来的数据库会另存为 `shouyin.db.before-restore-时间`。运行脚本前要设好和 start.ps1 一样的 `DATABASE_URL`。
+
 ## 主要业务规则
 
 - **商品与库存分开**：商品规格（顾客看到的名称、售价）绑定“库存品”和“扣减量”。例如“小份”扣 1 份、“大份”扣 2 份，另一个名称的商品也可以扣同一个库存品。
