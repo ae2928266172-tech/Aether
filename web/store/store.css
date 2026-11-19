@@ -108,3 +108,18 @@ kbd { display: inline-block; font: 600 11px/1 Consolas, "SF Mono", monospace; co
 .paybox .keyhint { float: left; line-height: 40px; font-size: 12px; }
 .el-button kbd { margin-right: 2px; }
 .desk-box { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+
+/* 选规格：大格子，带图片 */
+.pick-dlg .el-dialog__body { padding-top: 4px; }
+.pick-title { font-size: 18px; font-weight: 650; margin-right: 10px; }
+.pick-tip { font-size: 13px; }
+.pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+.pick { position: relative; border: 1px solid var(--border); border-radius: 12px; padding: 12px; cursor: pointer; background: #fff; transition: border-color .12s; user-select: none; }
+.pick:hover { border-color: var(--text); }
+.pick:active { transform: scale(.98); }
+.pick .no { position: absolute; top: 18px; left: 18px; z-index: 1; font-size: 13px; padding: 3px 7px; }
+.pick .pimg { height: 150px; border-radius: 8px; background: var(--hover) center/contain no-repeat; display: flex; align-items: center; justify-content: center;
+  font-size: 40px; font-weight: 600; color: #a1a1aa; margin-bottom: 10px; }
+.pick .pn { font-size: 16px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.pick .ps { color: var(--muted); font-size: 13px; }
+.pick .pp { font-size: 20px; font-weight: 700; margin-top: 6px; }

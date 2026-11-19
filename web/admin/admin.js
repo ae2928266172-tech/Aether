@@ -76,14 +76,18 @@ const Products = {
 
         <div class="form-section">规格（每个规格可以绑定库存品和扣减量，不同商品可以绑定同一个库存品）</div>
         <el-table :data="form.skus" border size="small">
+          <el-table-column label="图片" width="70"><template #default="{row}">
+            <label class="sku-pic" :title="row.image ? '点击更换' : '上传规格图片（不传用商品图片）'"><img v-if="row.image" :src="row.image"><span v-else>＋</span>
+              <input type="file" accept="image/*" hidden @change="e => uploadSku(e, row)" /></label>
+            <el-button v-if="row.image" link size="small" style="display:block;margin:2px auto 0" @click="row.image=''">移除</el-button></template></el-table-column>
           <el-table-column label="规格名称" min-width="110"><template #default="{row}"><el-input v-model="row.name" size="small" /></template></el-table-column>
           <el-table-column label="条码" min-width="120"><template #default="{row}"><el-input v-model="row.barcode" size="small" /></template></el-table-column>
-          <el-table-column label="售价（元）" width="110"><template #default="{row}"><el-input v-model="row.price_y" size="small" /></template></el-table-column>
-          <el-table-column label="成本（元）" width="110"><template #default="{row}"><el-input v-model="row.cost_y" size="small" placeholder="按库存品" /></template></el-table-column>
+          <el-table-column label="售价（元）" width="96"><template #default="{row}"><el-input v-model="row.price_y" size="small" /></template></el-table-column>
+          <el-table-column label="成本（元）" width="96"><template #default="{row}"><el-input v-model="row.cost_y" size="small" placeholder="按库存品" /></template></el-table-column>
           <el-table-column label="库存品" min-width="150"><template #default="{row}">
             <el-select v-model="row.stock_item_id" size="small" clearable filterable placeholder="不扣库存">
               <el-option v-for="i in meta.stockItems" :key="i.id" :label="i.name + '（' + i.unit + '）'" :value="i.id" /></el-select></template></el-table-column>
-          <el-table-column label="扣减量" width="90"><template #default="{row}"><el-input v-model="row.deduct_qty" size="small" /></template></el-table-column>
+          <el-table-column label="扣减量" width="76"><template #default="{row}"><el-input v-model="row.deduct_qty" size="small" /></template></el-table-column>
           <el-table-column label="启用" width="60"><template #default="{row}"><el-checkbox v-model="row.active" /></template></el-table-column>
           <el-table-column width="60"><template #default="{$index}"><el-button link type="danger" @click="form.skus.splice($index,1)">删除</el-button></template></el-table-column>
         </el-table>
@@ -122,7 +126,7 @@ const Products = {
     const form = reactive({});
     const catLabel = (c) => { const p = props.meta.categories.find(x => x.id === c.parent_id); return p ? p.name + ' / ' + c.name : c.name; };
     const load = async () => { try { rows.value = await api.get('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
-    const blankSku = () => ({ name: '默认', barcode: '', price_y: '', cost_y: '', stock_item_id: null, deduct_qty: 1, active: true });
+    const blankSku = () => ({ name: '默认', barcode: '', price_y: '', cost_y: '', stock_item_id: null, deduct_qty: 1, image: '', active: true });
     const edit = (row) => {
       Object.keys(form).forEach(k => delete form[k]);
       Object.assign(form, row ? JSON.parse(JSON.stringify(row)) : {
@@ -135,6 +139,7 @@ const Products = {
     };
     const addSku = () => form.skus.push({ ...blankSku(), name: '' });
     const upload = async (ev) => { const f = ev.target.files[0]; if (!f) return; try { form.image = (await api.upload(f)).url; } catch (e) { err(e); } ev.target.value = ''; };
+    const uploadSku = async (ev, row) => { const f = ev.target.files[0]; if (!f) return; try { row.image = (await api.upload(f)).url; } catch (e) { err(e); } ev.target.value = ''; };
     const save = async () => {
       if (!String(form.name || '').trim()) return ElMessage.warning('请填写商品名称');
       if (!form.skus.length) return ElMessage.warning('至少一个规格');
@@ -157,7 +162,7 @@ const Products = {
       if (zero) { try { await ElMessageBox.confirm('有规格的售价是 0 元，确定要保存吗？', '售价为 0', { type: 'warning' }); } catch (e) { return; } }
       const body = { ...form, min_qty: minQ, max_qty: maxQ, category_id: (form.category_ids || [])[0] || null, skus: form.skus.map((s, i) => ({ id: s.id, name: s.name, barcode: s.barcode || '', price: money(s.price_y),
         cost: blank(s.cost_y) ? null : money(s.cost_y), stock_item_id: s.stock_item_id || null,
-        deduct_qty: parseFloat(s.deduct_qty), active: s.active, sort: i })) };
+        deduct_qty: parseFloat(s.deduct_qty), image: s.image || '', active: s.active, sort: i })) };
       // 改了名称但没动助记码：按新名称重新生成
       if (form.id && form.name !== form._name0 && form.mnemonic === form._mn0) body.mnemonic = '';
       delete body._name0; delete body._mn0;
@@ -168,7 +173,7 @@ const Products = {
     onMounted(load);
     const qtyText = (r) => [r.min_qty > 1 ? r.min_qty + ' 件起' : '', r.max_qty ? '限 ' + r.max_qty + ' 件' : ''].filter(Boolean).join('，') || '不限数量';
     const exp = async () => { try { await api.download('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
-    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, save, catLabel, qtyText, yuan };
+    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, upload, uploadSku, save, catLabel, qtyText, yuan };
   },
 };
 

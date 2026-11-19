@@ -154,10 +154,14 @@ const Pos = {
       </div>
     </div>
     <pay-dialog v-model="payDlg" :user="user" :lines="lines" @pay="pay" />
-    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，按数字键选择" width="480px">
-      <div style="display:flex;flex-direction:column;gap:8px">
-        <el-button v-for="m in scanMatches" :key="m.sku.id" size="large" style="margin:0;justify-content:space-between;height:52px"
-          @click="add(m.product, m.sku); scanDlg = false"><span><kbd>{{scanMatches.indexOf(m) + 1}}</kbd> {{m.product.name}}<span v-if="m.sku.name !== '默认'" class="muted">　{{m.sku.name}}</span></span><b>¥{{yuan(m.sku.price)}}</b></el-button>
+    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，按数字键选择" :width="pickWidth(scanMatches.length)" class="pick-dlg">
+      <div class="pick-grid">
+        <div v-for="(m, i) in scanMatches" :key="m.sku.id" class="pick" @click="add(m.product, m.sku); scanDlg = false">
+          <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
+          <div class="pimg" :style="bg(m.sku.image || m.product.image)">{{(m.sku.image || m.product.image) ? '' : m.product.name.slice(0, 1)}}</div>
+          <div class="pn">{{m.product.name}}</div><div class="ps">{{m.sku.name !== '默认' ? m.sku.name : ''}}</div>
+          <div class="pp">¥{{yuan(m.sku.price)}}</div>
+        </div>
       </div>
     </el-dialog>
     <el-dialog v-model="heldDlg" title="已挂起的单" width="520px">
@@ -168,10 +172,15 @@ const Pos = {
         <el-button type="primary" @click="takeHeld(i)">取回</el-button><el-button link type="danger" @click="dropHeld(i)">删除</el-button>
       </div>
     </el-dialog>
-    <el-dialog v-model="skuDlg" :title="(skuProduct && skuProduct.name) + '　按数字键选规格'" width="460px">
-      <div style="display:flex;flex-wrap:wrap;gap:10px">
-        <el-button v-for="(s, i) in (skuProduct ? skuProduct.skus : [])" :key="s.id" size="large" style="min-width:120px;height:64px" @click="add(skuProduct, s); skuDlg=false">
-          <kbd v-if="i < 9">{{i + 1}}</kbd>&nbsp;{{s.name}}<br>¥{{yuan(s.price)}}</el-button>
+    <el-dialog v-model="skuDlg" :width="pickWidth(skuProduct ? skuProduct.skus.length : 1)" class="pick-dlg">
+      <template #header><span class="pick-title">{{skuProduct && skuProduct.name}}</span><span class="muted pick-tip">点选或按数字键选规格</span></template>
+      <div class="pick-grid">
+        <div v-for="(s, i) in (skuProduct ? skuProduct.skus : [])" :key="s.id" class="pick" @click="add(skuProduct, s); skuDlg=false">
+          <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
+          <div class="pimg" :style="bg(s.image || skuProduct.image)">{{(s.image || skuProduct.image) ? '' : (s.name !== '默认' ? s.name : skuProduct.name).slice(0, 1)}}</div>
+          <div class="pn">{{s.name}}</div>
+          <div class="pp">¥{{yuan(s.price)}}</div>
+        </div>
       </div>
     </el-dialog>
     <el-dialog v-model="doneDlg" title="收款成功" width="380px">
@@ -348,7 +357,10 @@ const Pos = {
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
-      sel, qtyEls, remarkRef, posKeys: K.POS_KEYS, noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
+      sel, qtyEls, remarkRef, posKeys: K.POS_KEYS,
+      // 选规格框：每格 200px 左右，一行最多 4 个
+      pickWidth: (n) => Math.min(4, Math.max(2, n)) * 196 + 72 + 'px',
+      bg: (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(img) + ')' } : {}), noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
   },
 };
 
