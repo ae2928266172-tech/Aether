@@ -5,6 +5,7 @@
 """
 import os
 import re
+import shutil
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
@@ -42,10 +43,18 @@ def thumb_path(width: int, name: str) -> str:
             os.makedirs(out_dir, exist_ok=True)
             tmp = out + ".tmp"
             im.save(tmp, "WEBP", quality=80, method=4)
-            os.replace(tmp, out)
+            try:
+                os.replace(tmp, out)
+            except OSError:
+                # 有的 Windows 电脑把 AppData 重定向到别的位置，同目录改名也会报“不能移到不同的磁盘”，换成复制再删
+                shutil.move(tmp, out)
     except HTTPException:
         raise
     except Exception:
+        try:
+            os.remove(out + ".tmp")
+        except OSError:
+            pass
         return src  # 坏图、不认识的格式：退回原图，不影响页面
     return out
 

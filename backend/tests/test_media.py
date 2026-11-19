@@ -46,3 +46,14 @@ def test_page_not_cached_and_api_gzipped(client, admin):
     assert "immutable" in client.get("/web/store/store.js?v=1").headers["cache-control"]
     r = client.get("/api/products", headers={"Authorization": "Bearer " + admin.token, "Accept-Encoding": "gzip"})
     assert r.status_code == 200
+
+
+def test_thumbnail_falls_back_when_rename_fails(client, admin, monkeypatch):
+    """有的 Windows 电脑 AppData 被重定向，os.replace 报 WinError 17，要退到 shutil.move。"""
+    import os
+    url = _upload(client, admin, (1200, 900))
+    def boom(*a, **k):
+        raise OSError(17, "cannot move to a different disk drive")
+    monkeypatch.setattr(os, "replace", boom)
+    r = client.get("/media/t/160/" + url.rsplit("/", 1)[1])
+    assert r.status_code == 200 and Image.open(io.BytesIO(r.content)).format == "WEBP"
