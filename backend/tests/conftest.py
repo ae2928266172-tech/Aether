@@ -6,6 +6,7 @@ os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "sqlite:///:mem
 os.environ["SHOUYIN_SECRET"] = "test-secret-0123456789abcdef0123456789"
 os.environ["SHOUYIN_MEDIA"] = tempfile.mkdtemp()
 os.environ.pop("WECHAT_APPID", None)
+os.environ["SHOUYIN_ENV"] = "test"
 
 import pytest
 from fastapi.testclient import TestClient

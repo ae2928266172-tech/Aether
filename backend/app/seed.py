@@ -46,6 +46,8 @@ def init_db(engine, session_factory):
         fill_mnemonics(db)
         migrate_perms(db)
         db.commit()
+        from .startup_check import check
+        check(db)
 
 
 def migrate_perms(db: Session):

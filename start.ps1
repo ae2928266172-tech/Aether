@@ -7,6 +7,8 @@ $data = Join-Path $env:LOCALAPPDATA "shouyin"
 New-Item -ItemType Directory -Force $data | Out-Null
 $env:DATABASE_URL = "sqlite:///" + ($data -replace '\\', '/') + "/shouyin.db"
 $env:SHOUYIN_MEDIA = Join-Path $data "media"
+# 本机试用：开放网页版顾客免登录点单（没有小程序账号时测试用）。正式部署不要用这个脚本，见 docs\上线配置.md
+$env:SHOUYIN_ENV = "dev"
 
 if (-not (Test-Path $Python)) {
     Write-Host "首次运行：创建 Python 环境并安装依赖……"

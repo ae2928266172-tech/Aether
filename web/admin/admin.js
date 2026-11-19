@@ -1405,7 +1405,11 @@ const App = {
     };
     const login = async () => {
       busy.value = true;
-      try { const r = await api.post('/api/auth/login', lf); api.setToken(r.token); user.value = r.user; await loadMeta(); } catch (e) { err(e); } finally { busy.value = false; }
+      let weak = false;
+      try { const r = await api.post('/api/auth/login', lf); api.setToken(r.token); user.value = r.user; weak = r.weak_password; await loadMeta(); } catch (e) { err(e); } finally { busy.value = false; }
+      if (weak) {
+        try { await ElMessageBox.confirm('这个账号还在用默认或过于简单的密码，正式使用前请先修改。', '请修改密码', { confirmButtonText: '现在修改', cancelButtonText: '稍后', type: 'warning' }); changePw(); } catch (e) {}
+      }
     };
     const logout = () => { api.setToken(''); user.value = null; ready.value = false; };
     const changePw = async () => {

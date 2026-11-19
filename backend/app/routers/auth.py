@@ -44,7 +44,9 @@ def login(body: LoginIn, db: Session = Depends(get_db)):
     _FAILS.pop(name, None)
     if not u.active:
         raise HTTPException(400, "账号已停用")
-    return {"token": make_token(str(u.id), "staff", u.token_version), "user": user_out(u)}
+    from ..startup_check import WEAK
+    return {"token": make_token(str(u.id), "staff", u.token_version), "user": user_out(u),
+            "weak_password": body.password in WEAK}
 
 
 @router.get("/auth/me")
