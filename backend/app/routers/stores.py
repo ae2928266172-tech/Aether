@@ -12,6 +12,7 @@ from ..models import Area, Location, StockBalance, StockDoc, StockItem, StockMov
 from ..security import check_store_access, current_user, has_perm, require, store_stock_access
 from ..serialize import area_out, dt, num, store_out
 from ..services import inventory as inv
+from ..services import orders as svc_orders
 from .reports import _xlsx
 
 router = APIRouter(prefix="/api", tags=["门店与库存"])
@@ -305,11 +306,10 @@ def _doc_out(db: Session, d: StockDoc, ctx: dict | None = None):
 def create_doc(body: DocIn, db: Session = Depends(get_db), user: User = Depends(require("inventory"))):
     if body.supplier_id and not db.get(Supplier, body.supplier_id):
         raise HTTPException(400, "供应商不存在")
-    d = inv.create_doc(db, kind=body.kind, lines=[ln.model_dump() for ln in body.lines], user_id=user.id,
-                       from_location_id=body.from_location_id, to_location_id=body.to_location_id,
-                       supplier_id=body.supplier_id, remark=body.remark, request_id=body.request_id,
-                       reason=body.reason)
-    db.commit()
+    d = svc_orders.once(db, lambda: inv.create_doc(
+        db, kind=body.kind, lines=[ln.model_dump() for ln in body.lines], user_id=user.id,
+        from_location_id=body.from_location_id, to_location_id=body.to_location_id,
+        supplier_id=body.supplier_id, remark=body.remark, request_id=body.request_id, reason=body.reason))
     return _doc_out(db, d)
 
 
@@ -336,11 +336,9 @@ def store_adjust(sid: int, body: StoreAdjustIn, db: Session = Depends(get_db), u
     """门店盘点（填实盘数），需后台允许本店修改库存。"""
     store = store_stock_access(db, user, sid, edit=True)
     # 门店盘点不让填单价，盈亏金额按库存品成本算
-    d = inv.create_doc(db, kind="adjust", lines=[ln.model_dump(exclude={"unit_cost"}) for ln in body.lines],
-                       user_id=user.id,
-                       to_location_id=store.location_id, remark=body.remark or "门店盘点",
-                       request_id=body.request_id)
-    db.commit()
+    d = svc_orders.once(db, lambda: inv.create_doc(
+        db, kind="adjust", lines=[ln.model_dump(exclude={"unit_cost"}) for ln in body.lines], user_id=user.id,
+        to_location_id=store.location_id, remark=body.remark or "门店盘点", request_id=body.request_id))
     return _doc_out(db, d)
 
 

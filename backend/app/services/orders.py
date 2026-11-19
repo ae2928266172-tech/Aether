@@ -41,6 +41,34 @@ def _by_request(db: Session, model, request_id: str | None):
     return db.scalar(select(model).where(model.request_id == request_id))
 
 
+def _qty_map(pairs) -> dict[int, int]:
+    m: dict[int, int] = defaultdict(int)
+    for k, q in pairs:
+        m[int(k)] += int(q)
+    return {k: v for k, v in m.items() if v}
+
+
+def same_request(ok: bool):
+    """请求号查到了已有记录，但不是同一个人、同一家店、同一张单、同样的内容：不返回别人的结果。"""
+    if not ok:
+        raise HTTPException(409, "这个请求号已经被别的操作用过，请刷新页面后重试")
+
+
+def once(db: Session, run):
+    """执行并提交一次带请求号的操作。两个相同请求同时到达时，后一个会撞上请求号唯一约束：
+    回滚后再执行一次，这次会查到前一个的结果（并核对归属）直接返回，而不是报错。"""
+    from sqlalchemy.exc import IntegrityError
+    try:
+        r = run()
+        db.commit()
+        return r
+    except IntegrityError:
+        db.rollback()
+        r = run()
+        db.commit()
+        return r
+
+
 def build_items(db: Session, lines: list[dict], online: bool) -> list[OrderItem]:
     if not lines:
         raise HTTPException(400, "请选择商品")
@@ -189,7 +217,7 @@ def _record_payments(db: Session, order: Order, payments: list[dict], user: User
 def get_order(db: Session, order_id: int, lock: bool = False) -> Order:
     q = select(Order).where(Order.id == order_id)
     if lock:
-        q = q.with_for_update()
+        q = q.with_for_update(of=Order)
     o = db.scalar(q)
     if not o:
         raise HTTPException(404, "订单不存在")
@@ -203,6 +231,9 @@ def pos_checkout(db: Session, user: User, store: Store, lines: list[dict], payme
                  request_id: str | None = None) -> Order:
     exist = _by_request(db, Order, request_id)
     if exist:
+        same_request(exist.source == "pos" and exist.store_id == store.id and exist.created_by == user.id
+                     and _qty_map((i.sku_id, i.qty) for i in exist.items)
+                     == _qty_map((ln["sku_id"], ln["qty"]) for ln in lines))
         return exist
     order = Order(no=_no("S"), source="pos", store_id=store.id, status="completed", remark=remark,
                   created_by=user.id, request_id=request_id)
@@ -228,8 +259,9 @@ def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], 
                   contact_phone: str = "", remark: str = "", request_id: str | None = None) -> Order:
     exist = _by_request(db, Order, request_id)
     if exist:
-        if exist.customer_id != customer_id:
-            raise HTTPException(409, "请求号重复")
+        same_request(exist.source == "online" and exist.customer_id == customer_id and exist.area_id == area.id
+                     and _qty_map((i.sku_id, i.qty) for i in exist.items)
+                     == _qty_map((ln["sku_id"], ln["qty"]) for ln in lines))
         return exist
     store = area.store
     if not area.active or not store.active:
@@ -316,6 +348,9 @@ def refund(db: Session, order: Order, user: User, lines: list[dict], restock: bo
     """退货退款。lines=[{order_item_id, qty}]；金额按实收分摊自动计算，传 amount 只用于核对。"""
     exist = _by_request(db, Refund, request_id)
     if exist:
+        same_request(exist.order_id == order.id and exist.created_by == user.id
+                     and _qty_map((l.order_item_id, l.qty) for l in exist.lines)
+                     == _qty_map((ln["order_item_id"], ln["qty"]) for ln in lines))
         return exist
     if order.pay_status not in ("paid", "partial_refunded"):
         raise HTTPException(409, "订单未收款或已全额退款，不能退款")

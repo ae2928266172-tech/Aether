@@ -21,7 +21,7 @@ def get_balance(db: Session, location_id: int, stock_item_id: int, lock: bool = 
     q = select(StockBalance).where(StockBalance.location_id == location_id,
                                    StockBalance.stock_item_id == stock_item_id)
     if lock:
-        q = q.with_for_update()
+        q = q.with_for_update(of=StockBalance)
     bal = db.scalar(q)
     if bal is None:
         bal = StockBalance(location_id=location_id, stock_item_id=stock_item_id, qty=Decimal(0))
@@ -110,7 +110,7 @@ def _consume_fifo(db: Session, mv: StockMove, need: Decimal):
     db.flush()
     for b in db.scalars(select(StockBatch).where(
             StockBatch.location_id == mv.location_id, StockBatch.stock_item_id == mv.stock_item_id,
-            StockBatch.qty > 0).order_by(*_batch_sort()).with_for_update()):
+            StockBatch.qty > 0).order_by(*_batch_sort()).with_for_update(of=StockBatch)):
         if need <= 0:
             break
         take = min(need, D(b.qty))
@@ -224,6 +224,17 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
     if request_id:
         exist = db.scalar(select(StockDoc).where(StockDoc.request_id == request_id))
         if exist:
+            from .orders import same_request
+
+            def qmap(pairs):
+                m: dict[int, Decimal] = defaultdict(Decimal)
+                for k, q in pairs:
+                    m[int(k)] += D(q)
+                return m
+            same_request(exist.kind == kind and exist.created_by == user_id
+                         and exist.from_location_id == from_location_id and exist.to_location_id == to_location_id
+                         and qmap((l.stock_item_id, l.qty) for l in exist.lines)
+                         == qmap((ln["stock_item_id"], ln["qty"]) for ln in lines))
             return exist
     if kind not in DOC_PREFIX:
         raise HTTPException(400, "单据类型错误")
@@ -325,7 +336,7 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
 
 def void_doc(db: Session, doc_id: int, user_id: int | None, reason: str = "") -> StockDoc:
     """作废单据：按这张单当时产生的每笔库存变动反向冲回（允许冲成负数，和收银“库存不够也能卖”一致）。"""
-    doc = db.scalar(select(StockDoc).where(StockDoc.id == doc_id).with_for_update())
+    doc = db.scalar(select(StockDoc).where(StockDoc.id == doc_id).with_for_update(of=StockDoc))
     if not doc:
         raise HTTPException(404, "单据不存在")
     if doc.voided_at:

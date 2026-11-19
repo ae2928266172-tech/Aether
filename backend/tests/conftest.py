@@ -1,7 +1,8 @@
 import os
 import tempfile
 
-os.environ["DATABASE_URL"] = "sqlite:///:memory:"
+# 设 TEST_DATABASE_URL 可以把全部测试放到 PostgreSQL 上跑
+os.environ["DATABASE_URL"] = os.environ.get("TEST_DATABASE_URL", "sqlite:///:memory:")
 os.environ["SHOUYIN_SECRET"] = "test-secret-0123456789abcdef0123456789"
 os.environ["SHOUYIN_MEDIA"] = tempfile.mkdtemp()
 os.environ.pop("WECHAT_APPID", None)
@@ -63,6 +64,10 @@ def admin(client):
 
 @pytest.fixture
 def world(client, admin):
+    return build_world(client, admin)
+
+
+def build_world(client, admin):
     """两家门店、各一个区域；库存品“纸杯”，商品“杯装水”小份扣 1、大份扣 2，另一商品“冰水”也扣纸杯。"""
     s1 = admin.post("/api/stores", {"name": "一号店"})
     s2 = admin.post("/api/stores", {"name": "二号店"})

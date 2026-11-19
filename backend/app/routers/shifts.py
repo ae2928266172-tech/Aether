@@ -91,7 +91,7 @@ def open_shift(body: OpenIn, db: Session = Depends(get_db), user: User = Depends
 
 @router.post("/shifts/{sid}/close")
 def close_shift(sid: int, body: CloseIn, db: Session = Depends(get_db), user: User = Depends(require("pos"))):
-    s = db.scalar(select(Shift).where(Shift.id == sid).with_for_update())
+    s = db.scalar(select(Shift).where(Shift.id == sid).with_for_update(of=Shift))
     if not s:
         raise HTTPException(404, "没有这个班次")
     if s.user_id != user.id and not has_perm(user, "reports"):

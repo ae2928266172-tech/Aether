@@ -39,7 +39,7 @@ def next_job(key: str, db: Session = Depends(get_db)):
     # 最多试几张：某一张小票生成失败时标记为失败并跳过，不让一个坏任务卡住后面的
     for _ in range(5):
         job = db.scalar(select(PrintJob).where(PrintJob.store_id == store.id, PrintJob.status == "pending")
-                        .order_by(PrintJob.id).with_for_update())
+                        .order_by(PrintJob.id).with_for_update(of=PrintJob))
         if not job:
             job = db.scalar(select(PrintJob).where(PrintJob.store_id == store.id, PrintJob.status == "sent",
                                                    PrintJob.sent_at < now() - RESEND_AFTER).order_by(PrintJob.id))

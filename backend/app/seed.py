@@ -14,8 +14,8 @@ STORE_PERMS = ["pos", "orders", "refund", "discount", "adjust_amount", "reprint"
 def _add_missing_columns(engine):
     """简单升级：新版本给已有表加了字段时，自动补上（只加字段，不删不改）。"""
     from sqlalchemy import inspect, text
-    insp = inspect(engine)
     with engine.begin() as conn:
+        insp = inspect(conn)  # 用同一个连接查表结构，别另开连接（SQLite 上会和这里的写锁互相等）
         for table in Base.metadata.sorted_tables:
             if not insp.has_table(table.name):
                 continue
