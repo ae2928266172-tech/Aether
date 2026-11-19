@@ -5,7 +5,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from ..db import now
@@ -269,6 +269,8 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
                 raise HTTPException(400, f"{item.name}：有效期至不能早于生产日期")
             key = (sid, bno, pd, ed)
         if kind == "adjust":
+            if key in merged:  # 同一库存品写了两行：以前是后一行覆盖前一行，盘亏可能变盘盈，现在直接拒绝
+                raise HTTPException(400, f"{item.name} 在盘点单里出现了两行，请合并成一行再提交")
             merged[key] = q
             amounts[key] = cost  # 盘点：这里先记单价，下面按盈亏数量算金额
         else:
@@ -328,9 +330,17 @@ def void_doc(db: Session, doc_id: int, user_id: int | None, reason: str = "") ->
         raise HTTPException(404, "单据不存在")
     if doc.voided_at:
         raise HTTPException(409, "这张单据已经作废过了")
+    # 先用一条带条件的 UPDATE 抢占“作废”：两个请求同时到（双击、两台电脑），只有一个能改成功，
+    # 另一个改到 0 行直接返回 409。SQLite 不支持 SELECT ... FOR UPDATE，这样在 SQLite 和 PostgreSQL 上都可靠。
+    at = now()
+    won = db.execute(update(StockDoc).where(StockDoc.id == doc.id, StockDoc.voided_at.is_(None))
+                     .values(voided_at=at, voided_by=user_id).execution_options(synchronize_session=False)).rowcount
+    if won != 1:
+        db.rollback()
+        raise HTTPException(409, "这张单据已经作废过了")
+    db.refresh(doc)
     moves = db.scalars(select(StockMove).where(StockMove.doc_id == doc.id, (StockMove.note == "") | StockMove.note.is_(None))
                        .order_by(StockMove.id)).all()
-    at = now()
     for m in moves:
         rev = [(b, -q) for b, q in move_allocs(db, [m.id])]  # 批次也按原样冲回
         mv = change_stock(db, location_id=m.location_id, stock_item_id=m.stock_item_id, qty=-D(m.qty),
