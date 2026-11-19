@@ -177,8 +177,8 @@ const Products = {
         if (p === null) return ElMessage.warning(label + '的售价请填数字，例如 12 或 12.5');
         if (p === 0 && s.active) zero = true;
         if (!blank(s.cost_y) && money(s.cost_y) === null) return ElMessage.warning(label + '的成本请填数字，或留空按库存品成本算');
-        const d = parseFloat(s.deduct_qty);
-        if (!isFinite(d) || d <= 0) return ElMessage.warning(label + '的扣减量必须大于 0');
+        const d = /^\d+(\.\d{1,3})?$/.test(String(s.deduct_qty).trim()) ? parseFloat(s.deduct_qty) : NaN;  // "1abc"、"1e3" 这类不收
+        if (!isFinite(d) || d <= 0) return ElMessage.warning(label + '的扣减量请填大于 0 的数字，最多三位小数');
       }
       const qtyOf = (v) => blank(v) ? null : (/^\d+$/.test(String(v).trim()) && +v >= 1 ? +v : NaN);
       const minQ = qtyOf(form.min_qty), maxQ = qtyOf(form.max_qty);
@@ -249,7 +249,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
       const load = async () => { try { rows.value = await api.get(url); if (after) after(props.meta, rows.value); } catch (e) { err(e); } };
       const edit = (row) => {
         Object.keys(form).forEach(k => delete form[k]);
-        fields.forEach(f => { form[f.prop] = row ? row[f.prop] : (f.default !== undefined ? f.default : (f.type === 'bool' ? true : '')); if (f.type === 'money' && row) form[f.prop] = yuan(row[f.prop]); if (f.type === 'qty' && form[f.prop] == null) form[f.prop] = ''; });
+        fields.forEach(f => { form[f.prop] = row ? row[f.prop] : (f.default !== undefined ? f.default : (f.type === 'bool' ? true : '')); if (f.type === 'money' && row) form[f.prop] = row[f.prop] == null ? '' : yuan(row[f.prop]); if (f.type === 'qty' && form[f.prop] == null) form[f.prop] = ''; });
         if (row) form.id = row.id;
         dlg.value = true;
       };
@@ -648,8 +648,15 @@ const Inventory = {
       ffDlg.value = true;
     };
     const submitFulfill = async () => {
+      if (saving.value) return;
       const bad = ff.lines.find(l => !/^\d+(\.\d{1,3})?$/.test(String(l.qty).trim()));
       if (bad) return ElMessage.warning(bad.name + ' 的实发数量请填数字（不发填 0）');
+      // 实发超过申请量要再确认一次（仓库库存不够时服务器会直接拒绝，不会发成负数）
+      const over = ff.lines.filter(l => parseFloat(l.qty) > l.asked);
+      if (over.length) {
+        try { await ElMessageBox.confirm(over.map(l => Shouyin.esc(l.name) + '：申请 ' + l.asked + '，实发 ' + parseFloat(l.qty)).join('<br>') + '<br>实发比申请多，确定这样发吗？', '实发超过申请量',
+          { type: 'warning', dangerouslyUseHTMLString: true, confirmButtonText: '确定多发', cancelButtonText: '回去改' }); } catch (e) { return; }
+      }
       saving.value = true;
       try { await api.post('/api/requisitions/' + ff.req.id + '/fulfill', { from_location_id: ff.from, note: ff.note, request_id: ff.rid,
           lines: ff.lines.map(l => ({ stock_item_id: l.stock_item_id, qty: parseFloat(l.qty) })) });
@@ -670,8 +677,11 @@ const Inventory = {
       let reason;
       try { ({ value: reason } = await ElMessageBox.prompt(`作废 ${row.kind_text}单 ${row.no}？库存会按原单反向冲回（${row.kind === 'adjust' ? '冲回当时的盈亏' : '共 ' + row.total_qty}），作废后不能恢复。请写明原因：`, '作废单据',
         { type: 'warning', confirmButtonText: '作废', inputValidator: v => !blank(v) || '请写原因' })); } catch (e) { return; }
-      try { await api.post('/api/stock-docs/' + row.id + '/void', { reason }); ok('已作废，库存已冲回'); loadDocs(); load(); } catch (e) { err(e); }
+      if (voiding.value) return;  // 防双击；服务器也只会冲回一次
+      voiding.value = true;
+      try { await api.post('/api/stock-docs/' + row.id + '/void', { reason }); ok('已作废，库存已冲回'); loadDocs(); load(); } catch (e) { err(e); } finally { voiding.value = false; }
     };
+    const voiding = ref(false);
     const balances = reactive({});
     const mDlg = ref(false), moves = ref([]), mTitle = ref('');
     const loadLocs = async () => { locations.value = await api.get('/api/locations'); if (!loc.value && locations.value.length) loc.value = locations.value[0].id; };

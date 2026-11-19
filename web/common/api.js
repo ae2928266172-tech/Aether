@@ -133,7 +133,12 @@
       document.body.appendChild(f);
       const doc = f.contentWindow.document;
       doc.open(); doc.write(receiptHtml(r)); doc.close();
-      const go = () => { f.contentWindow.focus(); f.contentWindow.print(); setTimeout(() => { f.remove(); resolve(); }, 1000); };
+      const go = () => {
+        f.contentWindow.focus(); f.contentWindow.print();
+        // 打印完把焦点还给收银页，不然键盘事件都进了这个隐藏框，回车关不掉“收款成功”
+        window.focus(); if (document.activeElement === f) f.blur();
+        setTimeout(() => { f.remove(); resolve(); }, 1000);
+      };
       const imgs = doc.images;
       if (!imgs.length) return setTimeout(go, 50);
       let n = 0; const done = () => { if (++n >= imgs.length) go(); };

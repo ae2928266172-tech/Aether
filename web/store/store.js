@@ -23,8 +23,8 @@ const METHODS = { cash: '现金', wechat: '微信', alipay: '支付宝', other: 
 
 // 优惠（打折 / 调低应收）+ 收款，收银和订单收款共用
 const PayDialog = {
-  props: ['modelValue', 'user', 'lines', 'title'],
-  emits: ['update:modelValue', 'pay'],
+  props: ['modelValue', 'user', 'lines', 'title', 'onPay'],
+  emits: ['update:modelValue'],
   template: `
   <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="900px" class="paybox" @open="reset" @opened="focusReceived">
     <div class="pay-grid">
@@ -57,7 +57,7 @@ const PayDialog = {
       </div>
     </div>
     <template #footer><span class="muted keyhint"><kbd>Enter</kbd> 确认收款　<kbd>Esc</kbd> 取消</span><el-button size="large" class="pay-cancel" @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button size="large" type="primary" class="pay-ok" :loading="busy" :disabled="!!qErr" @click="submit">确认收款 ¥{{yuan(q.payable_amount)}}</el-button></template>
+      <el-button size="large" type="primary" class="pay-ok" :loading="busy || quoting > 0" :disabled="!!qErr" @click="submit">确认收款 ¥{{yuan(q.payable_amount)}}</el-button></template>
   </el-dialog>`,
   setup(props, { emit }) {
     const q = reactive({ original_amount: 0, payable_amount: 0, discount_amount: 0 }), qErr = ref('');
@@ -74,17 +74,38 @@ const PayDialog = {
       const parts = []; if (r > 1) parts.push('最低 ' + r / 10 + ' 折'); if (a != null) parts.push('单笔最多调低 ' + yuan(a) + ' 元');
       return parts.length ? '你的权限：' + parts.join('，') : '';
     });
-    const quote = async () => {
-      try {
-        let payable = null;
-        if (String(payableInput.value == null ? '' : payableInput.value).trim() !== '') {
-          payable = Shouyin.parseMoney(payableInput.value);
-          if (payable === null) throw new Error('本次应收请填数字，例如 95 或 95.5');
-        }
-        if (rate.value !== null && !isFinite(rate.value)) throw new Error('折扣请填数字，例如 8.5');
-        const r = await api.post('/api/pos/quote', { lines: props.lines, discount_rate: rate.value, payable });
-        Object.assign(q, r); qErr.value = '';
-      } catch (e) { qErr.value = e.message; err(e); }
+    // 算价：每次都记下用的是哪组折扣 / 应收，只采用最后一次的结果；收款前必须等算价完成且和当前输入一致
+    let seq = 0, pending = Promise.resolve(), quotedKey = null;
+    const quoting = ref(0);
+    const inputKey = () => JSON.stringify([rate.value, String(payableInput.value == null ? '' : payableInput.value).trim(), props.lines]);
+    const quote = () => {
+      const my = ++seq, key = inputKey();
+      quoting.value++;
+      pending = (async () => {
+        try {
+          let payable = null;
+          if (String(payableInput.value == null ? '' : payableInput.value).trim() !== '') {
+            payable = Shouyin.parseMoney(payableInput.value);
+            if (payable === null) throw new Error('本次应收请填数字，例如 95 或 95.5');
+          }
+          if (rate.value !== null && !isFinite(rate.value)) throw new Error('折扣请填数字，例如 8.5');
+          const r = await api.post('/api/pos/quote', { lines: props.lines, discount_rate: rate.value, payable });
+          if (my === seq) { Object.assign(q, r); qErr.value = ''; quotedKey = key; }
+        } catch (e) { if (my === seq) { qErr.value = e.message; quotedKey = null; err(e); } }
+        finally { quoting.value--; }
+      })();
+      return pending;
+    };
+    // 收款前把还没生效的输入（打了自定折扣没按“确定”、改应收框还没离开）先算进去，等算价结束
+    const settle = async () => {
+      const a = document.activeElement;
+      if (a && a.closest && a.closest('.paybox') && a.tagName === 'INPUT') a.blur();  // 触发输入框的 change
+      await Vue.nextTick();
+      const typed = String(rateInput.value == null ? '' : rateInput.value).trim();
+      if (typed && Math.round(parseFloat(typed) * 10) !== rate.value) { applyRate(typed); await Vue.nextTick(); }
+      if (quotedKey !== inputKey()) quote();
+      while (quoting.value) await pending;
+      return !qErr.value && quotedKey === inputKey();
     };
     watch(rate, () => { rateInput.value = rate.value && ![95, 90, 88, 85, 80].includes(rate.value) ? rate.value / 10 : ''; payableInput.value = ''; quote(); });
     const applyRate = (v) => { rate.value = String(v == null ? '' : v).trim() ? Math.round(parseFloat(v) * 10) : null; };
@@ -111,7 +132,12 @@ const PayDialog = {
     const change = computed(() => { const r = Shouyin.parseMoney(received.value); return r !== null && r >= q.payable_amount ? yuan(r - q.payable_amount) : '0.00'; });
     const quick = computed(() => { const p = q.payable_amount / 100; return [...new Set([p, Math.ceil(p / 10) * 10, Math.ceil(p / 50) * 50, Math.ceil(p / 100) * 100])].map(v => v.toFixed(2)).slice(0, 4); });
     const submit = async () => {
-      if (qErr.value || busy.value) return;
+      if (busy.value) return;
+      busy.value = true;
+      try { await doSubmit(); } finally { busy.value = false; }
+    };
+    const doSubmit = async () => {
+      if (!(await settle())) return ElMessage.warning(qErr.value || '金额还没算好，请稍等再确认');
       const pay = { method: method.value, amount: q.payable_amount };
       if (method.value === 'cash') {
         const blank = String(received.value == null ? '' : received.value).trim() === '';
@@ -120,9 +146,8 @@ const PayDialog = {
         if (r < q.payable_amount) return ElMessage.warning('实收不足');
         pay.received = r;
       }
-      busy.value = true;
-      try { await emit('pay', { payments: [pay], discount_rate: q.discount_rate, payable: q.payable_amount, change: pay.received ? pay.received - pay.amount : 0 }); }
-      finally { busy.value = false; }
+      // 等收款请求真正结束再放开按钮（emit 不会等处理函数，所以这里直接调用 onPay）
+      if (props.onPay) await props.onPay({ payments: [pay], discount_rate: q.discount_rate, payable: q.payable_amount, change: pay.received ? pay.received - pay.amount : 0, received: pay.received || pay.amount });
     };
     // 键盘：F1 现金 F2 微信 F3 支付宝 F4 其他，回车确认收款（在折扣、改应收输入框里回车只是算价）
     const onKey = (e) => {
@@ -139,7 +164,7 @@ const PayDialog = {
     onMounted(() => window.addEventListener('keydown', onKey, true));
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { q, qErr, rate, rateInput, payableInput, method, received, busy, canDiscount, canAdjust, limitText, quote, reset, roundDown, change, quick, submit, yuan, methods: METHODS,
-      receivedRef, rateRef, payableRef, focusReceived, field, pickField, applyRate, PAD, padPress };
+      receivedRef, rateRef, payableRef, focusReceived, quoting, field, pickField, applyRate, PAD, padPress };
   },
 };
 
@@ -242,14 +267,14 @@ const Pos = {
     </el-dialog>
     <el-dialog v-model="doneDlg" title="收款成功" width="440px" class="done-dlg">
       <div class="done"><div class="ok"><span class="ico" v-html="icon('check')"></span></div>
-        <div class="k">实收 ¥{{yuan(last.payable_amount)}}</div><div v-if="lastChange" class="chg">找零 <b class="money">¥{{yuan(lastChange)}}</b></div></div>
+        <div class="k">应收 ¥{{yuan(last.payable_amount)}}<span v-if="lastReceived !== last.payable_amount">　实收 ¥{{yuan(lastReceived)}}</span></div><div v-if="lastChange" class="chg">找零 <b class="money">¥{{yuan(lastChange)}}</b></div></div>
       <template #footer><div class="done-btns"><el-button size="large" @click="reprint">补打小票<kbd>F8</kbd></el-button><el-button size="large" type="primary" @click="doneDlg=false">继续收银<kbd>Enter</kbd></el-button></div></template>
     </el-dialog>
   </div>`,
   setup(props) {
     const products = ref([]), cats = ref([]), cat = ref(null), scanText = ref(''), cart = ref([]), remark = ref('');
     const scanDlg = ref(false), scanMatches = ref([]);
-    const payDlg = ref(false), skuDlg = ref(false), skuProduct = ref(null), doneDlg = ref(false), last = ref({}), lastChange = ref(0), scan = ref(null);
+    const payDlg = ref(false), skuDlg = ref(false), skuProduct = ref(null), doneDlg = ref(false), last = ref({}), lastChange = ref(0), lastReceived = ref(0), scan = ref(null);
     let reqId = rid();
     const topCats = computed(() => cats.value.filter(c => !c.parent_id && c.active));
     // 边输边搜：名称、助记码（拼音首字母）、货号、规格名、条码
@@ -350,7 +375,7 @@ const Pos = {
           payable: p.payable, remark: remark.value, request_id: reqId });
       } catch (e) { return err(e); }
       // 到这里收款已经成功。后面的提示音、打印出错都不能让店员误以为没收到钱
-      reqId = rid(); last.value = o; lastChange.value = p.change; payDlg.value = false; doneDlg.value = true; clear();
+      reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount; payDlg.value = false; doneDlg.value = true; clear();
       if (props.settings.sound) { beep(1); speak('收款成功，' + yuan(o.payable_amount) + '元' + (p.change ? '，找零' + yuan(p.change) + '元' : '')); }
       if (deskInfo && deskInfo.drawer && p.payments.some(x => x.method === 'cash')) openDrawer(true);
       if (props.settings.autoPrintPos && !props.agent && canPrintHere()) {
@@ -440,7 +465,7 @@ const Pos = {
     watch([payDlg, skuDlg, scanDlg, heldDlg, doneDlg, remarkDlg], (now, before) => { if (now.every(v => !v) && before.some(v => v)) focusScan(); });
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); window.addEventListener('keydown', onKey, true); });
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
-    return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
+    return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
       visible, more, thumb: Shouyin.thumb, sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, KB, kbPress,
       // 选规格框：每格 200px 左右，一行最多 4 个
@@ -535,9 +560,12 @@ const Orders = {
     const refresh = async () => { cur.value = await api.get('/api/orders/' + cur.value.id); load(); };
     const act = async (a) => { try { await api.post('/api/orders/' + cur.value.id + '/' + a); await refresh(); ElMessage.success('已接单'); } catch (e) { err(e); } };
     const curLines = computed(() => cur.value ? cur.value.items.map(i => ({ sku_id: i.sku_id, qty: i.qty })) : []);
+    let collecting = false;
     const collect = async (p) => {
+      if (collecting) return;  // 连点只发一次
+      collecting = true;
       try { await api.post('/api/orders/' + cur.value.id + '/collect', { payments: p.payments, discount_rate: p.discount_rate, payable: p.payable }); payDlg.value = false; await refresh(); ElMessage.success('已收款'); }
-      catch (e) { err(e); }
+      catch (e) { err(e); } finally { collecting = false; }
     };
     const cancel = async () => {
       let reason; try { ({ value: reason } = await ElMessageBox.prompt('取消原因（可不填）', '取消订单', { inputValue: '' })); } catch (e) { return; }
