@@ -210,6 +210,7 @@ class Sku(Base, TimestampMixin):
     cost: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 为空时按库存品成本×扣减量
     stock_item_id: Mapped[int | None] = mapped_column(ForeignKey("stock_items.id"), nullable=True)
     deduct_qty: Mapped[Decimal] = mapped_column(Qty, default=Decimal(1))
+    image: Mapped[str] = mapped_column(String(300), default="")  # 规格图片，不设时用商品图片
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     sort: Mapped[int] = mapped_column(Integer, default=0)
     product: Mapped[Product] = relationship(back_populates="skus")

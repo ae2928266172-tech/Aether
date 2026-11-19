@@ -153,6 +153,7 @@ class SkuIn(BaseModel):
     cost: int | None = None
     stock_item_id: int | None = None
     deduct_qty: Decimal = Decimal(1)
+    image: str = Field("", max_length=300)
     active: bool = True
     sort: int = 0
 

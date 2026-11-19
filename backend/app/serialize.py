@@ -45,7 +45,7 @@ def stock_item_out(i: StockItem) -> dict:
 def sku_out(s: Sku) -> dict:
     return {"id": s.id, "name": s.name, "barcode": s.barcode, "price": s.price, "cost": s.cost,
             "stock_item_id": s.stock_item_id, "stock_item_name": s.stock_item.name if s.stock_item else None,
-            "deduct_qty": num(s.deduct_qty), "active": s.active, "sort": s.sort}
+            "deduct_qty": num(s.deduct_qty), "image": s.image or "", "active": s.active, "sort": s.sort}
 
 
 MEDICAL_FIELDS = {"reg_cert_no": "注册证号", "production_license_no": "生产许可证号",
