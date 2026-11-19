@@ -75,13 +75,14 @@ const PayDialog = {
       return parts.length ? '你的权限：' + parts.join('，') : '';
     });
     // 算价：每次都记下用的是哪组折扣 / 应收，只采用最后一次的结果；收款前必须等算价完成且和当前输入一致
-    let seq = 0, pending = Promise.resolve(), quotedKey = null;
+    let seq = 0, quotedKey = null;
+    const inflight = new Set();  // 还没回来的算价请求
     const quoting = ref(0);
     const inputKey = () => JSON.stringify([rate.value, String(payableInput.value == null ? '' : payableInput.value).trim(), props.lines]);
     const quote = () => {
       const my = ++seq, key = inputKey();
       quoting.value++;
-      pending = (async () => {
+      const job = (async () => {
         try {
           let payable = null;
           if (String(payableInput.value == null ? '' : payableInput.value).trim() !== '') {
@@ -92,9 +93,10 @@ const PayDialog = {
           const r = await api.post('/api/pos/quote', { lines: props.lines, discount_rate: rate.value, payable });
           if (my === seq) { Object.assign(q, r); qErr.value = ''; quotedKey = key; }
         } catch (e) { if (my === seq) { qErr.value = e.message; quotedKey = null; err(e); } }
-        finally { quoting.value--; }
+        finally { quoting.value--; inflight.delete(job); }
       })();
-      return pending;
+      inflight.add(job);
+      return job;
     };
     // 收款前把还没生效的输入（打了自定折扣没按“确定”、改应收框还没离开）先算进去，等算价结束
     const settle = async () => {
@@ -104,7 +106,8 @@ const PayDialog = {
       const typed = String(rateInput.value == null ? '' : rateInput.value).trim();
       if (typed && Math.round(parseFloat(typed) * 10) !== rate.value) { applyRate(typed); await Vue.nextTick(); }
       if (quotedKey !== inputKey()) quote();
-      while (quoting.value) await pending;
+      // 等所有还没回来的算价都结束（只等最后一个不行：旧请求更慢时会原地空转，把页面卡死）
+      while (inflight.size) await Promise.all([...inflight]);
       return !qErr.value && quotedKey === inputKey();
     };
     watch(rate, () => { rateInput.value = rate.value && ![95, 90, 88, 85, 80].includes(rate.value) ? rate.value / 10 : ''; payableInput.value = ''; quote(); });
@@ -889,7 +892,10 @@ const App = {
     const switchStore = () => { setPref('store', storeId.value); startPoll(); };
     const login = async () => {
       busy.value = true;
-      try { const r = await api.post('/api/auth/login', lf); api.setToken(r.token); user.value = r.user; await afterLogin(); } catch (e) { err(e); } finally { busy.value = false; }
+      try {
+        const r = await api.post('/api/auth/login', lf); api.setToken(r.token); user.value = r.user; await afterLogin();
+        if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，正式使用前请在后台修改' });
+      } catch (e) { err(e); } finally { busy.value = false; }
     };
     const logout = () => { api.setToken(''); user.value = null; clearInterval(timer); };
     window.onUnauthorized = () => { user.value = null; clearInterval(timer); };
