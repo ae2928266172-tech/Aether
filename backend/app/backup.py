@@ -30,7 +30,7 @@ def db_path_from_env() -> str:
         return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "shouyin.db")
     if not url.startswith("sqlite:///"):
         raise BackupError("这个脚本只能备份 SQLite 数据库；PostgreSQL 请用 pg_dump")
-    return url[len("sqlite:///"):]
+    return os.path.normpath(url[len("sqlite:///"):])
 
 
 def _move(src: str, dst: str) -> None:
