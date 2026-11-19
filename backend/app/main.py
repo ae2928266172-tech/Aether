@@ -7,11 +7,13 @@ import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError
 
 from . import db as dbmod
+from . import media
 from .routers import auth, catalog, customer, orders, print_agent, reports, requisitions, settings, shifts, stores
 from .seed import init_db
 
@@ -25,6 +27,10 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="收银系统 API", version="0.1.0", lifespan=lifespan)
+# 局域网 / 云服务器上传输更快：接口 JSON、脚本、样式压缩后发送
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+app.middleware("http")(media.cache_headers)
+app.include_router(media.router)  # 缩略图要排在 /media 静态目录前面
 
 for r in (auth, catalog, stores, orders, customer, reports, settings, print_agent, requisitions, shifts):
     app.include_router(r.router)

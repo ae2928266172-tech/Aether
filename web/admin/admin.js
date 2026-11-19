@@ -61,7 +61,7 @@ const Products = {
     <el-table :data="rows" @row-click="edit" row-class-name="clickable">
       <el-table-column label="商品" min-width="220"><template #default="{row}">
         <div style="display:flex;align-items:center;gap:12px">
-          <div class="thumb"><img v-if="row.image" :src="row.image"><span v-else>{{row.name.slice(0,1)}}</span></div>
+          <div class="thumb"><img v-if="row.image" :src="thumb(row.image, 160)" loading="lazy"><span v-else>{{row.name.slice(0,1)}}</span></div>
           <div style="min-width:0"><div class="c-main">{{row.name}}</div>
             <div class="c-sub">{{[row.code && '货号 ' + row.code, row.mnemonic && '助记码 ' + row.mnemonic, row.supplier_name].filter(Boolean).join(' · ') || '—'}}</div></div>
         </div></template></el-table-column>
@@ -1409,4 +1409,5 @@ const App = {
   },
 };
 
-createApp(App).use(ElementPlus, { locale: ElementPlusLocaleZhCn }).mount('#app');
+const app = createApp(App); app.config.globalProperties.thumb = Shouyin.thumb;
+app.use(ElementPlus, { locale: ElementPlusLocaleZhCn }).mount('#app');
