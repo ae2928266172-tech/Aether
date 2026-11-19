@@ -13,15 +13,16 @@ from app.backup import BackupError, backup, db_path_from_env  # noqa: E402
 
 
 def main(argv=None):
-    db = db_path_from_env()
     ap = argparse.ArgumentParser(description="备份收银系统数据库")
-    ap.add_argument("--db", default=db)
-    ap.add_argument("--out", default=os.path.join(os.path.dirname(db), "backups"))
+    ap.add_argument("--db", default=None, help="默认读 DATABASE_URL")
+    ap.add_argument("--out", default=None, help="默认是数据库旁边的 backups 文件夹")
     ap.add_argument("--keep", type=int, default=30, help="每个文件夹保留最近几份（默认 30）")
     ap.add_argument("--media", default=os.environ.get("SHOUYIN_MEDIA"))
     ap.add_argument("--copy-to", action="append", default=[], help="再复制一份到这个文件夹（可写多次）")
     a = ap.parse_args(argv)
     try:
+        a.db = a.db or db_path_from_env()
+        a.out = a.out or os.path.join(os.path.dirname(a.db), "backups")
         r = backup(a.db, a.out, keep=a.keep, media=a.media, copy_to=a.copy_to)
     except (BackupError, OSError) as e:
         print("备份失败：", e)

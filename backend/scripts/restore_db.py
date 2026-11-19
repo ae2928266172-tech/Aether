@@ -36,8 +36,10 @@ def main(argv=None):
                 counts = unpack(src, os.path.join(d, "drill.db"))
             print(f"演练通过：{src} 可以正常恢复")
             print("各表行数：", "，".join(f"{k} {v}" for k, v in counts.items()))
-            target = a.db or db_path_from_env()
-            if os.path.isfile(target):
+            target = a.db
+            if target is None and os.environ.get("DATABASE_URL", "sqlite:///").startswith("sqlite:///"):
+                target = db_path_from_env()
+            if target and os.path.isfile(target):
                 print("当前数据库：", "，".join(f"{k} {v}" for k, v in check(target).items()))
             return 0
         if not a.yes:
