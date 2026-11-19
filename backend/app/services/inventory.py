@@ -331,7 +331,23 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
                              doc_id=doc.id, user_id=user_id)
     db.flush()
     db.refresh(doc)
+    _audit_doc(db, doc, user_id, "库存单据")
     return doc
+
+
+DOC_TEXT = {"in": "入库", "out": "出库", "transfer": "调拨", "adjust": "盘点"}
+
+
+def _audit_doc(db: Session, doc: StockDoc, user_id: int | None, action: str, extra: str = ""):
+    from .. import audit
+    from ..models import Location, StockItem, User
+    loc = lambda i: (db.get(Location, i).name if i else "")
+    where = "→".join(x for x in (loc(doc.from_location_id), loc(doc.to_location_id)) if x)
+    lines = "、".join(f"{db.get(StockItem, l.stock_item_id).name} {audit._plain(D(l.qty))}" for l in doc.lines[:10])
+    more = f" 等 {len(doc.lines)} 项" if len(doc.lines) > 10 else ""
+    audit.record(db, db.get(User, user_id) if user_id else None, action, doc.no,
+                 summary=f"{DOC_TEXT.get(doc.kind, doc.kind)} {where}：{lines}{more}" + extra
+                 + (f"（{doc.remark}）" if doc.remark else ""))
 
 
 def void_doc(db: Session, doc_id: int, user_id: int | None, reason: str = "") -> StockDoc:
@@ -359,6 +375,7 @@ def void_doc(db: Session, doc_id: int, user_id: int | None, reason: str = "") ->
         mv.note = "作废冲回"
     doc.voided_at, doc.voided_by, doc.void_reason = at, user_id, (reason or "").strip()[:200]
     db.flush()
+    _audit_doc(db, doc, user_id, "单据作废", f"；作废原因：{doc.void_reason}")
     return doc
 
 

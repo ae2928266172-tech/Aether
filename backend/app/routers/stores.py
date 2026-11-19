@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..db import get_db, now
 from ..models import Area, Location, StockBalance, StockDoc, StockItem, StockMove, Store, Supplier, User
 from ..security import check_store_access, current_user, has_perm, require, store_stock_access
@@ -58,12 +59,14 @@ def create_store(body: StoreIn, db: Session = Depends(get_db), _: User = Depends
 
 
 @router.put("/stores/{sid}")
-def update_store(sid: int, body: StoreIn, db: Session = Depends(get_db), _: User = Depends(require("stores"))):
+def update_store(sid: int, body: StoreIn, db: Session = Depends(get_db), user: User = Depends(require("stores"))):
     s = db.get(Store, sid)
     if not s:
         raise HTTPException(404, "门店不存在")
+    before = audit.snap(s, audit.STORE_FIELDS)
     for k, v in body.model_dump().items():
         setattr(s, k, v)
+    audit.record(db, user, "门店设置", s.name, before, audit.snap(s, audit.STORE_FIELDS))
     s.location.name = body.name
     s.location.active = body.active
     db.commit()

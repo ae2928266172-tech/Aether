@@ -1247,6 +1247,67 @@ const Shifts = {
   },
 };
 
+// ---------------- 操作日志 ----------------
+const AUDIT_LABEL = { name: '名称', code: '编码', unit: '单位', online_visible: '小程序可见', active: '启用', min_qty: '起订量', max_qty: '限购量',
+  area_limited: '限定区域', reg_cert_no: '注册证号', registrant: '注册人', supplier_id: '供应商', barcode: '条码', price: '售价', cost: '成本',
+  stock_item_id: '扣减库存品', deduct_qty: '扣减量', username: '账号', display_name: '姓名', role_id: '角色编号', min_discount_rate: '最低折扣',
+  max_adjust_amount: '最多可调低', is_admin: '后台角色', permissions: '权限', address: '地址', phone: '电话', staff_can_view_stock: '店员可看库存',
+  staff_can_edit_stock: '店员可改库存', accept_online_orders: '接小程序订单', print_mode: '出票方式', auto_print_online: '小程序单自动出票',
+  auto_print_pos: '收银自动出票', alert_qty: '预警数量', pos_allow_negative: '收银库存不够也能卖', online_allow_negative: '小程序库存不够也能下单',
+  online_deduct_on: '小程序扣库存时机', expiry_alert_days: '临期提醒天数' };
+const AUDIT_MONEY = new Set(['price', 'cost', 'max_adjust_amount']);
+const Audit = {
+  props: ['meta'],
+  template: `
+  <div class="panel">
+    <div class="toolbar">
+      <el-date-picker v-model="q.range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="search" />
+      <el-select v-model="q.action" placeholder="全部操作" clearable style="width:140px" @change="search"><el-option v-for="a in actions" :key="a" :label="a" :value="a" /></el-select>
+      <el-input v-model="q.keyword" placeholder="商品、单号、账号、操作人" clearable style="width:220px" @keyup.enter="search" @clear="search" />
+      <el-button @click="search">查询</el-button>
+      <span class="grow"></span><span class="muted">改价、权限、账号、门店设置、业务规则、库存单据、作废、退款，只能查看不能修改</span>
+    </div>
+    <el-table :data="rows" size="small" v-loading="loading">
+      <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
+        <div v-if="row.summary" style="margin-bottom:6px">{{row.summary}}</div>
+        <el-table v-if="Object.keys(row.changes).length" :data="fmt(row.changes)" size="small" border>
+          <el-table-column prop="k" label="项目" width="200" /><el-table-column prop="b" label="改前" /><el-table-column prop="a" label="改后" />
+        </el-table></div></template></el-table-column>
+      <el-table-column prop="at" label="时间" width="170" />
+      <el-table-column prop="user_name" label="操作人" width="110" />
+      <el-table-column label="操作" width="100"><template #default="{row}"><el-tag size="small" :type="tagType(row.action)">{{row.action}}</el-tag></template></el-table-column>
+      <el-table-column prop="target" label="对象" min-width="140" />
+      <el-table-column label="内容" min-width="300"><template #default="{row}">{{row.summary || (Object.keys(row.changes).length + ' 项改动，展开查看')}}</template></el-table-column>
+    </el-table>
+    <div style="display:flex;justify-content:flex-end;margin-top:12px"><el-pagination layout="total, prev, pager, next" :total="total" :page-size="50" v-model:current-page="page" @current-change="load" /></div>
+  </div>`,
+  setup() {
+    const q = reactive({ range: [daysAgo(29), today()], action: '', keyword: '' }), rows = ref([]), total = ref(0), page = ref(1), actions = ref([]), loading = ref(false);
+    const load = async () => {
+      loading.value = true;
+      try {
+        const r = await api.get('/api/audit-logs', { begin: (q.range || [])[0], end: (q.range || [])[1], action: q.action || undefined, keyword: q.keyword || undefined, page: page.value });
+        rows.value = r.rows; total.value = r.total; actions.value = r.actions;
+      } catch (e) { err(e); } finally { loading.value = false; }
+    };
+    const search = () => { page.value = 1; load(); };
+    const show = (k, v) => {
+      if (v === null || v === undefined || v === '') return '—';
+      if (typeof v === 'boolean') return v ? '是' : '否';
+      if (AUDIT_MONEY.has(k) && typeof v === 'number') return '¥' + yuan(v);
+      if (Array.isArray(v)) return v.length ? v.join('、') : '（无）';
+      return String(v);
+    };
+    const fmt = (ch) => Object.entries(ch).map(([key, [b, a]]) => {
+      const m = /^(规格.+)\.(\w+)$/.exec(key), f = m ? m[2] : key;
+      return { k: (m ? m[1] + ' ' : '') + (AUDIT_LABEL[f] || f), b: show(f, b), a: show(f, a) };
+    });
+    const tagType = (a) => ({ '改价': 'warning', '退款': 'danger', '单据作废': 'danger', '角色权限': 'warning', '账号': 'info' }[a] || '');
+    onMounted(load);
+    return { q, rows, total, page, actions, loading, load, search, fmt, tagType };
+  },
+};
+
 // ---------------- 经营概览 ----------------
 const Dashboard = {
   props: ['meta', 'go'],
@@ -1339,6 +1400,7 @@ const MENU = [
   ['receipt', '小票设置', 'receipt_config', ReceiptSettings, '门店', 'printer', '小票文字、字段、排版、底部图片'],
   ['rules', '业务规则', 'stores', Rules, '门店', 'sliders', '扣库存时机、库存不够能否卖'],
   ['accounts', '账号与权限', 'users', Accounts, '系统', 'users', '角色权限、优惠上限、门店分配'],
+  ['audit', '操作日志', 'users', Audit, '系统', 'list', '谁在什么时候改了价格、权限、库存，作废了什么单、退了什么款'],
 ];
 
 const App = {

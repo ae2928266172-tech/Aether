@@ -407,6 +407,10 @@ def refund(db: Session, order: Order, user: User, lines: list[dict], restock: bo
     order.pay_status = "refunded" if all_back else "partial_refunded"
     log(db, order, "退款", f"退 {amount / 100:.2f} 元" + ("，商品回库存" if restock else "，商品不回库存")
         + (f"，{reason}" if reason else ""), user)
+    from .. import audit
+    audit.record(db, user, "退款", order.no, summary=f"{order.store.name if order.store else ''} 退 {amount / 100:.2f} 元（{PAY_METHODS.get(method, method)}）："
+                 + "、".join(f"{it.product_name}{'·' + it.sku_name if it.sku_name and it.sku_name != '默认' else ''}×{q}" for it, q, _ in rlines)
+                 + ("，商品回库存" if restock else "，商品不回库存") + (f"；原因：{reason}" if reason else ""))
     db.flush()
     db.refresh(rf)
     return rf

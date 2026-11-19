@@ -481,6 +481,19 @@ class OrderLog(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
 
+class AuditLog(Base):
+    """关键操作日志：谁、什么时候、做了什么、改前改后。只增不改。"""
+    __tablename__ = "audit_logs"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
+    user_name: Mapped[str] = mapped_column(String(50), default="")
+    action: Mapped[str] = mapped_column(String(30), index=True)  # 改价、商品修改、角色权限、账号、库存单据、单据作废、退款……
+    target: Mapped[str] = mapped_column(String(100), default="")  # 对象名称，如“杯装水”“一号店”“RK2026…”
+    summary: Mapped[str] = mapped_column(String(500), default="")
+    changes: Mapped[dict] = mapped_column(JSON, default=dict)  # {字段: [改前, 改后]}
+
+
 class PrintJob(Base):
     """打印任务队列（打印小助手模式）。小票内容在取票时按订单当前实际内容生成。"""
     __tablename__ = "print_jobs"
