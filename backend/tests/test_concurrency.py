@@ -137,3 +137,31 @@ def test_double_click_refund_makes_one_refund(live):
     assert [c for c, _ in res] == [200] * N, [r for r in res if r[0] != 200][:3]
     assert len({b["refund"]["id"] for _, b in res}) == 1
     assert admin.get(f"/api/orders/{order['id']}")["refunded_amount"] == 1000
+
+
+def test_print_agent_polling_while_selling(live):
+    """打印小助手轮询（GET 但会写“最后在线时间”、领任务）和收银同时进行，两边都不能报错。"""
+    client, admin, w = live
+    key = admin.post(f"/api/stores/{w['s1']['id']}/printer/key")["print_key"]
+
+    def go(i):
+        if i % 2:
+            r = client.get("/api/print-agent/next", params={"key": key})
+            return r.status_code if r.status_code != 200 else 204
+        return _post(client, admin.token, "/api/pos/checkout", _sale(w))[0]
+    codes = []
+    for _ in range(3):
+        codes += _parallel(go)
+    assert set(codes) <= {200, 204}, [c for c in codes if c not in (200, 204)][:5]
+
+
+def test_double_click_fulfill_requisition(live):
+    client, admin, w = live
+    req = admin.post(f"/api/stores/{w['s1']['id']}/requisitions",
+                     {"lines": [{"stock_item_id": w["cup"]["id"], "qty": 5}], "request_id": uuid.uuid4().hex})
+    wh_before = _stock(admin, w["wh"]["id"], w["cup"]["id"])
+    body = {"from_location_id": w["wh"]["id"], "lines": [{"stock_item_id": w["cup"]["id"], "qty": 5}],
+            "request_id": uuid.uuid4().hex}
+    res = _parallel(lambda i: _post(client, admin.token, f"/api/requisitions/{req['id']}/fulfill", body), n=8)
+    assert [c for c, _ in res] == [200] * 8, [r for r in res if r[0] != 200][:3]
+    assert _stock(admin, w["wh"]["id"], w["cup"]["id"]) == wh_before - 5, "只发一次货"

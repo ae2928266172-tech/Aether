@@ -39,7 +39,9 @@ class MarkWrites:
 
     async def __call__(self, scope, receive, send):
         if scope["type"] == "http":
-            dbmod.writing.set(scope["method"] not in ("GET", "HEAD", "OPTIONS"))
+            # 打印小助手的轮询是 GET，但会写“最后在线时间”、领打印任务，也按写请求处理
+            dbmod.writing.set(scope["method"] not in ("GET", "HEAD", "OPTIONS")
+                              or scope["path"].startswith("/api/print-agent/"))
         await self.app(scope, receive, send)
 
 

@@ -156,13 +156,23 @@ def reject(rid: int, body: RejectIn, db: Session = Depends(get_db), user: User =
 @router.post("/requisitions/{rid}/fulfill")
 def fulfill(rid: int, body: FulfillIn, db: Session = Depends(get_db), user: User = Depends(require("inventory"))):
     """照单调拨：从仓库调到要货门店，数量可以改（0 表示这项不发）。生成一张调拨单。"""
-    if body.request_id:
-        done = db.scalar(select(Requisition).where(Requisition.id == rid))
-        if done and done.status == "done" and done.transfer_doc_id:
-            d = db.get(StockDoc, done.transfer_doc_id)
-            if d and d.request_id == body.request_id:
-                return _out(db, done)
-    r = _get_pending(db, rid)
+    def already_done():
+        if body.request_id:
+            done = db.scalar(select(Requisition).where(Requisition.id == rid))
+            if done and done.status == "done" and done.transfer_doc_id:
+                d = db.get(StockDoc, done.transfer_doc_id)
+                if d and d.request_id == body.request_id:
+                    return done
+    if (done := already_done()):
+        return _out(db, done)
+    try:
+        r = _get_pending(db, rid)
+    except HTTPException:
+        # 双击“发货”：前一次刚在锁里发完，这一次等到锁后看到已发货，返回同一结果而不是报错
+        db.expire_all()
+        if (done := already_done()):
+            return _out(db, done)
+        raise
     src = db.get(Location, body.from_location_id)
     if not src:
         raise HTTPException(400, "调出地点不存在")
