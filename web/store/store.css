@@ -123,3 +123,22 @@ kbd { display: inline-block; font: 600 11px/1 Consolas, "SF Mono", monospace; co
 .pick .pn { font-size: 16px; font-weight: 600; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .pick .ps { color: var(--muted); font-size: 13px; }
 .pick .pp { font-size: 20px; font-weight: 700; margin-top: 6px; }
+
+/* 屏幕键盘 */
+.osk { position: fixed; z-index: 5000; background: #e4e4e7; border-top: 1px solid #d4d4d8; padding: 8px; display: flex; flex-direction: column; gap: 6px;
+  user-select: none; -webkit-user-select: none; touch-action: manipulation; box-shadow: 0 -4px 16px rgba(0,0,0,.08); }
+.osk-full { left: 0; right: 0; bottom: 0; padding: 8px max(8px, calc(50% - 560px)); }
+.osk-num { right: 16px; bottom: 16px; width: 340px; border: 1px solid #d4d4d8; border-radius: 14px; }
+.osk-row { display: flex; gap: 6px; }
+.osk-k { flex: 1; height: 56px; border: 0; border-radius: 8px; background: #fff; color: var(--text); font-size: 22px; font-weight: 600; line-height: 1; font-family: inherit; cursor: pointer;
+  box-shadow: 0 1px 0 #a1a1aa; }
+.osk-k:active { background: #d4d4d8; transform: translateY(1px); box-shadow: none; }
+.osk-full .osk-k { font-size: 18px; text-transform: none; }
+.osk-back, .osk-clear, .osk-hide, .osk-shift { background: #f4f4f5; font-size: 15px; font-weight: 500; }
+.osk-full .osk-back { flex: 1.4; }
+.osk-full .osk-space { flex: 5; }
+.osk-enter { background: var(--primary); color: #fff; font-size: 16px; box-shadow: 0 1px 0 #1e4fbc; }
+.osk-full .osk-enter { flex: 1.6; }
+.osk-enter:active { background: #1e4fbc; }
+body.osk-full-on .ws { padding-bottom: 316px; }
+.osk-set { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
