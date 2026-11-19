@@ -119,7 +119,6 @@ const Pos = {
   template: `
   <div class="ws-body">
     <div class="pos-left">
-      <div class="scan"><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入名称 / 拼音首字母（如 zb 找纸杯）　F1" clearable /></div>
       <div class="cats"><div class="cat" :class="{on: !cat}" @click="cat=null">全部</div>
         <div v-for="c in topCats" :key="c.id" class="cat" :class="{on: cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
       <div class="grid">
@@ -132,7 +131,17 @@ const Pos = {
           <div class="p">¥{{priceText(p)}}</div>
         </div>
       </div>
-      <div class="keys"><span v-for="k in posKeys" :key="k[0]"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
+      <div class="dock">
+        <div class="dock-l">
+          <div class="scan" data-no-osk><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入名称 / 拼音首字母（如 zb 找纸杯）　F1" clearable /></div>
+          <div class="keys"><span v-for="k in posKeys" :key="k[0]"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
+        </div>
+        <div v-if="settings.osk !== 'off'" class="kb" @pointerdown.prevent @mousedown.prevent>
+          <div v-for="(r, i) in KB" :key="i" class="kb-row">
+            <button v-for="k in r" :key="k" type="button" tabindex="-1" class="kb-k" :class="'kb-' + (k.length > 1 ? k : 'c')" :data-k="k" @click="kbPress(k)">{{ {back: '⌫', clear: '清空', enter: '确认'}[k] || k.toUpperCase() }}</button>
+          </div>
+        </div>
+      </div>
     </div>
     <div class="pos-right">
       <div class="cart-head"><b>当前订单</b><span>
@@ -297,6 +306,16 @@ const Pos = {
     const move = (d) => { if (cart.value.length) sel.value = Math.max(0, Math.min(cart.value.length - 1, (sel.value < 0 ? cart.value.length : sel.value) + d)); };
     const bump = (d) => { const l = cart.value[sel.value]; if (!l) return; if (d < 0) dec(sel.value); else l.qty++; };
     const editQty = () => { const el = qtyEls[sel.value]; if (el) { el.focus(); el.select(); } };
+    // 搜索框旁边的固定键盘：只有英文字母和数字，拼音首字母、货号、条码都够用
+    const KB = [['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'], ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
+      ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'back'], ['z', 'x', 'c', 'v', 'b', 'n', 'm', 'clear', 'enter']];
+    const kbPress = (k) => {
+      if (k === 'enter') { scanText.value.trim() ? onScan() : payNow(); }
+      else if (k === 'back') scanText.value = scanText.value.slice(0, -1);
+      else if (k === 'clear') scanText.value = '';
+      else scanText.value += k;
+      if (!payDlg.value) focusScan();
+    };
     const scanCode = (code) => { scanText.value = code; onScan(); focusScan(); };
     const keyMap = {
       F1: () => { focusScan(); scan.value && scan.value.select(); }, F2: payNow, F3: hold,
@@ -357,7 +376,7 @@ const Pos = {
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
-      sel, qtyEls, remarkRef, posKeys: K.POS_KEYS,
+      sel, qtyEls, remarkRef, posKeys: K.POS_KEYS, KB, kbPress,
       // 选规格框：每格 200px 左右，一行最多 4 个
       pickWidth: (n) => Math.min(4, Math.max(2, n)) * 196 + 72 + 'px',
       bg: (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(img) + ')' } : {}), noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
@@ -730,7 +749,7 @@ const App = {
     const settings = reactive({ sound: pref('sound', true), autoPrintOnline: pref('autoPrintOnline', true), autoPrintPos: pref('autoPrintPos', true), osk: pref('osk', 'auto') });
     // 屏幕键盘（触摸屏用）：auto 手指点输入框时弹出，always 一点输入框就弹，off 不用
     const osk = ShouyinOSK.create({ mode: () => settings.osk });
-    const toggleOsk = () => osk.toggle(() => document.querySelector('.scan input') || document.querySelector('.login-card input'));
+    const toggleOsk = () => osk.toggle(() => document.querySelector('.pos-right .sum input') || document.querySelector('.login-card input'));
     watch(() => settings.osk, (v) => { if (v === 'off') osk.hide(); });
     watch(settings, () => Object.entries(settings).forEach(([k, v]) => setPref(k, v)), { deep: true });
     const can = (p) => user.value && user.value.permissions.includes(p);
