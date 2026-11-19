@@ -1,5 +1,6 @@
 // 屏幕键盘：触摸屏收银机用。点输入框弹出——金额、数量（inputmode=decimal/numeric）弹数字键盘，其他弹字母数字键盘。
 // 键盘按钮不抢焦点，按键直接写进当前输入框并触发 input 事件，Vue 的 v-model 照常更新；“确认”等于按回车。
+// 字母键盘默认停在右侧订单栏底部（不挡左边商品区），拖顶部横条可以挪到别处，双击横条回到默认位置。
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
   else root.ShouyinOSK = factory();
@@ -22,17 +23,23 @@
     ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'back'], ['shift', 'z', 'x', 'c', 'v', 'b', 'n', 'm', '-', '.'], ['hide', 'clear', ' ', 'enter']];
   const LABEL = { back: '⌫ 退格', clear: '清空', hide: '收起', enter: '确认', shift: '大写', ' ': '空格' };
 
+  const POS_KEY = 'shouyin.osk.pos';
+  const loadPos = () => { try { const v = JSON.parse(localStorage.getItem(POS_KEY) || 'null'); return v && isFinite(v.x) && isFinite(v.y) ? v : null; } catch (e) { return null; } };
+  const savePos = (v) => { try { v ? localStorage.setItem(POS_KEY, JSON.stringify(v)) : localStorage.removeItem(POS_KEY); } catch (e) {} };
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
   const isNumeric = (el) => /^(decimal|numeric)$/.test(el.getAttribute('inputmode') || '') || el.type === 'number';
   const usable = (el) => !!el && el.tagName === 'INPUT' && !el.readOnly && !el.disabled && /^(text|search|password|tel|number|)$/.test(el.type || '');
 
   function create(opts) {
     const o = Object.assign({ mode: () => 'auto' }, opts || {});
-    let panel = null, target = null, upper = false, lastPointer = 'mouse', forced = false;
+    let panel = null, target = null, upper = false, lastPointer = 'mouse', forced = false, numericNow = false;
 
     function render(numeric) {
       const rows = numeric ? NUM : FULL;
+      numericNow = numeric;
       panel.className = 'osk ' + (numeric ? 'osk-num' : 'osk-full');
-      panel.innerHTML = rows.map(r => '<div class="osk-row">' + r.map(k => {
+      panel.innerHTML = '<div class="osk-bar" title="拖动可移动位置，双击回到默认位置"><i></i></div>' + rows.map(r => '<div class="osk-row">' + r.map(k => {
         let t = LABEL[k] || (upper && /^[a-z]$/.test(k) ? k.toUpperCase() : k);
         if (k === 'shift' && upper) t = '小写';
         return '<button type="button" tabindex="-1" data-k="' + (k === ' ' ? 'space' : k) + '" class="osk-k osk-' + (k === ' ' ? 'space' : /^[a-z0-9.\-]+$/.test(k) && k.length <= 2 ? 'c' : k) + '">' + t + '</button>';
@@ -47,6 +54,7 @@
         panel.addEventListener('pointerdown', (e) => e.preventDefault());
         panel.addEventListener('mousedown', (e) => e.preventDefault());
         panel.addEventListener('click', onClick);
+        panel.addEventListener('pointerdown', dragStart);
         document.body.appendChild(panel);
       }
       const numeric = isNumeric(el);
@@ -54,8 +62,65 @@
       panel.style.display = '';
       document.body.classList.add('osk-on');
       document.body.classList.toggle('osk-full-on', !numeric);
+      place();
     }
-    function hide() { if (panel) panel.style.display = 'none'; document.body.classList.remove('osk-on', 'osk-full-on'); target = null; forced = false; }
+    function hide() { if (panel) panel.style.display = 'none'; document.body.classList.remove('osk-on', 'osk-full-on', 'osk-dock'); target = null; forced = false; }
+
+    // 摆放位置：拖过就用记住的位置；字母键盘没拖过时停靠在右侧订单栏底部，订单栏让出键盘高度；
+    // 没有订单栏的页面（登录等）放在底部居中；数字键盘默认右下角（见 CSS）
+    function place() {
+      if (!panel || panel.style.display === 'none') return;
+      const st = panel.style; st.left = st.top = st.width = st.right = st.bottom = st.transform = '';
+      document.body.classList.remove('osk-dock');
+      const saved = loadPos();
+      if (saved) {
+        st.left = clamp(saved.x, 0, Math.max(0, innerWidth - panel.offsetWidth)) + 'px';
+        st.top = clamp(saved.y, 0, Math.max(0, innerHeight - panel.offsetHeight)) + 'px';
+        st.right = st.bottom = 'auto'; st.transform = 'none'; return;
+      }
+      if (numericNow) return;
+      const side = document.querySelector('.pos-right');
+      if (side && side.offsetParent) {
+        const r = side.getBoundingClientRect();
+        st.left = r.left + 'px'; st.width = r.width + 'px'; st.bottom = '0px'; st.transform = 'none';
+        document.body.style.setProperty('--osk-h', panel.offsetHeight + 'px');
+        document.body.classList.add('osk-dock');
+      }
+    }
+    addEventListener('resize', () => place());
+
+    let drag = null, lastBarDown = 0;
+    function dragStart(e) {
+      if (!e.target.closest('.osk-bar')) return;
+      // 连点两下横条（鼠标双击或手指双击）：回到默认位置
+      if (Date.now() - lastBarDown < 400) { lastBarDown = 0; savePos(null); place(); return; }
+      lastBarDown = Date.now();
+      const r = panel.getBoundingClientRect();
+      drag = { dx: e.clientX - r.left, dy: e.clientY - r.top, x0: r.left, y0: r.top };
+      document.body.classList.remove('osk-dock');
+      const st = panel.style; st.width = r.width + 'px'; st.left = r.left + 'px'; st.top = r.top + 'px'; st.right = st.bottom = 'auto'; st.transform = 'none';
+      try { panel.setPointerCapture(e.pointerId); } catch (err) {}
+      panel.addEventListener('pointermove', dragMove);
+      panel.addEventListener('pointerup', dragEnd);
+      panel.addEventListener('pointercancel', dragEnd);
+    }
+    function dragMove(e) {
+      if (!drag) return;
+      panel.style.left = clamp(e.clientX - drag.dx, 0, innerWidth - panel.offsetWidth) + 'px';
+      panel.style.top = clamp(e.clientY - drag.dy, 0, innerHeight - panel.offsetHeight) + 'px';
+    }
+    function dragEnd() {
+      if (!drag) return;
+      panel.removeEventListener('pointermove', dragMove);
+      panel.removeEventListener('pointerup', dragEnd);
+      panel.removeEventListener('pointercancel', dragEnd);
+      const x = parseFloat(panel.style.left), y = parseFloat(panel.style.top), d = drag;
+      drag = null;
+      if (Math.abs(x - d.x0) < 4 && Math.abs(y - d.y0) < 4) return place();  // 只是点了一下，没拖
+      lastBarDown = 0;
+      panel.style.width = '';
+      savePos({ x, y });
+    }
 
     function fire(el, type, key) {
       el.dispatchEvent(new KeyboardEvent(type, { key, code: key, bubbles: true, cancelable: true }));
