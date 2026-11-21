@@ -38,11 +38,15 @@ class MarkWrites:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            # 打印小助手的轮询是 GET，但会写“最后在线时间”、领打印任务，也按写请求处理
-            dbmod.writing.set(scope["method"] not in ("GET", "HEAD", "OPTIONS")
-                              or scope["path"].startswith("/api/print-agent/"))
-        await self.app(scope, receive, send)
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        # 打印小助手的轮询是 GET，但会写“最后在线时间”、领打印任务，也按写请求处理
+        token = dbmod.writing.set(scope["method"] not in ("GET", "HEAD", "OPTIONS")
+                                  or scope["path"].startswith("/api/print-agent/"))
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            dbmod.writing.reset(token)
 
 
 app.add_middleware(MarkWrites)

@@ -43,6 +43,21 @@ def _move(src: str, dst: str) -> None:
         shutil.move(src, dst)
 
 
+def _snapshot(db: str, dest: str) -> None:
+    """把数据库完整另存一份。数据库是 WAL 模式时，最近的改动可能还在 -wal 文件里，直接复制主文件会漏掉，
+    所以用 SQLite 的备份接口拷；打不开（文件已坏）时退回直接复制。"""
+    try:
+        src = sqlite3.connect(db, timeout=30)
+        dst = sqlite3.connect(dest)
+        try:
+            src.backup(dst)
+            dst.execute("PRAGMA journal_mode=DELETE")
+        finally:
+            dst.close(); src.close()
+    except sqlite3.Error:
+        shutil.copyfile(db, dest)
+
+
 def check(path: str) -> dict:
     """完整性检查，返回主要表的行数。坏库抛 BackupError。"""
     try:
@@ -82,6 +97,7 @@ def backup(db: str, out_dir: str, keep: int = 30, media: str | None = None,
         dst = sqlite3.connect(raw)
         try:
             src.backup(dst)
+            dst.execute("PRAGMA journal_mode=DELETE")  # 备份文件本身做成单文件模式，不带 -wal/-shm
         finally:
             dst.close(); src.close()
         counts = check(raw)
@@ -171,7 +187,7 @@ def restore(backup_file: str, target: str) -> dict:
     saved = None
     if os.path.exists(target):
         saved = target + ".before-restore-" + datetime.now().strftime("%Y%m%d-%H%M%S")
-        shutil.copyfile(target, saved)
+        _snapshot(target, saved)
     for side in ("-wal", "-shm", "-journal"):  # 旧库的日志文件不能留给新库用
         if os.path.exists(target + side):
             os.remove(target + side)
