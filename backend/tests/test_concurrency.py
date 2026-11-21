@@ -209,3 +209,12 @@ def test_first_stock_in_from_many_requests(live):
     _moves_consistent(admin, loc, item)
     batches = admin.get("/api/stock-batches", location_id=loc, stock_item_id=item)
     assert [(b["batch_no"], b["qty"]) for b in batches] == [("M1", 3 * N)]
+
+
+def test_double_click_open_shift(live):
+    """两台机器（或连点）同时开班：只开出一班，大家拿到的是同一班。"""
+    client, admin, w = live
+    body = {"store_id": w["s1"]["id"], "opening_cash": 20000}
+    res = _parallel(lambda i: _post(client, w["clerk"].token, "/api/shifts/open", body))
+    assert [c for c, _ in res] == [200] * N, [r for r in res if r[0] != 200][:3]
+    assert len({b["id"] for _, b in res}) == 1
