@@ -64,3 +64,17 @@ def test_merge_script(admin, world, capsys):
     out = capsys.readouterr().out
     assert "已合并 凡士林纱布：保留“10*10cm”（库存 4）" in out
     assert [s["name"] for s in admin.get(f"/api/products/{p['id']}")["skus"]] == ["10*10cm", "5x5"]
+
+
+def test_norm_name_real_gauze_names():
+    from app.services.skus import norm_name
+    # 2026-11-22 线上“灭菌脱脂纱布叠片”的实际写法
+    assert norm_name("10*10cm*8 5p") == norm_name("10*10*cm8 *5P") == "10*10*8*5p"
+    assert norm_name("5*7*8cm*5P") == norm_name("5*7*8 5p") == "5*7*8*5p"
+    assert norm_name("7.5cm*7.5cm*8") == "7.5*7.5*8"
+    assert norm_name("7.5*7.5cm*8*5P") == "7.5*7.5*8*5p"
+    assert norm_name("75*75*8") != norm_name("7.5*7.5*8")
+    assert norm_name("10cm*6m") != norm_name("8cm*6m")
+    assert norm_name("10x10") == norm_name("10*10 ") == norm_name("10×10厘米") == norm_name("(10*10)")
+    assert norm_name("规格 A") == norm_name("规格A")
+    assert norm_name("5片装") == norm_name("5P")
