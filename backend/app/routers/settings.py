@@ -85,6 +85,13 @@ def put_rules(body: dict, db: Session = Depends(get_db), user: User = Depends(re
             raise HTTPException(400, "临期提醒天数请填整数")
         if not 0 <= body["expiry_alert_days"] <= 3650:
             raise HTTPException(400, "临期提醒天数要在 0 到 3650 之间")
+    if "refund_days" in body:
+        try:
+            body["refund_days"] = int(body["refund_days"])
+        except (TypeError, ValueError):
+            raise HTTPException(400, "退款期限天数请填整数")
+        if not 0 <= body["refund_days"] <= 3650:
+            raise HTTPException(400, "退款期限天数要在 0 到 3650 之间（0 表示不限）")
     if "public_url" in body:
         body["public_url"] = str(body["public_url"] or "").strip().rstrip("/")
         if body["public_url"] and not body["public_url"].startswith(("http://", "https://")):

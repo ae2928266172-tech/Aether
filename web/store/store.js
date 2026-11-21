@@ -546,6 +546,7 @@ const Orders = {
         <div style="display:flex;flex-wrap:wrap;gap:8px">
           <el-button v-if="cur.status==='pending' && can('orders')" type="primary" @click="act('accept')">接单</el-button>
           <el-button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" type="success" @click="payDlg=true">收款</el-button>
+          <el-button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" @click="openModify">修改订单</el-button>
           <el-button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" type="danger" plain @click="cancel">取消订单</el-button>
           <el-button v-if="['paid','partial_refunded'].includes(cur.pay_status) && can('refund')" type="warning" @click="openRefund">退货退款</el-button>
           <el-button @click="print">{{cur.print_count ? '补打小票' : '打印小票'}}</el-button>
@@ -554,6 +555,24 @@ const Orders = {
       </div>
     </el-drawer>
     <pay-dialog v-model="payDlg" :user="user" :lines="curLines" title="订单收款" @pay="collect" />
+    <el-dialog v-model="mDlg" title="修改订单" width="640px" top="6vh">
+      <div class="muted" style="margin-bottom:10px">可以改规格、改数量、去掉或添加商品，保存后库存和应收自动调整，不用取消重下。数量改成 0 即去掉该商品。</div>
+      <el-table :data="mLines" border size="small">
+        <el-table-column label="商品"><template #default="{row}">{{row.name}}</template></el-table-column>
+        <el-table-column label="规格" width="190"><template #default="{row}">
+          <el-select v-if="row.skus.length > 1" v-model="row.sku_id" size="small" style="width:170px"><el-option v-for="k in row.skus" :key="k.id" :label="k.name + '　¥' + yuan(k.price)" :value="k.id" /></el-select>
+          <span v-else>{{row.skus.length ? (row.skus[0].name === '默认' ? '—' : row.skus[0].name) : row.sku_name}}</span></template></el-table-column>
+        <el-table-column label="数量" width="140"><template #default="{row}"><el-input-number v-model="row.qty" :min="0" size="small" style="width:116px" /></template></el-table-column>
+        <el-table-column label="小计" width="80" align="right"><template #default="{row}">{{yuan(mPrice(row) * row.qty)}}</template></el-table-column>
+      </el-table>
+      <div style="display:flex;gap:8px;align-items:center;margin-top:10px">
+        <el-select v-model="mAdd" filterable :filter-method="v => (mKw = v)" placeholder="添加商品：输入名称或拼音首字母" style="flex:1" @change="addLine">
+          <el-option v-for="o in mOptions" :key="o.id" :label="o.label" :value="o.id" />
+        </el-select>
+      </div>
+      <el-form label-width="60px" style="margin-top:12px"><el-form-item label="原因"><el-input v-model="mReason" placeholder="可不填，如：顾客要换尺码" /></el-form-item></el-form>
+      <template #footer><span style="float:left;line-height:32px">修改后应收 <b>¥{{yuan(mTotal)}}</b></span><el-button @click="mDlg=false">取消</el-button><el-button type="primary" :loading="mBusy" @click="doModify">保存修改</el-button></template>
+    </el-dialog>
     <el-dialog v-model="rDlg" title="退货退款" width="560px">
       <el-table :data="rLines" border size="small">
         <el-table-column prop="name" label="商品" />
@@ -600,6 +619,42 @@ const Orders = {
       Object.assign(rf, { method: pay ? pay.method : 'cash', restock: true, reason: '', rid: rid() });
       rDlg.value = true;
     };
+    // 修改订单（未收款）：改规格 / 数量、去掉或添加商品
+    const mDlg = ref(false), mLines = ref([]), mReason = ref(''), mBusy = ref(false), mAdd = ref(null), mKw = ref('');
+    let prods = [];
+    const prodOf = (sid) => prods.find(p => p.skus.some(k => k.id === sid));
+    const mPrice = (l) => { const k = l.skus.find(k => k.id === l.sku_id); return k ? k.price : l.price; };
+    const mTotal = computed(() => mLines.value.reduce((a, l) => a + mPrice(l) * l.qty, 0));
+    const mOptions = computed(() => {
+      const k = mKw.value.trim().toLowerCase(); if (!k) return [];
+      const out = [];
+      for (const p of prods) {
+        if (!(p.name.toLowerCase().includes(k) || (p.mnemonic || '').includes(k) || (p.code || '').toLowerCase().includes(k))) continue;
+        for (const s of p.skus) out.push({ id: s.id, label: p.name + (s.name !== '默认' ? '（' + s.name + '）' : '') + '　¥' + yuan(s.price) });
+        if (out.length > 50) break;
+      }
+      return out;
+    });
+    const openModify = async () => {
+      try { if (!prods.length) prods = (await api.get('/api/products')).filter(p => p.skus.length); } catch (e) { return err(e); }
+      mLines.value = cur.value.items.map(i => { const p = prodOf(i.sku_id);
+        return { name: i.product_name, sku_name: i.sku_name, sku_id: i.sku_id, qty: i.qty, price: i.unit_price, skus: p ? p.skus : [] }; });
+      mReason.value = ''; mAdd.value = null; mKw.value = ''; mDlg.value = true;
+    };
+    const addLine = (sid) => {
+      mAdd.value = null; mKw.value = '';
+      const ex = mLines.value.find(l => l.sku_id === sid); if (ex) { ex.qty++; return; }
+      const p = prodOf(sid); if (!p) return;
+      mLines.value.push({ name: p.name, sku_name: '', sku_id: sid, qty: 1, price: 0, skus: p.skus });
+    };
+    const doModify = async () => {
+      const lines = mLines.value.filter(l => l.qty > 0).map(l => ({ sku_id: l.sku_id, qty: l.qty }));
+      if (!lines.length) return ElMessage.warning('至少保留一件商品；全部不要了请点“取消订单”');
+      if (mBusy.value) return;
+      mBusy.value = true;
+      try { await api.post('/api/orders/' + cur.value.id + '/modify', { lines, reason: mReason.value }); mDlg.value = false; await refresh(); ElMessage.success('订单已修改'); }
+      catch (e) { err(e); } finally { mBusy.value = false; }
+    };
     const doRefund = async () => {
       const lines = rLines.value.filter(l => l.qty > 0).map(l => ({ order_item_id: l.id, qty: l.qty }));
       if (!lines.length) return ElMessage.warning('请填写退货数量');
@@ -611,7 +666,8 @@ const Orders = {
     const refundAll = () => rLines.value.forEach(l => { l.qty = l.max; });
     const print = async () => { try { await printOrder(cur.value.id, cur.value.print_count > 0); } catch (e) { err(e); } try { await refresh(); } catch (e) {} };
     onMounted(load);
-    return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy, print, yuan, methods: METHODS };
+    return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy,
+      mDlg, mLines, mReason, mBusy, mAdd, mKw, mPrice, mTotal, mOptions, openModify, addLine, doModify, print, yuan, methods: METHODS };
   },
 };
 

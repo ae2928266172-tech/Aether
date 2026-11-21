@@ -185,6 +185,20 @@ def cancel(oid: int, body: CancelIn, db: Session = Depends(get_db), user: User =
     return order_out(o)
 
 
+class ModifyIn(BaseModel):
+    lines: list[LineIn]
+    reason: str = ""
+
+
+@router.post("/orders/{oid}/modify")
+def modify(oid: int, body: ModifyIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
+    o = _load(db, oid, user, lock=True)
+    svc.modify(db, o, user, [l.model_dump() for l in body.lines], body.reason)
+    db.commit()
+    db.refresh(o)
+    return order_out(o)
+
+
 class RefundLineIn(BaseModel):
     order_item_id: int
     qty: int

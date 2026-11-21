@@ -8,6 +8,7 @@
 """
 import uuid
 from collections import defaultdict
+from datetime import timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
@@ -115,8 +116,8 @@ def apply_pricing(order: Order, user: User | None, discount_rate: int | None, pa
     if discount_rate is not None and discount_rate != 100:
         if user is None or not has_perm(user, "discount"):
             raise HTTPException(403, "没有打折权限")
-        if not (1 <= discount_rate < 100):
-            raise HTTPException(400, "折扣须在 0.1 折到 9.9 折之间")
+        if not (0 <= discount_rate < 100):
+            raise HTTPException(400, "折扣须在 0 折到 9.9 折之间")
         order.discount_rate = discount_rate
         target = int((Decimal(original) * discount_rate / 100).quantize(Decimal(1), rounding="ROUND_HALF_UP"))
     if payable is not None and payable != target:
@@ -130,8 +131,9 @@ def apply_pricing(order: Order, user: User | None, discount_rate: int | None, pa
         if max_adjust is not None and target - payable > max_adjust:
             raise HTTPException(403, f"你的权限单笔最多调低 {max_adjust / 100:.2f} 元")
         target = payable
-    if user is not None and target < original:
-        min_rate = discount_limits(user)[0]
+    min_rate = discount_limits(user)[0] if user is not None else 1
+    # 最低折扣 1（0.1 折）及以下表示“折扣不限”：可以一直打到 0 元（2026-11-21 Aether 确认）
+    if user is not None and target < original and min_rate > 1:
         floor = -(-original * min_rate // 100)  # 向上取整
         if target < floor:
             raise HTTPException(403, f"你的权限最低只能打 {min_rate / 10:g} 折，本单应收不能低于 {floor / 100:.2f} 元")
@@ -343,6 +345,57 @@ def cancel(db: Session, order: Order, user: User | None, reason: str = "", by_cu
     return order
 
 
+def modify(db: Session, order: Order, user: User, lines: list[dict], reason: str = "") -> Order:
+    """改单：未收款的订单直接改商品（减数量、删商品、换规格、加商品），不用取消再重新下单。
+
+    lines 是改完后的完整商品清单 [{sku_id, qty}]。已扣过库存的，先按原订单全部退回，再按新清单重新扣，
+    批次 / 成本跟着走，不会重复扣减。已收款的订单不能改，请走退货退款。
+    """
+    if order.status == "cancelled":
+        raise HTTPException(409, "订单已取消，不能修改")
+    if order.pay_status != "unpaid":
+        raise HTTPException(409, "订单已收款，不能修改；要退部分商品请用“退货退款”")
+    lines = [ln for ln in lines if int(ln["qty"]) > 0]
+    if not lines:
+        raise HTTPException(400, "订单里至少要留一件商品；全部不要了请取消订单")
+    old = {}
+    for i in order.items:
+        old[i.sku_id] = old.get(i.sku_id, 0) + i.qty
+    new_items = build_items(db, lines, online=False)
+    new = {i.sku_id: i.qty for i in new_items}
+    if old == new:
+        raise HTTPException(400, "订单没有变化")
+    rules = get_setting(db, "rules")
+    was_deducted = order.stock_deducted
+    if was_deducted:
+        restore_stock(db, order, {i.id: i.qty for i in order.items}, user)
+        order.stock_deducted = False
+    names = {}
+    for i in order.items:
+        names[i.sku_id] = i.product_name + ("·" + i.sku_name if i.sku_name and i.sku_name != "默认" else "")
+        db.delete(i)
+    db.flush()
+    order.items = new_items
+    for i in new_items:
+        names[i.sku_id] = i.product_name + ("·" + i.sku_name if i.sku_name and i.sku_name != "默认" else "")
+    apply_pricing(order, None, None, None)
+    db.flush()
+    if was_deducted:
+        deduct_stock(db, order, rules["online_allow_negative"] if order.source == "online"
+                     else rules["pos_allow_negative"], user)
+    changes = []
+    for sid in list(old) + [s for s in new if s not in old]:
+        a, b = old.get(sid, 0), new.get(sid, 0)
+        if a != b:
+            changes.append(f"{names[sid]} {a}→{b}" if a and b else (f"去掉 {names[sid]}×{a}" if a else f"加 {names[sid]}×{b}"))
+    detail = "；".join(changes) + f"；应收 {order.payable_amount / 100:.2f}" + (f"；{reason}" if reason else "")
+    log(db, order, "改单", detail, user)
+    from .. import audit
+    audit.record(db, user, "改单", order.no, summary=detail)
+    db.flush()
+    return order
+
+
 def refund(db: Session, order: Order, user: User, lines: list[dict], restock: bool = True,
            method: str | None = None, reason: str = "", amount: int | None = None,
            request_id: str | None = None) -> Refund:
@@ -355,6 +408,9 @@ def refund(db: Session, order: Order, user: User, lines: list[dict], restock: bo
         return exist
     if order.pay_status not in ("paid", "partial_refunded"):
         raise HTTPException(409, "订单未收款或已全额退款，不能退款")
+    days = int(get_setting(db, "rules").get("refund_days") or 0)
+    if days and not user.role.is_admin and order.paid_at and now() - order.paid_at > timedelta(days=days):
+        raise HTTPException(403, f"超过 {days} 天的订单不能退款，请联系管理员")
     items = {i.id: i for i in order.items}
     refunded_amt_by_item = dict(db.execute(
         select(RefundLine.order_item_id, func.sum(RefundLine.amount))
