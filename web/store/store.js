@@ -851,7 +851,7 @@ const App = {
       </el-popover>
       <a v-if="user.is_admin" class="link" href="/web/admin/" target="_blank">后台管理</a>
       <div class="who"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span>{{user.display_name || user.username}}</span></div>
-      <el-button link @click="changePw">改密码</el-button>
+      <el-button link @click="changePw">修改密码</el-button>
       <el-button link @click="logout">退出</el-button>
     </div>
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
@@ -923,14 +923,14 @@ const App = {
         const [st, me] = await Promise.all([api.get('/api/stores'), api.get('/api/auth/me')]);
         stores.value = st; user.value = me;
         syncN.value++; tick.value++; poll();
-        ElMessage.success('已同步最新商品、价格和设置');
+        ElMessage.success('已同步');
       } catch (e) { err(e); } finally { syncing.value = false; }
     };
     const login = async () => {
       busy.value = true;
       try {
         const r = await api.post('/api/auth/login', lf); api.setToken(r.token); user.value = r.user; await afterLogin();
-        if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，请点右上角“改密码”修改' });
+        if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，请点右上角“修改密码”修改' });
       } catch (e) { err(e); } finally { busy.value = false; }
     };
     const logout = () => { api.setToken(''); user.value = null; clearInterval(timer); };
