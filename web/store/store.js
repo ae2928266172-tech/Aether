@@ -545,6 +545,8 @@ const Orders = {
           <el-table-column prop="qty" label="数量" width="60" />
           <el-table-column label="金额" width="80"><template #default="{row}">{{yuan(row.amount)}}</template></el-table-column>
           <el-table-column prop="refunded_qty" label="已退" width="60" />
+          <el-table-column v-if="['paid','partial_refunded'].includes(cur.pay_status) && can('orders')" label="" width="96" align="center">
+            <template #default="{row}"><el-button v-if="row.qty > row.refunded_qty" size="small" @click="openExchange(row)">换规格</el-button></template></el-table-column>
         </el-table>
         <div style="margin:10px 0;text-align:right">商品 ¥{{yuan(cur.original_amount)}}<span v-if="cur.discount_amount">　优惠 −¥{{yuan(cur.discount_amount)}}</span>　应收 <b>¥{{yuan(cur.payable_amount)}}</b><span v-if="cur.refunded_amount">　已退 ¥{{yuan(cur.refunded_amount)}}</span></div>
         <div style="display:flex;flex-wrap:wrap;gap:8px">
@@ -576,6 +578,20 @@ const Orders = {
       </div>
       <el-form label-width="60px" style="margin-top:12px"><el-form-item label="原因"><el-input v-model="mReason" placeholder="可不填，如：顾客要换尺码" /></el-form-item></el-form>
       <template #footer><span style="float:left;line-height:32px">修改后应收 <b>¥{{yuan(mTotal)}}</b></span><el-button @click="mDlg=false">取消</el-button><el-button type="primary" :loading="mBusy" @click="doModify">保存修改</el-button></template>
+    </el-dialog>
+    <el-dialog v-model="xDlg" title="换规格" width="520px">
+      <div v-if="xRow" style="margin-bottom:12px">{{xRow.product_name}}　原规格：<b>{{xRow.sku_name}}</b>　¥{{yuan(xRow.unit_price)}}</div>
+      <el-form label-width="72px">
+        <el-form-item label="换成"><el-radio-group v-model="x.sku_id" class="x-skus">
+          <el-radio-button v-for="k in xSkus" :key="k.id" :value="k.id">{{k.name}}　¥{{yuan(k.price)}}</el-radio-button></el-radio-group>
+          <div v-if="!xSkus.length" class="muted">这个商品没有其他规格可换</div></el-form-item>
+        <el-form-item label="件数"><el-input-number v-model="x.qty" :min="1" :max="xRow ? xRow.qty - xRow.refunded_qty : 1" /></el-form-item>
+        <el-form-item v-if="xDiff" :label="xDiff > 0 ? '补收方式' : '退款方式'"><el-select v-model="x.method" style="width:140px"><el-option v-for="(t,k) in methods" :key="k" :label="t" :value="k" /></el-select></el-form-item>
+        <el-form-item label="原因"><el-input v-model="x.reason" placeholder="可不填，如：M 码换 L 码" /></el-form-item>
+      </el-form>
+      <div class="muted">原规格自动退回本店库存，新规格从库存扣减。</div>
+      <template #footer><span style="float:left;line-height:32px"><template v-if="xDiff > 0">需补收 <b>¥{{yuan(xDiff)}}</b></template><template v-else-if="xDiff < 0">需退还 <b>¥{{yuan(-xDiff)}}</b></template><template v-else>价格相同，无需补差价</template></span>
+        <el-button @click="xDlg=false">取消</el-button><el-button type="primary" :loading="xBusy" :disabled="!x.sku_id" @click="doExchange">确认换规格</el-button></template>
     </el-dialog>
     <el-dialog v-model="rDlg" title="退货退款" width="560px">
       <el-table :data="rLines" border size="small">
@@ -659,6 +675,23 @@ const Orders = {
       try { await api.post('/api/orders/' + cur.value.id + '/modify', { lines, reason: mReason.value }); mDlg.value = false; await refresh(); ElMessage.success('订单已修改'); }
       catch (e) { err(e); } finally { mBusy.value = false; }
     };
+    // 已收款订单换规格（如 M 码换 L 码）：原规格退回库存、新规格扣库存，有差价补收 / 退还
+    const xDlg = ref(false), xRow = ref(null), xSkus = ref([]), xBusy = ref(false), x = reactive({ sku_id: null, qty: 1, method: 'cash', reason: '' });
+    const xDiff = computed(() => { const k = xSkus.value.find(k => k.id === x.sku_id); return k && xRow.value ? (k.price - xRow.value.unit_price) * x.qty : 0; });
+    const openExchange = async (row) => {
+      try { if (!prods.length) prods = (await api.get('/api/products')).filter(p => p.skus.length); } catch (e) { return err(e); }
+      const p = prodOf(row.sku_id);
+      xRow.value = row; xSkus.value = p ? p.skus.filter(k => k.id !== row.sku_id) : [];
+      const pay = cur.value.payments.find(p => p.kind === 'pay');
+      Object.assign(x, { sku_id: xSkus.value.length === 1 ? xSkus.value[0].id : null, qty: row.qty - row.refunded_qty, method: pay ? pay.method : 'cash', reason: '' });
+      xDlg.value = true;
+    };
+    const doExchange = async () => {
+      if (xBusy.value) return;
+      xBusy.value = true;
+      try { await api.post('/api/orders/' + cur.value.id + '/exchange', { order_item_id: xRow.value.id, sku_id: x.sku_id, qty: x.qty, method: x.method, reason: x.reason });
+        xDlg.value = false; await refresh(); ElMessage.success('已换规格，库存已调整'); } catch (e) { err(e); } finally { xBusy.value = false; }
+    };
     const doRefund = async () => {
       const lines = rLines.value.filter(l => l.qty > 0).map(l => ({ order_item_id: l.id, qty: l.qty }));
       if (!lines.length) return ElMessage.warning('请填写退货数量');
@@ -671,6 +704,7 @@ const Orders = {
     const print = async () => { try { await printOrder(cur.value.id, cur.value.print_count > 0); } catch (e) { err(e); } try { await refresh(); } catch (e) {} };
     onMounted(load);
     return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy,
+      xDlg, xRow, xSkus, xBusy, x, xDiff, openExchange, doExchange,
       mDlg, mLines, mReason, mBusy, mAdd, mKw, mPrice, mTotal, mOptions, openModify, addLine, doModify, print, yuan, methods: METHODS };
   },
 };
