@@ -40,12 +40,18 @@ def sort_skus(skus):
 
 
 def norm_name(name: str) -> str:
-    """把写法不同但意思一样的规格名归成一样：全角半角、大小写、空格、× * x、括号、cm、横杠。"""
+    """把写法不同但意思一样的规格名归成一样：全角半角、大小写、空格、× * x、括号、cm、片/P。
+
+    例：“10*10cm*8 5p”“10*10*cm8 *5P”都归成 10*10*8*5p；数字之间的空格当作分隔，小数点保留。
+    """
     s = unicodedata.normalize("NFKC", name or "").lower()
+    s = s.replace("厘米", "cm").replace("片装", "片").replace("片/包", "片").replace("片", "p").replace("cm", "")
+    s = re.sub(r"(?<=\d)\s*[×x＊]\s*(?=\d)", "*", s)
+    s = re.sub(r"[()\[\]【】{}\-_—~～·,，、:：/]", " ", s)
+    s = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", s)
+    s = re.sub(r"(?<=\d)\s+(?=\d)", "*", s)
     s = re.sub(r"\s+", "", s)
-    s = re.sub(r"(?<=\d)[×xX*＊](?=\d)", "*", s)
-    s = s.replace("厘米", "cm").replace("cm", "").replace("片装", "片").replace("片/包", "片")
-    s = re.sub(r"[()\[\]【】{}\-_—~～·.,，、:：/]", "", s)
+    s = re.sub(r"\*+", "*", s).strip("*")
     return s
 
 
