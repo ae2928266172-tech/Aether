@@ -362,3 +362,33 @@ async def upload(file: UploadFile = File(...), user: User = Depends(current_user
     with open(os.path.join(MEDIA_DIR, name), "wb") as f:
         f.write(data)
     return {"url": "/media/" + name}
+
+
+# ---------------- 规格整理：找写法不同的重复规格、合并 ----------------
+
+@router.get("/sku-duplicates")
+def sku_duplicates(db: Session = Depends(get_db), _: User = Depends(require("catalog"))):
+    """同一商品里写法不同、意思一样的规格（如“10x10cm”和“10*10”），给后台确认后合并。"""
+    from ..services.skus import duplicate_groups
+    return duplicate_groups(db)
+
+
+class SkuMergeIn(BaseModel):
+    keep_id: int
+    drop_ids: list[int] = Field(min_length=1)
+
+
+@router.post("/skus/merge")
+def merge_skus(body: SkuMergeIn, db: Session = Depends(get_db), user: User = Depends(require("catalog"))):
+    """把 drop_ids 这几个规格并入 keep_id：库存相加，批次、历史订单跟着走，被并的规格删除。"""
+    from ..services import skus as svc
+    keep = db.get(Sku, body.keep_id)
+    if not keep:
+        raise HTTPException(404, "规格不存在")
+    for did in body.drop_ids:
+        drop = db.get(Sku, did)
+        if not drop:
+            raise HTTPException(404, "规格不存在")
+        keep = svc.merge(db, keep, drop, user)
+    db.commit()
+    return product_out(db.get(Product, keep.product_id))
