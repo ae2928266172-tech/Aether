@@ -386,7 +386,11 @@ const Pos = {
           payable: p.payable, remark: remark.value, request_id: reqId });
       } catch (e) { return err(e); }
       // 到这里收款已经成功。后面的提示音、打印出错都不能让店员误以为没收到钱
-      reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount; payDlg.value = false; doneDlg.value = true; clear();
+      reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount; payDlg.value = false; clear();
+      // 收款成功只在顶部提示，不弹框、不用点；现金有找零时提示停留久一点（要补打小票点右侧“补打小票”或按 F8）
+      ElMessage({ type: 'success', duration: p.change ? 6000 : 2500, showClose: !!p.change,
+        message: '收款成功　应收 ¥' + yuan(o.payable_amount) + (lastReceived.value !== o.payable_amount ? '　实收 ¥' + yuan(lastReceived.value) : '') + (p.change ? '　找零 ¥' + yuan(p.change) : '') });
+      setTimeout(focusScan, 350);  // 收款框关闭动画结束后回到搜索框，接着扫下一单
       if (props.settings.sound) { beep(1); speak('收款成功，' + yuan(o.payable_amount) + '元' + (p.change ? '，找零' + yuan(p.change) + '元' : '')); }
       if (deskInfo && deskInfo.drawer && p.payments.some(x => x.method === 'cash')) openDrawer(true);
       if (props.settings.autoPrintPos && !props.agent && canPrintHere()) {
