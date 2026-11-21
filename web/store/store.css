@@ -248,3 +248,5 @@ body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyh
 @media (max-width: 1440px) { .ws-top .clock, .ws-top .clock + .tb-sep { display: none; } }
 @media (max-width: 1280px) { .ws-top .tb .ico { display: none; } .ws-top .tb { padding: 0 10px; } .ws-top .store { min-width: 0; } }
 @media (max-width: 1120px) { .ws-top .who span:last-child { display: none; } }
+.x-skus { display: flex; flex-wrap: wrap; gap: 6px; }
+.x-skus .el-radio-button__inner { border-left: var(--el-border) !important; border-radius: 6px !important; }

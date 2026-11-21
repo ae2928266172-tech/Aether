@@ -199,6 +199,23 @@ def modify(oid: int, body: ModifyIn, db: Session = Depends(get_db), user: User =
     return order_out(o)
 
 
+class ExchangeIn(BaseModel):
+    order_item_id: int
+    sku_id: int
+    qty: int = Field(gt=0)
+    method: str | None = None
+    reason: str = ""
+
+
+@router.post("/orders/{oid}/exchange")
+def exchange(oid: int, body: ExchangeIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
+    o = _load(db, oid, user, lock=True)
+    svc.exchange(db, o, user, body.order_item_id, body.sku_id, body.qty, body.method, body.reason)
+    db.commit()
+    db.refresh(o)
+    return order_out(o)
+
+
 class RefundLineIn(BaseModel):
     order_item_id: int
     qty: int
