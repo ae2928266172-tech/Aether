@@ -15,11 +15,17 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .ws-top .grow { flex: 1; }
 .ws-top .badge { position: absolute; top: -5px; right: -5px; background: var(--danger); color: #fff; font-size: 11px; border-radius: 9px;
   padding: 0 6px; line-height: 18px; font-weight: 600; animation: pulse 1.6s infinite; }
-.ws-top .clock { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 13px; display: flex; align-items: center; gap: 6px; }
-.ws-top .clock .ico svg { width: 16px; height: 16px; }
-.ws-top .who { display: flex; align-items: center; gap: 8px; color: var(--text-2); font-size: 14px; }
-.ws-top .ghost { }
-.ws-top .link { color: var(--text-2); font-size: 13px; }
+/* 右上角工具栏：时间 | 同步 本机设置 后台管理 | 账号 修改密码 退出，统一成同一种图标 + 文字按钮，高度、字号、间距一致 */
+.ws-top .tools { display: flex; align-items: center; gap: 4px; }
+.ws-top .clock { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; display: flex; align-items: center; gap: 6px; padding: 0 8px; white-space: nowrap; }
+.ws-top .tb-sep { width: 1px; height: 20px; background: var(--border); margin: 0 8px; flex-shrink: 0; }
+.ws-top .tb { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--text-2); font: inherit; font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer; text-decoration: none; white-space: nowrap; }
+.ws-top .tb:hover { background: var(--hover); color: var(--text); }
+.ws-top .tb:disabled { cursor: default; }
+.ws-top .tb.busy .ico svg { animation: spin 0.8s linear infinite; }
+.ws-top .who { display: flex; align-items: center; gap: 8px; color: var(--text); font-size: 14px; font-weight: 500; padding: 0 8px 0 4px; white-space: nowrap; }
+@keyframes spin { to { transform: rotate(360deg); } }
 @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.15); } }
 .ws-body { flex: 1; overflow: hidden; display: flex; }
 /* 收银页（触摸屏）：左侧分类竖栏 + 中间商品 + 右侧订单 */
@@ -161,7 +167,7 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
   .ws-body { flex-direction: column; overflow: auto; }
   .rail { width: 100%; flex-direction: row; overflow-x: auto; }
   .pos-right { width: 100%; }
-  .ws-top .clock, .ws-top .who span:last-child { display: none; }
+  .ws-top .clock, .ws-top .clock + .tb-sep, .ws-top .who span:last-child { display: none; }
 }
 .held { display: flex; align-items: center; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .shift-sum { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
