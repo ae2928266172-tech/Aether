@@ -244,3 +244,7 @@ body.osk-dock .pos-right { padding-bottom: var(--osk-h, 0px); }
 
 /* 键盘快捷键提示：触摸屏默认隐藏，本机设置可打开 */
 body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyhint { display: none !important; }
+/* 窄屏时顶栏不挤出屏幕：先省时间，再省按钮图标，最后省账号名 */
+@media (max-width: 1440px) { .ws-top .clock, .ws-top .clock + .tb-sep { display: none; } }
+@media (max-width: 1280px) { .ws-top .tb .ico { display: none; } .ws-top .tb { padding: 0 10px; } .ws-top .store { min-width: 0; } }
+@media (max-width: 1120px) { .ws-top .who span:last-child { display: none; } }
