@@ -59,6 +59,9 @@ def product_cat_ids(p: Product) -> list[int]:
     return ids
 
 
+from .services.skus import sort_skus  # noqa: E402
+
+
 def product_out(p: Product, admin: bool = True) -> dict:
     cats = {c.id: c.name for c in p.categories}
     if p.category:
@@ -68,7 +71,7 @@ def product_out(p: Product, admin: bool = True) -> dict:
          "category_name": "、".join(cats[i] for i in ids if i in cats) or None, "unit": p.unit, "image": p.image,
          "description": p.description, "online_visible": p.online_visible, "active": p.active, "sort": p.sort,
          "min_qty": p.min_qty, "max_qty": p.max_qty,
-         "skus": [sku_out(s) for s in p.skus if admin or s.active]}
+         "skus": [sku_out(s) for s in sort_skus(p.skus) if admin or s.active]}
     if admin:
         d["area_limited"] = p.area_limited
         d["area_ids"] = [a.id for a in p.areas]
