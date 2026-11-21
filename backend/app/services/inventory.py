@@ -24,10 +24,20 @@ def get_balance(db: Session, location_id: int, stock_item_id: int, lock: bool = 
         q = q.with_for_update(of=StockBalance)
     bal = db.scalar(q)
     if bal is None:
-        bal = StockBalance(location_id=location_id, stock_item_id=stock_item_id, qty=Decimal(0))
-        db.add(bal)
-        db.flush()
+        # 这个地点第一次有这个库存品：两个请求同时到时都会读到“没有”。用 INSERT … ON CONFLICT DO NOTHING
+        # 建行，后到的那个不会撞唯一约束报错，而是等前一个提交后读到同一行（并加锁）。
+        db.execute(_insert(db)(StockBalance).values(location_id=location_id, stock_item_id=stock_item_id, qty=0)
+                   .on_conflict_do_nothing(index_elements=["location_id", "stock_item_id"]))
+        bal = db.scalar(q.execution_options(populate_existing=True))
     return bal
+
+
+def _insert(db: Session):
+    if db.get_bind().dialect.name == "postgresql":
+        from sqlalchemy.dialects.postgresql import insert
+    else:
+        from sqlalchemy.dialects.sqlite import insert
+    return insert
 
 
 def change_stock(db: Session, *, location_id: int, stock_item_id: int, qty, kind: str,
@@ -88,7 +98,11 @@ def _batch_sort():
 
 def find_batch(db: Session, location_id: int, stock_item_id: int, batch_no: str, production_date, expiry_date,
                create: bool = False) -> StockBatch | None:
-    b = db.scalar(select(StockBatch).where(
+    if create:
+        # 先锁住这个地点这个库存品的余额行：同一库存品的批次增减都排队，不会同时建出两条同样的批次，
+        # 也不会两边各自读旧数量再写回（丢失更新）
+        get_balance(db, location_id, stock_item_id, lock=True)
+    b = db.scalar(select(StockBatch).execution_options(populate_existing=True).where(
         StockBatch.location_id == location_id, StockBatch.stock_item_id == stock_item_id,
         StockBatch.batch_no == (batch_no or ""),
         StockBatch.production_date.is_(None) if production_date is None else StockBatch.production_date == production_date,
@@ -298,7 +312,8 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
     for key, q in merged.items():
         sid = key[0]
         if kind == "adjust":
-            book = D(get_balance(db, to_location_id, sid).qty)
+            # 盘点：读账面数时就锁住余额行，到下面按“实盘 − 账面”调整之前，别人改不了这行
+            book = D(get_balance(db, to_location_id, sid, lock=True).qty)
             db.add(StockDocLine(doc_id=doc.id, stock_item_id=sid, qty=q, book_qty=book,
                                 unit_cost=amounts[key], amount=_amount(q - book, amounts[key])))
         else:
@@ -324,7 +339,7 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
             change_stock(db, location_id=to_location_id, stock_item_id=sid, qty=q, kind="transfer_in",
                          doc_id=doc.id, user_id=user_id, alloc=dest)
         elif kind == "adjust":
-            cur = D(get_balance(db, to_location_id, sid).qty)
+            cur = D(get_balance(db, to_location_id, sid, lock=True).qty)
             diff = q - cur
             if diff != 0:
                 change_stock(db, location_id=to_location_id, stock_item_id=sid, qty=diff, kind="adjust",

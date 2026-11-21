@@ -165,3 +165,47 @@ def test_double_click_fulfill_requisition(live):
     res = _parallel(lambda i: _post(client, admin.token, f"/api/requisitions/{req['id']}/fulfill", body), n=8)
     assert [c for c, _ in res] == [200] * 8, [r for r in res if r[0] != 200][:3]
     assert _stock(admin, w["wh"]["id"], w["cup"]["id"]) == wh_before - 5, "只发一次货"
+
+
+def _moves_consistent(admin, loc, item):
+    """流水逐条接得上：每条的“结存”= 上一条结存 + 本条数量，最后一条 = 当前库存。丢失更新会让链条断开。"""
+    moves = admin.get("/api/stock-moves", location_id=loc, stock_item_id=item)
+    bal = None
+    for m in moves:
+        if bal is not None:
+            assert abs(m["balance_after"] - (bal + m["qty"])) < 1e-9, (m, bal)
+        bal = m["balance_after"]
+    assert bal == _stock(admin, loc, item)
+    return moves
+
+
+def test_stocktake_while_selling(live):
+    """盘点和收银同时进行：每次盘点调整后的结存都必须正好等于实盘数，流水不能断。"""
+    client, admin, w = live
+    loc, cup = w["s1"]["location_id"], w["cup"]["id"]
+    take = {"kind": "adjust", "to_location_id": loc, "lines": [{"stock_item_id": cup, "qty": 100}]}
+
+    def go(i):
+        if i % 3 == 0:
+            return _post(client, admin.token, "/api/stock-docs", take)[0]
+        return _post(client, admin.token, "/api/pos/checkout", _sale(w))[0]
+    codes = _parallel(go)
+    assert codes == [200] * N, codes
+    moves = _moves_consistent(admin, loc, cup)
+    adj = [m for m in moves if m["kind"] == "adjust"]
+    assert adj and all(m["balance_after"] == 100 for m in adj), adj
+
+
+def test_first_stock_in_from_many_requests(live):
+    """新库存品第一次入库到某个地点（还没有库存行），多个请求同时到：都要成功，数量一件不少，批次不重复。"""
+    client, admin, w = live
+    item = admin.post("/api/stock-items", {"name": "新口罩", "unit": "个", "cost": 10})["id"]
+    loc = w["s1"]["location_id"]
+    line = {"stock_item_id": item, "qty": 3, "batch_no": "M1", "expiry_date": "2030-01-01"}
+    res = _parallel(lambda i: _post(client, admin.token, "/api/stock-docs",
+                                    {"kind": "in", "to_location_id": loc, "lines": [line]}))
+    assert [c for c, _ in res] == [200] * N, [r for r in res if r[0] != 200][:3]
+    assert _stock(admin, loc, item) == 3 * N
+    _moves_consistent(admin, loc, item)
+    batches = admin.get("/api/stock-batches", location_id=loc, stock_item_id=item)
+    assert [(b["batch_no"], b["qty"]) for b in batches] == [("M1", 3 * N)]
