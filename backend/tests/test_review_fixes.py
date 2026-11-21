@@ -31,6 +31,8 @@ def test_cash_received_null_means_exact(admin, world):
     o = clerk.post("/api/pos/checkout", {**body, "payments": [{"method": "cash", "amount": 1000, "received": None}]})
     assert o["payments"][0]["received"] == 1000 and o["payments"][0]["change"] == 0
     clerk.post("/api/pos/checkout", {**body, "payments": [{"method": "cash", "amount": 1000, "received": 999}]}, expect=400)
+    # 实收传 0 不能当成“没传”：现金实收 0 元收不了 10 元的单
+    clerk.post("/api/pos/checkout", {**body, "payments": [{"method": "cash", "amount": 1000, "received": 0}]}, expect=400)
 
 
 def test_double_collect_only_once(client, admin, world):
