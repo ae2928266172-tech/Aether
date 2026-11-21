@@ -827,10 +827,12 @@ const App = {
         <div v-if="can('requisition')" class="tab" :class="{on: tab==='req'}" @click="tab='req'"><span class="ico" v-html="icon('truck')"></span>要货</div>
       </div>
       <span class="grow"></span>
-      <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
-      <el-button class="ghost" :loading="syncing" title="从服务器获取最新的商品、价格及门店设置" @click="sync">同步</el-button>
+      <div class="tools">
+        <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
+        <span class="tb-sep"></span>
+        <button type="button" class="tb" :class="{busy: syncing}" :disabled="syncing" title="从服务器获取最新的商品、价格及门店设置" @click="sync"><span class="ico" v-html="icon('refresh')"></span>同步</button>
       <el-popover placement="bottom" :width="280" trigger="click">
-        <template #reference><el-button class="ghost">本机设置</el-button></template>
+        <template #reference><button type="button" class="tb"><span class="ico" v-html="icon('settings')"></span>本机设置</button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
         <div><el-checkbox v-model="settings.keyHints">显示键盘快捷键提示</el-checkbox></div>
         <div class="osk-set"><span>屏幕键盘</span><el-radio-group v-model="settings.osk" size="small">
@@ -849,10 +851,12 @@ const App = {
         <div v-else class="muted" style="font-size:12px;margin-top:6px">本设置只对这台电脑生效。建议安装“收银系统”桌面软件，小票直接出、不弹打印框。</div>
         <div class="muted" style="font-size:12px;margin-top:6px">切换页面：<span v-for="k in tabKeys" :key="k[0]" style="margin-right:6px"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
       </el-popover>
-      <a v-if="user.is_admin" class="link" href="/web/admin/" target="_blank">后台管理</a>
-      <div class="who"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span>{{user.display_name || user.username}}</span></div>
-      <el-button link @click="changePw">修改密码</el-button>
-      <el-button link @click="logout">退出</el-button>
+        <a v-if="user.is_admin" class="tb" href="/web/admin/" target="_blank"><span class="ico" v-html="icon('sliders')"></span>后台管理</a>
+        <span class="tb-sep"></span>
+        <div class="who"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span>{{user.display_name || user.username}}</span></div>
+        <button type="button" class="tb" @click="changePw"><span class="ico" v-html="icon('lock')"></span>修改密码</button>
+        <button type="button" class="tb" @click="logout"><span class="ico" v-html="icon('logout')"></span>退出</button>
+      </div>
     </div>
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
     <template v-else>
