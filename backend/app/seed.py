@@ -38,9 +38,28 @@ def _add_missing_columns(engine):
                 conn.execute(text(sql))
 
 
+def _add_missing_indexes(engine):
+    """新版本给已有表加的索引（含唯一索引）也补上。老数据不满足唯一条件时建不上，只记警告、不阻止启动。"""
+    import logging
+    from sqlalchemy import inspect
+    with engine.connect() as conn:
+        insp = inspect(conn)
+        have = {t.name: {i["name"] for i in insp.get_indexes(t.name)} for t in Base.metadata.sorted_tables}
+    for table in Base.metadata.sorted_tables:
+        for idx in table.indexes:
+            if idx.name in have[table.name]:
+                continue
+            try:
+                with engine.begin() as conn:
+                    idx.create(conn)
+            except Exception as e:  # noqa: BLE001
+                logging.getLogger("shouyin").warning("索引 %s 没建上（可能有重复的老数据）：%s", idx.name, e)
+
+
 def init_db(engine, session_factory):
     Base.metadata.create_all(engine)
     _add_missing_columns(engine)
+    _add_missing_indexes(engine)
     with session_factory() as db:
         seed(db)
         fill_mnemonics(db)

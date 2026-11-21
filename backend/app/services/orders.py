@@ -197,7 +197,8 @@ def _record_payments(db: Session, order: Order, payments: list[dict], user: User
         amount = int(p["amount"])
         if amount < 0:
             raise HTTPException(400, "收款金额不能为负数")
-        received = int(p.get("received") or amount)
+        # 没传实收才按应收算；传了 0 就是 0（以前 0 会被当成“没传”，现金实收 0 也能收款）
+        received = amount if p.get("received") is None else int(p["received"])
         if method == "cash" and received < amount:
             raise HTTPException(400, "现金实收不能少于应收")
         if method != "cash":

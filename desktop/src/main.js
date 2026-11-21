@@ -134,7 +134,9 @@ ipcMain.handle('desktop:open-drawer', async (e) => {
   return printRaw(DRAWER);
 });
 ipcMain.handle('desktop:test-print', async (e) => (fromStore(e) ? testPrint() : '不允许'));
-ipcMain.on('desktop:open-settings', () => openSetup());
+// 门店工作台和软件自带的本地页面（连不上服务器时的提示页）可以打开设置；其他网页不行
+const fromLocalPage = (e) => !!(e.senderFrame && String(e.senderFrame.url).startsWith('file:'));
+ipcMain.on('desktop:open-settings', (e) => { if (fromStore(e) || fromLocalPage(e)) openSetup(); });
 
 async function testPrint(c = cfg) {
   if (c.printMode === 'off') return '出票方式是“不出票”';

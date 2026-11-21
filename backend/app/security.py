@@ -45,7 +45,9 @@ def _secret() -> str:
     path = os.path.join(base, "shouyin", "secret.key")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     if not os.path.exists(path):
-        with open(path, "w") as f:
+        # 只有本机这个用户能读（Linux/macOS 上为 600；Windows 上用户目录本身已按用户隔离）
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        with os.fdopen(fd, "w") as f:
             f.write(secrets.token_hex(32))
     with open(path) as f:
         return f.read().strip()
@@ -86,11 +88,18 @@ def _decode(authorization: str | None) -> dict:
         raise HTTPException(401, "登录无效，请重新登录")
 
 
+def _sub(p: dict) -> int:
+    try:
+        return int(p["sub"])
+    except (KeyError, TypeError, ValueError):
+        raise HTTPException(401, "登录无效，请重新登录")
+
+
 def current_user(authorization: str | None = Header(None), db: Session = Depends(get_db)) -> User:
     p = _decode(authorization)
     if p.get("kind") != "staff":
         raise HTTPException(401, "请使用员工账号登录")
-    user = db.get(User, int(p["sub"]))
+    user = db.get(User, _sub(p))
     if not user or not user.active or user.token_version != p.get("v"):
         raise HTTPException(401, "账号已停用或密码已修改，请重新登录")
     return user
@@ -100,7 +109,7 @@ def current_customer(authorization: str | None = Header(None), db: Session = Dep
     p = _decode(authorization)
     if p.get("kind") != "customer":
         raise HTTPException(401, "请从小程序进入")
-    c = db.get(Customer, int(p["sub"]))
+    c = db.get(Customer, _sub(p))
     if not c:
         raise HTTPException(401, "请重新进入小程序")
     return c

@@ -5,8 +5,8 @@
 from datetime import date, datetime
 from decimal import Decimal
 
-from sqlalchemy import (JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric,
-                        String, Text, UniqueConstraint)
+from sqlalchemy import (JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric,
+                        String, Text, UniqueConstraint, text)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .db import Base, now
@@ -341,6 +341,9 @@ class RequisitionLine(Base):
 class Shift(Base):
     """收银员交班：开班时点备用金，交班时按这段时间自己经手的收款算应有现金，填实点现金算差额。"""
     __tablename__ = "shifts"
+    # 同一收银员在同一门店同时只能有一个“当班中”：两台机器同时点开班也只会开出一班
+    __table_args__ = (Index("uq_shifts_open", "store_id", "user_id", unique=True,
+                            postgresql_where=text("status = 'open'"), sqlite_where=text("status = 'open'")),)
     id: Mapped[int] = mapped_column(primary_key=True)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)

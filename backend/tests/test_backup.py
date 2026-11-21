@@ -111,3 +111,27 @@ def test_command_line_backup_drill_restore(tmp_path, capsys):
     assert os.path.getmtime(db) == before
     assert rs.main([str(tmp_path / "cloud"), "--db", str(db), "--yes", "--port", "1"]) == 0
     assert "原来的数据库另存在" in capsys.readouterr().out
+
+
+def test_backup_and_restore_with_wal(tmp_path):
+    """数据库开着 WAL、最近的改动还在 -wal 文件里没合并：备份和“恢复前另存”都不能漏掉这些改动。"""
+    import sqlite3
+    from app import backup as bk
+    db = str(tmp_path / "w.db")
+    con = sqlite3.connect(db)
+    con.execute("PRAGMA journal_mode=WAL")
+    con.execute("PRAGMA wal_autocheckpoint=0")  # 不自动合并，改动一直留在 -wal 里
+    con.execute("CREATE TABLE stores(id INTEGER PRIMARY KEY, name TEXT)")
+    con.executemany("INSERT INTO stores(name) VALUES (?)", [("a",), ("b",), ("c",)])
+    con.commit()
+    assert os.path.getsize(db + "-wal") > 0
+    r = bk.backup(db, str(tmp_path / "bak"))
+    assert r["counts"]["stores"] == 3
+    con.execute("INSERT INTO stores(name) VALUES ('d')"); con.commit()
+    # 模拟服务已停但 -wal 还没合并（比如进程被强杀）：恢复前另存的那份要有 4 条
+    out = bk.restore(r["file"], db + ".target")  # 先恢复到别处，验证备份文件本身是单文件
+    assert out["counts"]["stores"] == 3 and not os.path.exists(db + ".target-wal")
+    saved = bk.restore(r["file"], db)["saved_old"]
+    con.close()
+    assert bk.check(saved)["stores"] == 4
+    assert bk.check(db)["stores"] == 3

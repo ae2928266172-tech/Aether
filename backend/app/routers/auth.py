@@ -15,19 +15,38 @@ router = APIRouter(prefix="/api", tags=["账号"])
 
 
 class LoginIn(BaseModel):
-    username: str
-    password: str
+    username: str = Field(max_length=50)
+    password: str = Field(max_length=200)
 
 
-# 登录失败限制：同一账号 10 分钟内错 5 次，锁 10 分钟（记在内存里，重启清零）
+# 登录失败限制：同一账号 10 分钟内错 5 次，锁 10 分钟（记在内存里，重启清零）。
+# 只在一个进程里有效：服务端目前单进程运行；以后开多个进程要改成记在数据库或 Redis 里。
 _FAILS: dict[str, list[float]] = {}
 FAIL_LIMIT, FAIL_WINDOW = 5, 600
+FAIL_MAX_KEYS = 5000  # 有人拿大量随机账号名乱试时，内存里最多记这么多个账号
+
+
+def _note_fail(name: str):
+    import time
+    t = time.time()
+    if name not in _FAILS and len(_FAILS) >= FAIL_MAX_KEYS:
+        for k in [k for k, v in _FAILS.items() if not v or v[-1] <= t - FAIL_WINDOW]:
+            del _FAILS[k]  # 先清掉已经过期的
+        if len(_FAILS) >= FAIL_MAX_KEYS:  # 还是满的：丢掉最早失败的一半
+            for k in sorted(_FAILS, key=lambda k: _FAILS[k][-1])[:FAIL_MAX_KEYS // 2]:
+                del _FAILS[k]
+    _FAILS.setdefault(name, []).append(t)
 
 
 def _check_locked(name: str):
     import time
-    recent = [t for t in _FAILS.get(name, []) if t > time.time() - FAIL_WINDOW]
-    _FAILS[name] = recent
+    if name not in _FAILS:  # 只查不建：不能让每个没错过的账号名都在内存里占一条
+        return
+    recent = [t for t in _FAILS[name] if t > time.time() - FAIL_WINDOW]
+    if recent:
+        _FAILS[name] = recent
+    else:
+        del _FAILS[name]
     if len(recent) >= FAIL_LIMIT:
         wait = int((recent[0] + FAIL_WINDOW - time.time()) // 60) + 1
         raise HTTPException(429, f"密码错误次数过多，请 {wait} 分钟后再试")
@@ -35,12 +54,13 @@ def _check_locked(name: str):
 
 @router.post("/auth/login")
 def login(body: LoginIn, db: Session = Depends(get_db)):
-    import time
     name = body.username.strip().lower()
+    if not name:
+        raise HTTPException(400, "请输入账号")
     _check_locked(name)
     u = db.scalar(select(User).where(User.username == body.username.strip()))
     if not u or not verify_password(body.password, u.password_hash):
-        _FAILS.setdefault(name, []).append(time.time())
+        _note_fail(name)
         raise HTTPException(400, "账号或密码错误")
     _FAILS.pop(name, None)
     if not u.active:
@@ -137,7 +157,7 @@ def update_role(rid: int, body: RoleIn, db: Session = Depends(get_db), me_: User
 # ---------------- 账号 ----------------
 
 class UserIn(BaseModel):
-    username: str
+    username: str = Field(min_length=1, max_length=50, pattern=r"\S")  # 不能为空或只有空格
     display_name: str = ""
     role_id: int
     store_ids: list[int] = []

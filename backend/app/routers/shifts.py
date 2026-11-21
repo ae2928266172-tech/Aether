@@ -4,6 +4,7 @@ from datetime import date, datetime, time, timedelta
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db, now
@@ -85,7 +86,13 @@ def open_shift(body: OpenIn, db: Session = Depends(get_db), user: User = Depends
         return shift_out(db, s)
     s = Shift(store_id=body.store_id, user_id=user.id, opening_cash=body.opening_cash, started_at=now())
     db.add(s)
-    db.commit()
+    try:
+        db.commit()
+    except IntegrityError:  # 另一台机器同时开了班（撞上“当班中唯一”索引）：返回那一班
+        db.rollback()
+        s = _current(db, body.store_id, user.id)
+        if not s:
+            raise
     return shift_out(db, s)
 
 
@@ -94,6 +101,7 @@ def close_shift(sid: int, body: CloseIn, db: Session = Depends(get_db), user: Us
     s = db.scalar(select(Shift).where(Shift.id == sid).with_for_update(of=Shift))
     if not s:
         raise HTTPException(404, "没有这个班次")
+    check_store_access(user, s.store_id)
     if s.user_id != user.id and not has_perm(user, "reports"):
         raise HTTPException(403, "只能交自己的班")
     if s.status != "open":

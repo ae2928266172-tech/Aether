@@ -26,6 +26,7 @@ def make_engine(url: str | None = None):
     url = url or os.environ.get("DATABASE_URL") or "sqlite:///" + os.path.join(
         os.path.dirname(os.path.dirname(__file__)), "data", "shouyin.db")
     kwargs = {}
+    file_db = url.startswith("sqlite:///") and ":memory:" not in url
     if url.startswith("sqlite"):
         # timeout：另一台设备正在写库时最多等 30 秒，而不是立刻报“database is locked”
         kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
@@ -42,6 +43,10 @@ def make_engine(url: str | None = None):
             dbapi_conn.isolation_level = None
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
+            if file_db:
+                # WAL：写的时候别的设备照样能读（查库存、看报表不用等收银写完）；NORMAL 在 WAL 下断电也不会坏库
+                cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA synchronous=NORMAL")
             cur.close()
 
         @event.listens_for(engine, "begin")
