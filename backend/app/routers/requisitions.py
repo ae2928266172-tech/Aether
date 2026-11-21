@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from ..services.orders import once, same_request
 from ..db import get_db, now
 from ..models import Location, Requisition, RequisitionLine, StockDoc, StockItem, Store, User
 from ..security import check_store_access, current_user, has_perm, require
@@ -74,23 +75,27 @@ def _staff_check(db: Session, user: User, store_id: int) -> Store:
 @router.post("/stores/{sid}/requisitions")
 def create(sid: int, body: ReqIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
     _staff_check(db, user, sid)
-    if body.request_id:
-        exist = db.scalar(select(Requisition).where(Requisition.request_id == body.request_id))
-        if exist:
-            return _out(db, exist)
-    qty: dict[int, Decimal] = defaultdict(Decimal)
-    for ln in body.lines:
-        item = db.get(StockItem, ln.stock_item_id)
-        if not item or not item.active:
-            raise HTTPException(400, "库存品不存在或已停用")
-        qty[ln.stock_item_id] += Decimal(str(ln.qty))
-    r = Requisition(no=f"YH{now():%Y%m%d%H%M%S}{uuid.uuid4().hex[:4].upper()}", store_id=sid,
-                    remark=body.remark.strip(), created_by=user.id, request_id=body.request_id)
-    db.add(r)
-    db.flush()
-    for sid_, q in qty.items():
-        db.add(RequisitionLine(requisition_id=r.id, stock_item_id=sid_, qty=q))
-    db.commit()
+
+    def run():
+        if body.request_id:
+            exist = db.scalar(select(Requisition).where(Requisition.request_id == body.request_id))
+            if exist:
+                same_request(exist.store_id == sid and exist.created_by == user.id)
+                return exist
+        qty: dict[int, Decimal] = defaultdict(Decimal)
+        for ln in body.lines:
+            item = db.get(StockItem, ln.stock_item_id)
+            if not item or not item.active:
+                raise HTTPException(400, "库存品不存在或已停用")
+            qty[ln.stock_item_id] += Decimal(str(ln.qty))
+        r = Requisition(no=f"YH{now():%Y%m%d%H%M%S}{uuid.uuid4().hex[:4].upper()}", store_id=sid,
+                        remark=body.remark.strip(), created_by=user.id, request_id=body.request_id)
+        db.add(r)
+        db.flush()
+        for sid_, q in qty.items():
+            db.add(RequisitionLine(requisition_id=r.id, stock_item_id=sid_, qty=q))
+        return r
+    r = once(db, run)
     db.refresh(r)
     return _out(db, r)
 
@@ -120,7 +125,7 @@ def list_reqs(store_id: int | None = None, status: str | None = None, page: int 
 
 
 def _get_pending(db: Session, rid: int) -> Requisition:
-    r = db.scalar(select(Requisition).where(Requisition.id == rid).with_for_update())
+    r = db.scalar(select(Requisition).where(Requisition.id == rid).with_for_update(of=Requisition))
     if not r:
         raise HTTPException(404, "要货单不存在")
     if r.status != "pending":
@@ -151,13 +156,23 @@ def reject(rid: int, body: RejectIn, db: Session = Depends(get_db), user: User =
 @router.post("/requisitions/{rid}/fulfill")
 def fulfill(rid: int, body: FulfillIn, db: Session = Depends(get_db), user: User = Depends(require("inventory"))):
     """照单调拨：从仓库调到要货门店，数量可以改（0 表示这项不发）。生成一张调拨单。"""
-    if body.request_id:
-        done = db.scalar(select(Requisition).where(Requisition.id == rid))
-        if done and done.status == "done" and done.transfer_doc_id:
-            d = db.get(StockDoc, done.transfer_doc_id)
-            if d and d.request_id == body.request_id:
-                return _out(db, done)
-    r = _get_pending(db, rid)
+    def already_done():
+        if body.request_id:
+            done = db.scalar(select(Requisition).where(Requisition.id == rid))
+            if done and done.status == "done" and done.transfer_doc_id:
+                d = db.get(StockDoc, done.transfer_doc_id)
+                if d and d.request_id == body.request_id:
+                    return done
+    if (done := already_done()):
+        return _out(db, done)
+    try:
+        r = _get_pending(db, rid)
+    except HTTPException:
+        # 双击“发货”：前一次刚在锁里发完，这一次等到锁后看到已发货，返回同一结果而不是报错
+        db.expire_all()
+        if (done := already_done()):
+            return _out(db, done)
+        raise
     src = db.get(Location, body.from_location_id)
     if not src:
         raise HTTPException(400, "调出地点不存在")

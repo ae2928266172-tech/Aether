@@ -16,6 +16,7 @@ from ..security import current_customer, make_token
 from ..serialize import order_out, product_out
 from ..services import orders as svc
 from ..settings_store import get_setting
+from ..startup_check import web_login_allowed
 
 router = APIRouter(prefix="/api/customer", tags=["小程序顾客端"])
 
@@ -27,9 +28,11 @@ class LoginIn(BaseModel):
 def _openid(code: str) -> str:
     appid, secret = os.environ.get("WECHAT_APPID"), os.environ.get("WECHAT_SECRET")
     if not appid or not secret:
-        if os.environ.get("SHOUYIN_ENV") == "production":
+        # 没有小程序账号时，网页版用本机随机标识登录。只在明确设了 SHOUYIN_ENV=dev/test 时开放，
+        # 部署时漏设环境变量也不会打开（以前是没设 production 就打开）
+        if not web_login_allowed():
             raise HTTPException(503, "小程序尚未配置 AppID")
-        return "dev_" + code  # 开发模式：没有小程序账号时用于测试
+        return "dev_" + code
     r = httpx.get("https://api.weixin.qq.com/sns/jscode2session", timeout=10, params={
         "appid": appid, "secret": secret, "js_code": code, "grant_type": "authorization_code"}).json()
     if not r.get("openid"):
@@ -112,10 +115,9 @@ def _public(o: Order) -> dict:
 
 @router.post("/orders")
 def create_order(body: OrderIn, db: Session = Depends(get_db), c: Customer = Depends(current_customer)):
-    a = _area(db, body.area_code)
-    o = svc.online_create(db, c.id, a, [l.model_dump() for l in body.lines], body.location_note,
-                          body.contact_phone, body.remark, body.request_id)
-    db.commit()
+    o = svc.once(db, lambda: svc.online_create(
+        db, c.id, _area(db, body.area_code), [l.model_dump() for l in body.lines], body.location_note,
+        body.contact_phone, body.remark, body.request_id))
     return _public(o)
 
 

@@ -61,9 +61,9 @@ def checkout(body: CheckoutIn, db: Session = Depends(get_db), user: User = Depen
     store = db.get(Store, body.store_id)
     if not store or not store.active:
         raise HTTPException(400, "门店不存在或已停用")
-    o = svc.pos_checkout(db, user, store, [l.model_dump() for l in body.lines], [p.model_dump() for p in body.payments],
-                         body.discount_rate, body.payable, body.remark, body.request_id)
-    db.commit()
+    o = svc.once(db, lambda: svc.pos_checkout(
+        db, user, db.get(Store, body.store_id), [l.model_dump() for l in body.lines], [p.model_dump() for p in body.payments],
+        body.discount_rate, body.payable, body.remark, body.request_id))
     return order_out(o)
 
 
@@ -201,10 +201,10 @@ class RefundIn(BaseModel):
 
 @router.post("/orders/{oid}/refund")
 def refund(oid: int, body: RefundIn, db: Session = Depends(get_db), user: User = Depends(require("refund"))):
-    o = _load(db, oid, user, lock=True)
-    rf = svc.refund(db, o, user, [l.model_dump() for l in body.lines], body.restock, body.method, body.reason,
-                    body.amount, body.request_id)
-    db.commit()
+    rf = svc.once(db, lambda: svc.refund(
+        db, _load(db, oid, user, lock=True), user, [l.model_dump() for l in body.lines], body.restock, body.method,
+        body.reason, body.amount, body.request_id))
+    o = _load(db, oid, user)
     db.refresh(o)
     return {"refund": refund_out(rf), "order": order_out(o)}
 

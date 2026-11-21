@@ -75,7 +75,7 @@ def get_rules(db: Session = Depends(get_db), _: User = Depends(current_user)):
 
 
 @router.put("/rules")
-def put_rules(body: dict, db: Session = Depends(get_db), _: User = Depends(require("stores"))):
+def put_rules(body: dict, db: Session = Depends(get_db), user: User = Depends(require("stores"))):
     if "online_deduct_on" in body and body["online_deduct_on"] not in ("create", "accept"):
         raise HTTPException(400, "扣库存时机只能是下单时或接单时")
     if "expiry_alert_days" in body:
@@ -89,6 +89,9 @@ def put_rules(body: dict, db: Session = Depends(get_db), _: User = Depends(requi
         body["public_url"] = str(body["public_url"] or "").strip().rstrip("/")
         if body["public_url"] and not body["public_url"].startswith(("http://", "https://")):
             raise HTTPException(400, "顾客访问网址要以 http:// 或 https:// 开头")
+    from .. import audit
+    before = dict(get_setting(db, "rules"))
     v = set_setting(db, "rules", body)
+    audit.record(db, user, "业务规则", "业务规则", before, dict(v))
     db.commit()
     return v

@@ -30,6 +30,22 @@ app = FastAPI(title="收银系统 API", version="0.1.0", lifespan=lifespan)
 # 局域网 / 云服务器上传输更快：接口 JSON、脚本、样式压缩后发送
 app.add_middleware(GZipMiddleware, minimum_size=1024)
 app.middleware("http")(media.cache_headers)
+
+
+class MarkWrites:
+    """标记这个请求会不会写库，供 db.py 决定 SQLite 事务是否一开始就拿写锁。"""
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            # 打印小助手的轮询是 GET，但会写“最后在线时间”、领打印任务，也按写请求处理
+            dbmod.writing.set(scope["method"] not in ("GET", "HEAD", "OPTIONS")
+                              or scope["path"].startswith("/api/print-agent/"))
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(MarkWrites)
 app.include_router(media.router)  # 缩略图要排在 /media 静态目录前面
 
 for r in (auth, catalog, stores, orders, customer, reports, settings, print_agent, requisitions, shifts):

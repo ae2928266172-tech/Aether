@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from .. import audit
 from ..db import get_db
 from ..models import Area, Category, Product, ProductCategory, Sku, StockItem, Supplier, User
 from ..security import current_user, has_perm, require
@@ -133,12 +134,14 @@ def create_stock_item(body: StockItemIn, db: Session = Depends(get_db), _: User 
 
 
 @router.put("/stock-items/{iid}")
-def update_stock_item(iid: int, body: StockItemIn, db: Session = Depends(get_db), _: User = Depends(require("catalog"))):
+def update_stock_item(iid: int, body: StockItemIn, db: Session = Depends(get_db), user: User = Depends(require("catalog"))):
     i = db.get(StockItem, iid)
     if not i:
         raise HTTPException(404, "库存品不存在")
+    before = audit.snap(i, audit.STOCK_ITEM_FIELDS)
     for k, v in body.model_dump().items():
         setattr(i, k, v)
+    audit.record(db, user, "库存品修改", i.name, before, audit.snap(i, audit.STOCK_ITEM_FIELDS))
     db.commit()
     return stock_item_out(i)
 
@@ -309,23 +312,31 @@ def get_product(pid: int, db: Session = Depends(get_db), user: User = Depends(cu
 
 
 @router.post("/products")
-def create_product(body: ProductIn, db: Session = Depends(get_db), _: User = Depends(require("catalog"))):
+def create_product(body: ProductIn, db: Session = Depends(get_db), user: User = Depends(require("catalog"))):
     _check_product(db, body, None)
     p = Product()
     db.add(p)
     _apply_product(db, p, body)
+    db.flush()
+    audit.record(db, user, "商品新增", p.name, summary="、".join(f"{s.name} {audit.yuan(s.price)}" for s in p.skus))
     db.commit()
     db.refresh(p)
     return product_out(p)
 
 
 @router.put("/products/{pid}")
-def update_product(pid: int, body: ProductIn, db: Session = Depends(get_db), _: User = Depends(require("catalog"))):
+def update_product(pid: int, body: ProductIn, db: Session = Depends(get_db), user: User = Depends(require("catalog"))):
     p = db.get(Product, pid)
     if not p:
         raise HTTPException(404, "商品不存在")
     _check_product(db, body, pid)
+    before = audit.product_snap(p)
     _apply_product(db, p, body)
+    db.flush()
+    after = audit.product_snap(p)
+    prices = audit.price_summary(p, before, after)
+    audit.record(db, user, "改价" if prices else "商品修改", p.name, summary=prices,
+                 changes=audit.name_skus(p, audit.diff(before, after)))
     db.commit()
     db.refresh(p)
     return product_out(p)
