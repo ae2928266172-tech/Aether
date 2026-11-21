@@ -827,6 +827,7 @@ const App = {
       </el-popover>
       <a v-if="user.is_admin" class="link" href="/web/admin/" target="_blank">后台管理</a>
       <div class="who"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span>{{user.display_name || user.username}}</span></div>
+      <el-button link @click="changePw">改密码</el-button>
       <el-button link @click="logout">退出</el-button>
     </div>
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
@@ -894,10 +895,23 @@ const App = {
       busy.value = true;
       try {
         const r = await api.post('/api/auth/login', lf); api.setToken(r.token); user.value = r.user; await afterLogin();
-        if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，正式使用前请在后台修改' });
+        if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，请点右上角“改密码”修改' });
       } catch (e) { err(e); } finally { busy.value = false; }
     };
     const logout = () => { api.setToken(''); user.value = null; clearInterval(timer); };
+    // 自己改密码：旧密码 + 两次新密码。忘记密码找管理员在后台“账号与权限”里重置
+    const changePw = async () => {
+      let o, n, n2;
+      const box = (msg, step) => ElMessageBox.prompt(msg, '修改密码（' + step + '/3）', { inputType: 'password', confirmButtonText: '下一步', cancelButtonText: '取消' });
+      try {
+        ({ value: o } = await box('当前密码', 1));
+        ({ value: n } = await box('新密码（至少 6 位）', 2));
+        ({ value: n2 } = await box('再输一次新密码', 3));
+      } catch (e) { return; }
+      if (!n || n.length < 6) return ElMessage.error('新密码至少 6 位');
+      if (n !== n2) return ElMessage.error('两次输入的新密码不一样，没有修改');
+      try { const r = await api.post('/api/auth/password', { old_password: o || '', new_password: n }); api.setToken(r.token); ElMessage.success('密码已修改，下次用新密码登录'); } catch (e) { err(e); }
+    };
     window.onUnauthorized = () => { user.value = null; clearInterval(timer); };
     // Alt+1~5 切换收银 / 订单 / 交班 / 库存 / 要货
     const tabOk = { pos: () => can('pos'), orders: () => can('orders') || can('pos'), shift: () => can('pos'), stock: () => stockVisible.value, req: () => can('requisition') };
@@ -915,7 +929,7 @@ const App = {
     const deskDrawer = () => openDrawer(false);
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
-    return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, switchStore,
+    return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore,
       desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };
