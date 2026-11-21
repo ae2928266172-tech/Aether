@@ -1109,7 +1109,7 @@ const Accounts = {
       <el-form-item label="类型"><el-radio-group v-model="rForm.is_admin"><el-radio :value="true">后台（可看所有门店、营收）</el-radio><el-radio :value="false">门店</el-radio></el-radio-group></el-form-item>
       <el-form-item label="权限"><el-checkbox-group v-model="rForm.permissions">
         <div v-for="p in perms" :key="p.key"><el-checkbox :value="p.key" :disabled="!rForm.is_admin && adminOnly.includes(p.key)">{{p.label}}</el-checkbox></div></el-checkbox-group></el-form-item>
-      <el-form-item label="最低折扣"><el-input-number v-model="rForm.min_rate" :min="0.1" :max="10" :step="0.5" :precision="1" /> <span class="muted">&nbsp;折（10 = 不能优惠，0.1 = 不限）</span></el-form-item>
+      <el-form-item label="最低折扣"><el-input-number v-model="rForm.min_rate" :min="0.1" :max="10" :step="0.5" :precision="1" /> <span class="muted">&nbsp;折（10 = 不能优惠，0.1 = 不限，可以打到 0 元）</span></el-form-item>
       <el-form-item label="单笔最多调低"><el-input v-model="rForm.max_adj" placeholder="留空不限" style="width:160px"><template #append>元</template></el-input></el-form-item>
     </el-form>
     <template #footer><el-button @click="rDlg=false">取消</el-button><el-button type="primary" @click="saveRole">保存</el-button></template>
@@ -1185,6 +1185,7 @@ const Rules = {
       <el-form-item label="区域叫法"><el-input v-model="f.area_label" placeholder="如：病区、楼层" /></el-form-item>
       <el-form-item label="位置叫法"><el-input v-model="f.location_label" placeholder="如：床号、桌号" /></el-form-item>
       <el-form-item label="小程序下单必须填位置"><el-switch v-model="f.online_location_required" /></el-form-item>
+      <el-form-item label="退款期限">收款后 <el-input-number v-model="f.refund_days" :min="0" :max="3650" style="margin:0 8px" /> 天内门店可以退货退款<span class="muted" style="margin-left:8px">0 表示不限；管理员不受此限制</span></el-form-item>
       <el-form-item label="临期提醒"><el-input-number v-model="f.expiry_alert_days" :min="0" :max="3650" /><span class="muted" style="margin-left:8px">天内到期（含已过期）的批次在经营概览和库存页提醒</span></el-form-item>
       <el-form-item label="顾客访问网址"><el-input v-model="f.public_url" placeholder="如 https://shop.example.com，上线后填正式域名" />
         <div class="hint" style="margin-top:2px">区域二维码用这个网址生成。留空时用当前打开后台的地址，那样生成的码顾客在外面扫不开。</div></el-form-item>
@@ -1254,7 +1255,7 @@ const AUDIT_LABEL = { name: '名称', code: '编码', unit: '单位', online_vis
   max_adjust_amount: '最多可调低', is_admin: '后台角色', permissions: '权限', address: '地址', phone: '电话', staff_can_view_stock: '店员可看库存',
   staff_can_edit_stock: '店员可改库存', accept_online_orders: '接小程序订单', print_mode: '出票方式', auto_print_online: '小程序单自动出票',
   auto_print_pos: '收银自动出票', alert_qty: '预警数量', pos_allow_negative: '收银库存不够也能卖', online_allow_negative: '小程序库存不够也能下单',
-  online_deduct_on: '小程序扣库存时机', expiry_alert_days: '临期提醒天数' };
+  online_deduct_on: '小程序扣库存时机', expiry_alert_days: '临期提醒天数', refund_days: '退款期限天数' };
 const AUDIT_MONEY = new Set(['price', 'cost', 'max_adjust_amount']);
 const Audit = {
   props: ['meta'],

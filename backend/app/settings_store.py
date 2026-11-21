@@ -23,6 +23,8 @@ DEFAULTS: dict[str, dict] = {
         "area_label": "病区",
         # 临期提醒：批次有效期在多少天以内（含已过期）时提醒
         "expiry_alert_days": 30,
+        # 退款期限：收款后多少天内门店可以退货退款，0 表示不限；管理员不受限（2026-11-21 Aether 定默认 14 天）
+        "refund_days": 14,
         # 顾客扫码打开的正式网址（如 https://shop.example.com）。留空时用当前打开后台的地址，
         # 那样在本机或内网地址下生成的二维码，顾客在外面扫不开
         "public_url": "",
