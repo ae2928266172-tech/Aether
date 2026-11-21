@@ -197,7 +197,7 @@ const Pos = {
         <div class="dock-l">
           <div class="scan" data-no-osk><el-input ref="scan" v-model="scanText" size="large" placeholder="扫条码，或输入名称 / 拼音首字母（如 zb 找纸杯）" clearable>
             <template #prefix><span class="ico" v-html="icon('scan')"></span></template></el-input></div>
-          <div v-if="scanText.trim()" class="dock-tip">找到 <b>{{shown.length}}</b> 个商品，点商品加入；输入完整条码后点“确认”</div>
+          <div v-if="scanText.trim()" class="dock-tip">找到 <b>{{shown.length}}</b> 个商品，点商品加入（搜索词会保留，可接着点别的规格，再按字母就重新输入）；输入完整条码后点“确认”</div>
           <div v-else class="dock-tip">扫码枪直接扫，不用先点这里<br>也可以用右边键盘输入拼音首字母，如 <b>ZB</b> 找纸杯</div>
           <div class="keys"><span v-for="k in posKeys" :key="k[0]"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
         </div>
@@ -307,7 +307,12 @@ const Pos = {
       else { cart.value.push({ sku_id: s.id, name: p.name, sku: s.name, price: s.price, qty: 1 }); sel.value = cart.value.length - 1; }
     };
     const focusScan = () => setTimeout(() => scan.value && scan.value.focus(), 0);
-    const tap = (p) => { pick(p); if (scanText.value) { scanText.value = ''; scan.value && scan.value.focus(); } };
+    // 用助记码 / 名称搜出来点选后，搜索词保留，方便接着选同一种商品的其他规格（如两种规格的纱布）。
+    // 保留期间（fresh）再按字母会重新输入、回车直接收款、+ − Delete 改购物车，不用先清空
+    let fresh = false;
+    watch(scanText, () => { fresh = false; });
+    const keepSearch = () => { if (!scanText.value) return; setTimeout(() => { fresh = true; const el = scan.value; if (el) { el.focus(); el.select(); } }, 0); };
+    const tap = (p) => { pick(p); keepSearch(); };
     const pick = (p) => { if (p.skus.length === 1) add(p, p.skus[0]); else { skuProduct.value = p; skuDlg.value = true; } };
     const onScan = async () => {
       const t = scanText.value.trim(); if (!t) return;
@@ -320,7 +325,7 @@ const Pos = {
       catch (e) {
         // 不是条码：只剩一个商品就直接加入，多个就留在列表里让店员点
         const m = products.value.filter(p => matchKw(p, t));
-        if (m.length === 1) { pick(m[0]); scanText.value = ''; } else if (!m.length) err(e);
+        if (m.length === 1) { pick(m[0]); keepSearch(); } else if (!m.length) err(e);
       }
     };
     // 每个商品在购物车里的件数：购物车一变只算一次，不用每张卡片各自去翻购物车
@@ -411,10 +416,10 @@ const Pos = {
       [{ gap: 0.75 }, ...keys('asdfghjkl'), { k: 'enter', w: 1.75 }],
       [{ gap: 1.25 }, ...keys('zxcvbnm'), { k: 'clear', w: 2 }, { gap: 1.25 }]];
     const kbPress = (k) => {
-      if (k === 'enter') { scanText.value.trim() ? onScan() : payNow(); }
-      else if (k === 'back') scanText.value = scanText.value.slice(0, -1);
+      if (k === 'enter') { scanText.value.trim() && !fresh ? onScan() : payNow(); }
+      else if (k === 'back') scanText.value = fresh ? '' : scanText.value.slice(0, -1);
       else if (k === 'clear') scanText.value = '';
-      else scanText.value += k;
+      else scanText.value = (fresh ? '' : scanText.value) + k;
       if (!payDlg.value) focusScan();
     };
     const scanCode = (code) => { scanText.value = code; onScan(); focusScan(); };
@@ -442,17 +447,23 @@ const Pos = {
         if (/^[1-9]$/.test(c) && pickList[+c - 1]) { e.preventDefault(); pickList[+c - 1](); focusScan(); }
         return;
       }
-      const free = !editable(t) || (inScan && !scanText.value);  // 不在打字：+ − Delete 用来改购物车
+      const free = !editable(t) || (inScan && (!scanText.value || fresh));  // 不在打字：+ − Delete 用来改购物车
       if ((c === '+' || c === '-') && free && sel.value >= 0) { e.preventDefault(); bump(c === '+' ? 1 : -1); return; }
       if (c === 'Delete' && free && sel.value >= 0) { e.preventDefault(); remove(sel.value); return; }
       if (K.printable(e)) {
         det.key(e.key, now);
-        if (!editable(t)) { e.preventDefault(); scanText.value += e.key; focusScan(); }
+        // 搜索词保留着时，在搜索框里接着打字/扫码也是重新输入（不接在旧词后面）
+        if (!editable(t) || (inScan && fresh)) { e.preventDefault(); scanText.value = (fresh ? '' : scanText.value) + e.key; focusScan(); }
         return;
       }
       if (c === 'Enter') {
         const code = det.enter(now);
-        if (inScan) { e.preventDefault(); scanText.value.trim() ? onScan() : payNow(); return; }
+        if (inScan) {
+          e.preventDefault();
+          // 保险：扫码枪的条码万一接在了旧搜索词后面，只拿条码去查
+          if (code && scanText.value !== code && scanText.value.endsWith(code)) scanText.value = code;
+          scanText.value.trim() && !fresh ? onScan() : payNow(); return;
+        }
         if (inRemark) {
           e.preventDefault();
           remarkDlg.value = false;
@@ -465,7 +476,7 @@ const Pos = {
           if (code && l) { l.qty = qtyBefore; scanCode(code); } else { fix(qi); focusScan(); }
           return;
         }
-        if (!editable(t)) { e.preventDefault(); scanText.value.trim() ? onScan() : payNow(); }
+        if (!editable(t)) { e.preventDefault(); scanText.value.trim() && !fresh ? onScan() : payNow(); }
         return;
       }
       if (c === 'Escape') { if (scanText.value) scanText.value = ''; focusScan(); return; }
