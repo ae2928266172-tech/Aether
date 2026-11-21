@@ -44,3 +44,23 @@ def test_merge_duplicate_skus(client, admin, world):
     admin.post("/api/skus/merge", {"keep_id": p2["skus"][0]["id"], "drop_ids": [p2["skus"][1]["id"]]}, expect=400)
     admin.post("/api/skus/merge", {"keep_id": a["id"], "drop_ids": [p2["skus"][0]["id"]]}, expect=400)
     clerk.post("/api/skus/merge", {"keep_id": a["id"], "drop_ids": [p2["skus"][0]["id"]]}, expect=403)
+
+
+def test_merge_script(admin, world, capsys):
+    import importlib.util, pathlib
+    spec = importlib.util.spec_from_file_location("m", pathlib.Path(__file__).parents[1] / "scripts" / "merge_dup_skus.py")
+    m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+    a = admin.post("/api/stock-items", {"name": "脚本纱布A", "unit": "包"})
+    b = admin.post("/api/stock-items", {"name": "脚本纱布B", "unit": "包"})
+    admin.post("/api/stock-docs", {"kind": "in", "to_location_id": world["s1"]["location_id"],
+                                   "lines": [{"stock_item_id": b["id"], "qty": 4}]})
+    p = admin.post("/api/products", {"name": "凡士林纱布", "skus": [
+        {"name": "10x10", "price": 100, "stock_item_id": a["id"]}, {"name": "10*10cm", "price": 100, "stock_item_id": b["id"]},
+        {"name": "5x5", "price": 50}]})
+    m.main([])
+    assert "将合并" in capsys.readouterr().out
+    assert len(admin.get(f"/api/products/{p['id']}")["skus"]) == 3  # 只列出不改
+    m.main(["--apply"])
+    out = capsys.readouterr().out
+    assert "已合并 凡士林纱布：保留“10*10cm”（库存 4）" in out
+    assert [s["name"] for s in admin.get(f"/api/products/{p['id']}")["skus"]] == ["10*10cm", "5x5"]
