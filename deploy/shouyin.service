@@ -1,0 +1,19 @@
+[Unit]
+Description=收银系统 服务端
+After=network.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+User=shouyin
+Group=shouyin
+EnvironmentFile=/etc/shouyin/shouyin.env
+WorkingDirectory=/opt/shouyin/current/backend
+ExecStart=/opt/shouyin/venv/bin/python -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=full
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
