@@ -828,7 +828,7 @@ const App = {
       </div>
       <span class="grow"></span>
       <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
-      <el-button class="ghost" :loading="syncing" title="后台新上的商品、改的价格、门店设置等，点一下马上拿到" @click="sync">同步</el-button>
+      <el-button class="ghost" :loading="syncing" title="从服务器获取最新的商品、价格及门店设置" @click="sync">同步</el-button>
       <el-popover placement="bottom" :width="280" trigger="click">
         <template #reference><el-button class="ghost">本机设置</el-button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
