@@ -173,7 +173,7 @@ const PayDialog = {
 
 // ---------------- 收银 ----------------
 const Pos = {
-  props: ['user', 'storeId', 'settings', 'agent'],
+  props: ['user', 'storeId', 'settings', 'agent', 'sync'],
   components: { PayDialog },
   template: `
   <div class="ws-body pos">
@@ -203,7 +203,10 @@ const Pos = {
         </div>
         <div v-if="settings.osk !== 'off'" class="kb" @pointerdown.prevent @mousedown.prevent>
           <div v-for="(r, i) in KB" :key="i" class="kb-row">
-            <button v-for="k in r" :key="k" type="button" tabindex="-1" class="kb-k" :class="'kb-' + (k.length > 1 ? k : 'c')" :data-k="k" @click="kbPress(k)">{{ {back: '⌫', clear: '清空', enter: '确认'}[k] || k.toUpperCase() }}</button>
+            <template v-for="(k, j) in r" :key="j">
+              <span v-if="k.gap" class="kb-gap" :style="{flexGrow: k.gap}"></span>
+              <button v-else type="button" tabindex="-1" class="kb-k" :class="'kb-' + (k.k.length > 1 ? k.k : 'c')" :style="{flexGrow: k.w || 1}" :data-k="k.k" @click="kbPress(k.k)">{{ {back: '⌫', clear: '清空', enter: '确认'}[k.k] || k.k.toUpperCase() }}</button>
+            </template>
           </div>
         </div>
       </div>
@@ -400,8 +403,13 @@ const Pos = {
     const bump = (d) => { const l = cart.value[sel.value]; if (!l) return; if (d < 0) dec(sel.value); else l.qty++; };
     const editQty = () => { const el = qtyEls[sel.value]; if (el) { el.focus(); el.select(); } };
     // 搜索框旁边的固定键盘：只有英文字母和数字，拼音首字母、货号、条码都够用
-    const KB = [['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'], ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-      ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'back'], ['z', 'x', 'c', 'v', 'b', 'n', 'm', 'clear', 'enter']];
+    // 按标准键盘排布（每行往右错开），只要英文字母和数字；退格在数字行右边，确认在 L 右边（回车的位置），清空在 M 右边
+    const keys = (str) => str.split('').map(k => ({ k }));
+    const KB = [
+      [...keys('1234567890'), { k: 'back', w: 1.5 }],
+      [{ gap: 0.5 }, ...keys('qwertyuiop'), { gap: 1 }],
+      [{ gap: 0.75 }, ...keys('asdfghjkl'), { k: 'enter', w: 1.75 }],
+      [{ gap: 1.25 }, ...keys('zxcvbnm'), { k: 'clear', w: 2 }, { gap: 1.25 }]];
     const kbPress = (k) => {
       if (k === 'enter') { scanText.value.trim() ? onScan() : payNow(); }
       else if (k === 'back') scanText.value = scanText.value.slice(0, -1);
@@ -467,6 +475,7 @@ const Pos = {
     // 弹框关掉后回到搜索框，接着扫
     watch([payDlg, skuDlg, scanDlg, heldDlg, doneDlg, remarkDlg], (now, before) => { if (now.every(v => !v) && before.some(v => v)) focusScan(); });
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); window.addEventListener('keydown', onKey, true); });
+    watch(() => props.sync, load);  // 顶部“同步”：重新拉商品、价格、分类，购物车里已加的不动
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
@@ -597,7 +606,7 @@ const Orders = {
 
 // ---------------- 交班汇总 ----------------
 const Shift = {
-  props: ['storeId', 'user'],
+  props: ['storeId', 'user', 'sync'],
   template: `
   <div class="ws-body"><div class="page-pad" style="display:flex;flex-direction:column;gap:16px;max-width:820px">
     <div v-if="loaded && !cur" class="panel">
@@ -671,13 +680,14 @@ const Shift = {
       catch (e) { err(e); } finally { busy.value = false; }
     };
     onMounted(() => { loadCur(); loadHistory(); });
+    watch(() => props.sync, () => { loadCur(); loadHistory(); });
     return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, yuan };
   },
 };
 
 // ---------------- 本店库存 ----------------
 const Stock = {
-  props: ['storeId', 'canEdit'],
+  props: ['storeId', 'canEdit', 'sync'],
   template: `
   <div class="ws-body"><div class="page-pad">
     <div class="panel">
@@ -702,13 +712,14 @@ const Stock = {
       try { await api.post('/api/stores/' + props.storeId + '/stock-adjust', { lines, request_id: reqId }); adjusting.value = false; ElMessage.success('已盘点'); load(); } catch (e) { err(e); }
     };
     onMounted(load);
+    watch(() => props.sync, load);
     return { kw, rows, adjusting, load, startAdjust, submit };
   },
 };
 
 // ---------------- 要货申请 ----------------
 const Requisitions = {
-  props: ['storeId', 'stockVisible'],
+  props: ['storeId', 'stockVisible', 'sync'],
   template: `
   <div class="ws-body"><div class="page-pad">
     <div class="panel">
@@ -766,6 +777,7 @@ const Requisitions = {
       try { await api.post('/api/requisitions/' + row.id + '/cancel'); load(); } catch (e) { err(e); }
     };
     onMounted(load);
+    watch(() => props.sync, load);
     return { rows, status, dlg, kw, remark, saving, have, shown, load, openNew, submit, cancel };
   },
 };
@@ -805,6 +817,7 @@ const App = {
       </div>
       <span class="grow"></span>
       <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
+      <el-button class="ghost" :loading="syncing" title="后台新上的商品、改的价格、门店设置等，点一下马上拿到" @click="sync">同步</el-button>
       <el-popover placement="bottom" :width="280" trigger="click">
         <template #reference><el-button class="ghost">本机设置</el-button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
@@ -832,11 +845,11 @@ const App = {
     </div>
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
     <template v-else>
-      <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" />
+      <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" :sync="syncN" />
       <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
-      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" />
-      <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" />
-      <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" />
+      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" :sync="syncN" />
+      <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" :sync="syncN" />
+      <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" :sync="syncN" />
     </template>
   </div>`,
   setup() {
@@ -891,6 +904,17 @@ const App = {
       startPoll();
     };
     const switchStore = () => { setPref('store', storeId.value); startPoll(); };
+    // 手动同步：重新拿门店设置、账号权限，并让当前页面重新拉商品 / 订单 / 库存（不清购物车、不退出登录）
+    const syncN = ref(0), syncing = ref(false);
+    const sync = async () => {
+      syncing.value = true;
+      try {
+        const [st, me] = await Promise.all([api.get('/api/stores'), api.get('/api/auth/me')]);
+        stores.value = st; user.value = me;
+        syncN.value++; tick.value++; poll();
+        ElMessage.success('已同步最新商品、价格和设置');
+      } catch (e) { err(e); } finally { syncing.value = false; }
+    };
     const login = async () => {
       busy.value = true;
       try {
@@ -929,7 +953,7 @@ const App = {
     const deskDrawer = () => openDrawer(false);
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
-    return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore,
+    return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing,
       desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };

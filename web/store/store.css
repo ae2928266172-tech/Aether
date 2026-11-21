@@ -185,9 +185,11 @@ kbd { display: inline-block; font: 600 11px/1 Consolas, "SF Mono", monospace; co
   font-size: 15px; font-weight: 500; line-height: 1; font-family: inherit; cursor: pointer; transition: background .1s; }
 .kb-k:hover { background: var(--hover); color: var(--text); }
 .kb-k:active { background: var(--text); border-color: var(--text); color: #fff; }
-.kb-back, .kb-clear { flex: 1.5; font-size: 14px; }
-.kb-enter { flex: 2; background: var(--primary); border-color: var(--primary); color: #fff; font-size: 14px; font-weight: 600; }
+.kb-back, .kb-clear { font-size: 14px; }
+.kb-enter { background: var(--primary); border-color: var(--primary); color: #fff; font-size: 14px; font-weight: 600; }
 .kb-enter:hover, .kb-enter:active { background: #1e4fbc; border-color: #1e4fbc; color: #fff; }
+.kb-gap { flex-basis: 0; flex-shrink: 1; min-width: 0; margin-right: -6px; }
+.kb-gap:last-child { margin-right: 0; margin-left: -6px; }
 @media (max-width: 1100px) { .kb { width: 380px; } .kb-k { height: 36px; } }
 .keys span { white-space: nowrap; }
 .line.sel { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); border-radius: 4px; }
