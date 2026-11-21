@@ -55,7 +55,6 @@ const Products = {
       <el-button @click="load">查询</el-button>
       <el-button @click="exp">导出</el-button>
       <span class="grow"></span>
-      <el-button @click="openDup">整理重复规格</el-button>
       <el-button type="primary" @click="edit()">新增商品</el-button>
     </div>
     <div class="muted" style="margin:-4px 0 12px">共 {{rows.length}} 个商品 · 在售 {{rows.filter(r => r.active).length}} · 仅门店 {{rows.filter(r => r.active && !r.online_visible).length}}</div>
@@ -152,16 +151,6 @@ const Products = {
       </el-form>
       <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="save">保存</el-button></template>
     </el-dialog>
-    <el-dialog v-model="dupDlg" title="整理重复规格" width="760px" top="5vh">
-      <div class="muted" style="margin-bottom:10px">同一商品里写法不同、意思一样的规格（空格、大小写、x / * / ×、括号、cm 等写法不同）。选好保留哪个，点“合并”：库存相加，批次和历史订单跟着走，被合并的规格删除。不是同一个的不用管。</div>
-      <el-empty v-if="!dups.length" description="没有发现写法不同的重复规格" />
-      <div v-for="g in dups" :key="g.key" class="dup-group" style="border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:10px">
-        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px"><b>{{g.product_name}}</b><span class="grow"></span><el-button size="small" type="primary" :loading="g.busy" @click="mergeDup(g)">合并</el-button></div>
-        <el-radio-group v-model="g.keep" style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">
-          <el-radio v-for="k in g.skus" :key="k.id" :value="k.id">保留“{{k.name}}”<span class="muted">　¥{{yuan(k.price)}}　{{k.barcode || '无条码'}}　{{k.stock_item_name ? k.stock_item_name + ' 扣 ' + Number(k.deduct_qty) : '不扣库存'}}</span></el-radio>
-        </el-radio-group>
-      </div>
-    </el-dialog>
   </div>`,
   setup(props) {
     const rows = ref([]), kw = ref(''), cat = ref(null), showOff = ref(false), dlg = ref(false), saving = ref(false);
@@ -213,25 +202,13 @@ const Products = {
     onMounted(load);
     const qtyText = (r) => [r.min_qty > 1 ? r.min_qty + ' 件起' : '', r.max_qty ? '限 ' + r.max_qty + ' 件' : ''].filter(Boolean).join('，') || '不限数量';
     const exp = async () => { try { await api.download('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
-    // 整理重复规格：写法不同、意思一样的规格合并成一个（库存相加，历史订单跟着走）
-    const dupDlg = ref(false), dups = ref([]);
-    const openDup = async () => {
-      try { dups.value = (await api.get('/api/sku-duplicates')).map((g, i) => ({ ...g, key: g.product_id + '-' + i, keep: g.skus[0].id, busy: false })); dupDlg.value = true; } catch (e) { err(e); }
-    };
-    const mergeDup = async (g) => {
-      const keep = g.skus.find(k => k.id === g.keep), drops = g.skus.filter(k => k.id !== g.keep);
-      try { await ElMessageBox.confirm(g.product_name + '：把' + drops.map(k => '“' + k.name + '”').join('、') + '合并到“' + keep.name + '”？库存相加，合并后不能拆开。', '合并规格', { type: 'warning' }); } catch (e) { return; }
-      g.busy = true;
-      try { await api.post('/api/skus/merge', { keep_id: g.keep, drop_ids: drops.map(k => k.id) }); dups.value = dups.value.filter(x => x !== g); ElMessage.success('已合并'); load(); }
-      catch (e) { err(e); } finally { g.busy = false; }
-    };
     const mergeInto = async (keepId, row) => {
       const keep = form.skus.find(k => k.id === keepId);
       try { await ElMessageBox.confirm('把规格“' + row.name + '”合并到“' + keep.name + '”？库存相加，批次和历史订单跟着走，“' + row.name + '”会被删除，不能拆开。\n表单里没保存的修改会丢掉。', '合并规格', { type: 'warning' }); } catch (e) { return; }
       try { const p = await api.post('/api/skus/merge', { keep_id: keepId, drop_ids: [row.id] }); ElMessage.success('已合并'); await load(); edit(p); } catch (e) { err(e); }
     };
     return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, save, catLabel, qtyText, yuan,
-      dupDlg, dups, openDup, mergeDup, mergeInto };
+      mergeInto };
   },
 };
 
