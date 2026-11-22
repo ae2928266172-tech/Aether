@@ -145,6 +145,8 @@ def get_order(oid: int, db: Session = Depends(get_db), user: User = Depends(curr
     o = _load(db, oid, user)
     d = order_out(o)
     d["refunds"] = [refund_out(r) for r in db.scalars(select(Refund).where(Refund.order_id == o.id))]
+    from ..models import Exchange
+    d["exchanges"] = [exchange_out(x) for x in db.scalars(select(Exchange).where(Exchange.order_id == o.id).order_by(Exchange.id))]
     from ..models import OrderLog
     d["logs"] = [{"action": l.action, "detail": l.detail, "created_at": l.created_at.strftime("%Y-%m-%d %H:%M:%S")}
                  for l in db.scalars(select(OrderLog).where(OrderLog.order_id == o.id).order_by(OrderLog.id))]
@@ -199,28 +201,68 @@ def modify(oid: int, body: ModifyIn, db: Session = Depends(get_db), user: User =
     return order_out(o)
 
 
-class ExchangeIn(BaseModel):
+class ExReturnIn(BaseModel):
     order_item_id: int
+    qty: int = Field(gt=0)
+
+
+class ExItemIn(BaseModel):
     sku_id: int
     qty: int = Field(gt=0)
+
+
+class ExchangeIn(BaseModel):
+    returns: list[ExReturnIn]
+    items: list[ExItemIn]
+    new_amount: int | None = None  # 换出商品成交金额（分），不填按现价
+    condition: str = "good"  # good 完好回可售库存 / defective 拆封破损进残次品库
     method: str | None = None
     reason: str = ""
     request_id: str | None = None
+    escpos: bool = False
+
+
+def exchange_out(ex) -> dict:
+    return {"id": ex.id, "no": ex.no, "order_id": ex.order_id, "old_amount": ex.old_amount,
+            "new_original": ex.new_original, "new_amount": ex.new_amount, "diff": ex.diff, "method": ex.method,
+            "condition": ex.condition, "reason": ex.reason, "created_at": ex.created_at.strftime("%Y-%m-%d %H:%M:%S"),
+            "print_count": ex.print_count}
+
+
+def _exchange_receipt(db: Session, ex, user: User, reprint: bool, escpos: bool) -> dict:
+    from ..services.receipt import build_exchange_receipt
+    ex.print_count += 1
+    r = build_exchange_receipt(db, ex, user, reprint=reprint)
+    if escpos:
+        import base64
+        from ..services import escpos as esc
+        r = {**r, "escpos": base64.b64encode(esc.build(r)).decode()}
+    return r
 
 
 @router.post("/orders/{oid}/exchange/quote")
 def exchange_quote(oid: int, body: ExchangeIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
-    """换规格前先算差价（按原行折扣比例），不改数据。"""
-    return svc.exchange_quote(db, _load(db, oid, user), body.order_item_id, body.sku_id, body.qty)
+    """换货前先算：退回商品按原实收、换出商品按现价（或调低后的金额），差价多退少补。不改数据。"""
+    return svc.exchange_quote(db, _load(db, oid, user), user, [r.model_dump() for r in body.returns],
+                              [i.model_dump() for i in body.items], body.new_amount)
 
 
 @router.post("/orders/{oid}/exchange")
 def exchange(oid: int, body: ExchangeIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
-    svc.once(db, lambda: svc.exchange(db, _load(db, oid, user, lock=True), user, body.order_item_id, body.sku_id,
-                                      body.qty, body.method, body.reason, body.request_id))
+    """售后换货：可跨商品、部分换、一换多；必须带 request_id，重复提交返回第一次的结果。"""
+    ex = svc.once(db, lambda: svc.exchange(
+        db, _load(db, oid, user, lock=True), user, [r.model_dump() for r in body.returns],
+        [i.model_dump() for i in body.items], body.condition, body.method, body.new_amount, body.reason,
+        body.request_id))
     o = _load(db, oid, user)
     db.refresh(o)
-    return order_out(o)
+    out = {"exchange": exchange_out(ex), "order": order_out(o)}
+    if o.store.print_mode == "agent":
+        out["receipt"] = {"queued": True, "order_no": o.no}
+    elif ex.print_count == 0:  # 换货凭证：浏览器 / 桌面软件直接打印（重试的请求不再重复出票）
+        out["receipt"] = _exchange_receipt(db, ex, user, False, body.escpos)
+        db.commit()
+    return out
 
 
 class RefundLineIn(BaseModel):
@@ -299,3 +341,23 @@ def shift_summary(store_id: int, day: date | None = None, db: Session = Depends(
         out[method][kind] += int(amt or 0)
     total = sum(v["pay"] - v["refund"] for v in out.values())
     return {"date": d.isoformat(), "cashier": user.display_name or user.username, "methods": out, "net": total}
+
+
+@router.post("/exchanges/{eid}/print")
+def print_exchange(eid: int, body: PrintIn, db: Session = Depends(get_db), user: User = Depends(current_user)):
+    """补打售后换货凭证。"""
+    from ..models import Exchange
+    ex = db.get(Exchange, eid)
+    if not ex:
+        raise HTTPException(404, "换货单不存在")
+    o = _load(db, ex.order_id, user)
+    if not has_perm(user, "reprint"):
+        raise HTTPException(403, "没有补打小票权限")
+    if o.store.print_mode == "agent":
+        from ..services.printq import enqueue
+        enqueue(db, o.store, o, "exchange", user, exchange=ex)
+        db.commit()
+        return {"queued": True, "order_no": o.no}
+    r = _exchange_receipt(db, ex, user, True, body.escpos)
+    db.commit()
+    return r

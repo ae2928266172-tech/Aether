@@ -21,18 +21,24 @@ def pay_summary(db: Session, store_id: int, user_id: int, start: datetime, end: 
     cond = [Order.store_id == store_id, Payment.created_by == user_id, Payment.created_at >= start]
     if end:
         cond.append(Payment.created_at <= end)
-    rows = db.execute(select(Payment.kind, Payment.method, func.count(), func.sum(Payment.amount))
+    rows = db.execute(select(Payment.kind, Payment.method, Payment.exchange_id.is_not(None), func.count(),
+                             func.sum(Payment.amount))
                       .join(Order, Order.id == Payment.order_id).where(*cond)
-                      .group_by(Payment.kind, Payment.method)).all()
-    methods = {m: {"method_text": t, "pay_count": 0, "pay": 0, "refund_count": 0, "refund": 0}
+                      .group_by(Payment.kind, Payment.method, Payment.exchange_id.is_not(None))).all()
+    methods = {m: {"method_text": t, "pay_count": 0, "pay": 0, "refund_count": 0, "refund": 0,
+                   "exchange_pay": 0, "exchange_refund": 0}
                for m, t in PAY_METHODS.items()}
-    for kind, method, cnt, amt in rows:
+    for kind, method, is_ex, cnt, amt in rows:
         methods[method][kind + "_count"] += cnt
         methods[method][kind] += int(amt or 0)
+        if is_ex:  # 其中换货补差 / 换货退差（已含在收款 / 退款里，单独列出方便对账）
+            methods[method]["exchange_" + kind] += int(amt or 0)
     orders = db.scalar(select(func.count(func.distinct(Payment.order_id))).join(Order, Order.id == Payment.order_id)
                        .where(*cond, Payment.kind == "pay")) or 0
     net = sum(v["pay"] - v["refund"] for v in methods.values())
     return {"methods": methods, "orders": orders, "net": net,
+            "exchange_pay": sum(v["exchange_pay"] for v in methods.values()),
+            "exchange_refund": sum(v["exchange_refund"] for v in methods.values()),
             "cash_in": methods["cash"]["pay"] - methods["cash"]["refund"]}
 
 
@@ -51,6 +57,7 @@ def shift_out(db: Session, s: Shift, users: dict | None = None, stores: dict | N
             "started_at": dt(s.started_at), "ended_at": dt(s.ended_at), "opening_cash": s.opening_cash,
             "expected_cash": expected, "counted_cash": s.counted_cash, "cash_diff": s.cash_diff,
             "orders": summ.get("orders", 0), "net": summ.get("net", 0),
+            "exchange_pay": summ.get("exchange_pay", 0), "exchange_refund": summ.get("exchange_refund", 0),
             "methods": summ.get("methods", {}), "remark": s.remark}
 
 

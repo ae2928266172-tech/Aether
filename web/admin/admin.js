@@ -631,7 +631,7 @@ const Inventory = {
   </div>`,
   setup(props) {
     const locations = ref([]), loc = ref(null), range = ref([today(), today()]), kw = ref(''), rows = ref([]);
-    const cols = [['opening', '期初'], ['in', '入库'], ['out', '出库'], ['transfer_in', '调入'], ['transfer_out', '调出'], ['sale', '销售'], ['sale_return', '退货回补'], ['adjust', '盘点'], ['closing', '结余']];
+    const cols = [['opening', '期初'], ['in', '入库'], ['out', '出库'], ['transfer_in', '调入'], ['transfer_out', '调出'], ['sale', '销售'], ['sale_return', '退货回补'], ['exchange_out', '换货出库'], ['exchange_in', '换货入库'], ['adjust', '盘点'], ['closing', '结余']];
     const dDlg = ref(false), saving = ref(false), doc = reactive({ kind: 'in', from: null, to: null, remark: '', reason: '', supplier_id: null, lines: [], rid: '' });
     const outReasons = ['领用', '报损', '退供应商', '其他'], kindText = { in: '入库', out: '出库', transfer: '调拨', adjust: '盘点' };
     const lineAmt = (r) => { const q = parseFloat(r.qty), p = money(r.price); return q > 0 && p !== null ? Math.round(q * p) : null; };
@@ -783,7 +783,7 @@ const OrderDetail = {
       <el-descriptions-item v-if="order.remark" label="备注" :span="3">{{order.remark}}</el-descriptions-item>
     </el-descriptions>
     <el-table :data="order.items" border size="small" style="margin-top:10px">
-      <el-table-column label="商品"><template #default="{row}">{{row.product_name}}<el-tag v-if="row.added_at" size="small" type="info" style="margin-left:4px">换入</el-tag></template></el-table-column>
+      <el-table-column label="商品"><template #default="{row}">{{row.product_name}}<el-tag v-if="row.added_at" size="small" type="info" style="margin-left:4px">换货</el-tag></template></el-table-column>
       <el-table-column prop="sku_name" label="规格" width="100" />
       <el-table-column prop="qty" label="数量" width="70" />
       <el-table-column label="单价" width="80"><template #default="{row}">{{yuan(row.unit_price)}}</template></el-table-column>

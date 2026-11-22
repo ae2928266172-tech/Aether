@@ -182,7 +182,7 @@ def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids
     if keyword:
         q = q.where(OrderItem.product_name.contains(keyword) | OrderItem.sku_name.contains(keyword))
     for it, o in db.execute(q):
-        lines.append({"type": "sale", "type_text": "换入" if it.added_at else "销售", "time": it.added_at or o.paid_at, "order_id": o.id, "order_no": o.no,
+        lines.append({"type": "sale", "type_text": "换货换出" if it.added_at else "销售", "time": it.added_at or o.paid_at, "order_id": o.id, "order_no": o.no,
                       "store_id": o.store_id, "store_name": o.store.name, "source": o.source,
                       "area": (o.area_name + " " + o.location_note).strip(), "sku_id": it.sku_id,
                       "product_name": it.product_name, "sku_name": it.sku_name, "qty": it.qty,
@@ -200,7 +200,7 @@ def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids
     if keyword:
         q = q.where(OrderItem.product_name.contains(keyword) | OrderItem.sku_name.contains(keyword))
     for ln, rf, it, o in db.execute(q):
-        lines.append({"type": "refund", "type_text": "换出" if rf.kind == "exchange" else "退货", "time": rf.created_at, "order_id": o.id, "order_no": o.no,
+        lines.append({"type": "refund", "type_text": "换货退回" if rf.kind == "exchange" else "退货", "time": rf.created_at, "order_id": o.id, "order_no": o.no,
                       "refund_no": rf.no, "store_id": o.store_id, "store_name": o.store.name, "source": o.source,
                       "area": (o.area_name + " " + o.location_note).strip(), "sku_id": it.sku_id,
                       "product_name": it.product_name, "sku_name": it.sku_name, "qty": -ln.qty,

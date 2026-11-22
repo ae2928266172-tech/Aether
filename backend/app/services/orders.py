@@ -16,11 +16,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import now
-from ..models import (Area, Order, OrderItem, OrderLog, Payment, Product, Refund, RefundLine, Sku,
-                      StockItem, Store, User)
+from ..models import (Area, Exchange, Location, Order, OrderItem, OrderLog, Payment, Product, Refund, RefundLine,
+                      Sku, StockItem, Store, User)
 from ..security import has_perm
 from ..settings_store import get_setting
-from .inventory import change_stock, lock_balances, return_alloc
+from .inventory import change_stock, defective_location, find_batch, lock_balances, return_alloc
 from .printq import auto_enqueue
 
 PAY_METHODS = {"cash": "现金", "wechat": "微信", "alipay": "支付宝", "other": "其他"}
@@ -402,93 +402,169 @@ def _check_refund_days(db: Session, order: Order, user: User, what: str):
         raise HTTPException(403, f"超过 {days} 天的订单不能{what}，请联系管理员")
 
 
-def _exchange_calc(db: Session, order: Order, order_item_id: int, sku_id: int, qty: int):
-    """换规格要算的：原规格这几件的实收（moved）、新规格按原行同样折扣折算的实收、差价。"""
-    it = next((i for i in order.items if i.id == order_item_id), None)
-    if not it:
-        raise HTTPException(400, "商品不属于该订单")
-    left = it.qty - it.refunded_qty
-    if qty <= 0 or qty > left:
-        raise HTTPException(400, f"{it.product_name} 最多能换 {left} 件")
-    sku = db.get(Sku, sku_id)
-    if not sku or sku.product_id != it.product_id:
-        raise HTTPException(400, "只能换同一商品的其他规格")
-    if sku.id == it.sku_id:
-        raise HTTPException(400, "新规格和原规格相同")
-    new = build_items(db, [{"sku_id": sku.id, "qty": qty}], online=False)[0]
-    # 原规格这几件按退货的算法分出实收
-    if qty == left:
-        refunded_amt = db.scalar(select(func.sum(RefundLine.amount)).where(RefundLine.order_item_id == it.id)) or 0
-        moved = it.paid_share - refunded_amt
-    else:
-        moved = it.paid_share * qty // it.qty
-    # 新规格沿用原行的折扣比例：原价 100 实收 50 的换成 40 元规格，新规格实收 20，退差价 30（不会退得比实收还多）
-    old_amt = it.unit_price * qty
-    new_paid = (new.unit_price * qty * moved + old_amt // 2) // old_amt if old_amt else new.unit_price * qty
-    return it, sku, new, moved, new_paid, new_paid - moved
+def _check_adjust(user: User, original: int, amount: int):
+    """换出商品调低成交金额：和收银调低应收同样的权限（调整金额权限、单笔上限、最低折扣）。"""
+    if amount == original:
+        return
+    if not has_perm(user, "adjust_amount"):
+        raise HTTPException(403, "没有调整金额的权限")
+    if amount > original:
+        raise HTTPException(400, "换出商品金额只能调低，不能高于现价")
+    if amount < 0:
+        raise HTTPException(400, "金额不能为负数")
+    min_rate, max_adjust = discount_limits(user)
+    if max_adjust is not None and original - amount > max_adjust:
+        raise HTTPException(403, f"你的权限单笔最多调低 {max_adjust / 100:.2f} 元")
+    if min_rate > 1:
+        floor = -(-original * min_rate // 100)
+        if amount < floor:
+            raise HTTPException(403, f"你的权限最低只能打 {min_rate / 10:g} 折，换出商品金额不能低于 {floor / 100:.2f} 元")
 
 
-def exchange_quote(db: Session, order: Order, order_item_id: int, sku_id: int, qty: int) -> dict:
-    it, sku, new, moved, new_paid, diff = _exchange_calc(db, order, order_item_id, sku_id, qty)
-    return {"old_paid": moved, "new_paid": new_paid, "diff": diff}
-
-
-def exchange(db: Session, order: Order, user: User, order_item_id: int, sku_id: int, qty: int,
-             method: str | None = None, reason: str = "", request_id: str | None = None) -> Order:
-    """已收款订单换规格（如 M 码换 L 码）：原规格退回库存、新规格扣库存，不用退单重打。
-
-    原商品行不改不删：换出的件数记一笔“换规格”退货（原规格回库存），换进的规格另加一行，记换货时间，
-    报表按换货当天统计，历史日期的销量、毛利不变。差价按原行折扣比例折算，补收 / 退还各记一笔。
-    """
-    exist = _by_request(db, Refund, request_id)
-    if exist:
-        same_request(exist.order_id == order.id and exist.created_by == user.id and exist.kind == "exchange")
-        return order
+def _exchange_calc(db: Session, order: Order, user: User | None, returns: list[dict], items: list[dict],
+                   new_amount: int | None):
+    """算换货：退回哪些行各多少件、各按原实收值多少钱；换出的新商品（现价）；成交金额和差价。"""
     if order.status == "cancelled" or order.pay_status not in ("paid", "partial_refunded"):
-        raise HTTPException(409, "只有已收款的订单可以换规格；未收款的订单请用“修改订单”")
-    _check_refund_days(db, order, user, "换规格")
-    it, sku, new, moved, new_paid, diff = _exchange_calc(db, order, order_item_id, sku_id, qty)
+        raise HTTPException(409, "只有已收款的订单可以换货；未收款的订单请用“修改订单”")
+    by_id = {i.id: i for i in order.items}
+    want: dict[int, int] = defaultdict(int)
+    for r in returns:
+        if int(r["qty"]) > 0:
+            want[int(r["order_item_id"])] += int(r["qty"])
+    if not want:
+        raise HTTPException(400, "请选择要退回的商品和件数")
+    refunded_amt = dict(db.execute(
+        select(RefundLine.order_item_id, func.sum(RefundLine.amount))
+        .join(Refund, Refund.id == RefundLine.refund_id).where(Refund.order_id == order.id)
+        .group_by(RefundLine.order_item_id)).all())
+    back = []
+    for iid, q in want.items():
+        it = by_id.get(iid)
+        if not it:
+            raise HTTPException(400, "退回的商品不属于该订单")
+        left = it.qty - it.refunded_qty  # 已退货、已换出的都算进 refunded_qty
+        if q > left:
+            raise HTTPException(400, f"{it.product_name} 最多还能退换 {left} 件")
+        # 按原单实际分摊的实收算（扣掉整单折扣），和退货同一算法
+        amt = it.paid_share - (refunded_amt.get(iid) or 0) if q == left else it.paid_share * q // it.qty
+        back.append((it, q, amt))
+    lines = [{"sku_id": int(x["sku_id"]), "qty": int(x["qty"])} for x in items if int(x["qty"]) > 0]
+    if not lines:
+        raise HTTPException(400, "请选择要换成的商品和件数")
+    new = build_items(db, lines, online=False)
+    old_amount = sum(a for _, _, a in back)
+    new_original = sum(i.amount for i in new)
+    amount = new_original if new_amount is None else int(new_amount)
+    if user is not None:
+        _check_adjust(user, new_original, amount)
+    _allocate(new, amount)
+    return back, new, old_amount, new_original, amount, amount - old_amount
+
+
+def exchange_quote(db: Session, order: Order, user: User, returns: list[dict], items: list[dict],
+                   new_amount: int | None = None) -> dict:
+    back, new, old_amount, new_original, amount, diff = _exchange_calc(db, order, user, returns, items, new_amount)
+    return {"old_amount": old_amount, "new_original": new_original, "new_amount": amount, "diff": diff,
+            "returns": [{"order_item_id": it.id, "qty": q, "amount": a} for it, q, a in back],
+            "items": [{"sku_id": i.sku_id, "name": i.product_name, "sku_name": i.sku_name, "qty": i.qty,
+                       "unit_price": i.unit_price, "amount": i.amount, "paid": i.paid_share} for i in new]}
+
+
+def exchange(db: Session, order: Order, user: User, returns: list[dict], items: list[dict], condition: str,
+             method: str | None = None, new_amount: int | None = None, reason: str = "",
+             request_id: str | None = None) -> Exchange:
+    """售后换货（拿 A 换 B，可跨商品、可部分、可一换多）：多退少补，旧商品回库存或进残次品库，新商品出库。
+
+    原商品行不改不删：退回的件数记一笔“换货”退货（Refund.kind=exchange），换出的商品在订单里另起行
+    （记 added_at、exchange_id），报表按换货当天统计，历史日期的销量、实收、毛利不变。
+    """
+    if not request_id:
+        raise HTTPException(400, "缺少请求号，请刷新页面后重试")
+    exist = db.scalar(select(Exchange).where(Exchange.request_id == request_id))
+    if exist:
+        same_request(exist.order_id == order.id and exist.created_by == user.id)
+        return exist
+    if condition not in ("good", "defective"):
+        raise HTTPException(400, "请选择退回商品的状态：完好可再售，或拆封 / 破损")
+    _check_refund_days(db, order, user, "换货")
+    back, new, old_amount, new_original, amount, diff = _exchange_calc(db, order, user, returns, items, new_amount)
     if diff < 0 and not has_perm(user, "refund"):
-        raise HTTPException(403, "新规格更便宜要退差价，你没有退款权限")
-    if method is None:
+        raise HTTPException(403, "需要退差价，你没有退款权限")
+    if diff and method is None:
         pays = [p for p in order.payments if p.kind == "pay"]
-        method = pays[0].method if pays else "cash"
+        method = pays[0].method if pays else "cash"  # 退差价默认退回原支付方式
     if diff and method not in PAY_METHODS:
         raise HTTPException(400, "收款方式错误")
-    old_name = it.product_name + ("·" + it.sku_name if it.sku_name != "默认" else "")
-    detail = (f"{old_name} ×{qty} 换成 {sku.name}" + (f"，补收 {diff / 100:.2f} 元" if diff > 0 else "")
-              + (f"，退差价 {-diff / 100:.2f} 元" if diff < 0 else "") + "，原规格已退回库存" + (f"；{reason}" if reason else ""))
-    rf = Refund(no=_no("T"), order_id=order.id, amount=max(0, -diff), restock=True, kind="exchange",
-                reason=("换规格：" + detail)[:200], created_by=user.id, request_id=request_id)
+    if diff < 0 and -diff > old_amount:  # 不会发生（新商品金额不为负），留作兜底
+        raise HTTPException(400, "退差价不能超过退回商品的实收")
+    rf = Refund(no=_no("T"), order_id=order.id, amount=max(0, -diff), restock=condition == "good", kind="exchange",
+                created_by=user.id)
     db.add(rf)
     db.flush()
-    db.add(RefundLine(refund_id=rf.id, order_item_id=it.id, qty=qty, amount=moved))
-    it.refunded_qty += qty
-    lock_balances(db, [(sid, order.store.location_id) for sid in (it.stock_item_id, new.stock_item_id) if sid])
-    restore_stock(db, order, {it.id: qty}, user)
+    ex = Exchange(no=_no("H"), order_id=order.id, refund_id=rf.id, old_amount=old_amount, new_original=new_original,
+                  new_amount=amount, diff=diff, method=method if diff else None, condition=condition,
+                  reason=(reason or "").strip()[:200], created_by=user.id, request_id=request_id)
+    db.add(ex)
+    db.flush()
+    for it, q, a in back:
+        db.add(RefundLine(refund_id=rf.id, order_item_id=it.id, qty=q, amount=a))
+        it.refunded_qty += q
+    # 库存：先按（库存品、地点）排序把要动的行都锁上，防死锁
+    store_loc = order.store.location_id
+    bad_loc = defective_location(db, db.get(Location, store_loc)).id if condition == "defective" else None
+    old_need: dict[int, Decimal] = defaultdict(Decimal)
+    for it, q, _ in back:
+        if it.stock_item_id:
+            old_need[it.stock_item_id] += Decimal(it.deduct_qty) * q
+    new_need: dict[int, Decimal] = defaultdict(Decimal)
+    for i in new:
+        if i.stock_item_id:
+            new_need[i.stock_item_id] += Decimal(i.deduct_qty) * i.qty
+    pairs = [(sid, store_loc) for sid in new_need]
+    if order.stock_deducted:
+        pairs += [(sid, bad_loc or store_loc) for sid in old_need]
+    lock_balances(db, pairs)
+    if order.stock_deducted:
+        for sid, q in sorted(old_need.items()):
+            alloc = return_alloc(db, order.id, store_loc, sid, q)  # 尽量回到当初卖出的批次
+            if bad_loc:  # 拆封 / 破损：进残次品库（批次信息照搬），不回可售库存
+                alloc = [(find_batch(db, bad_loc, sid, b.batch_no, b.production_date, b.expiry_date, create=True), bq)
+                         for b, bq in alloc]
+            change_stock(db, location_id=bad_loc or store_loc, stock_item_id=sid, qty=q, kind="exchange_in",
+                         order_id=order.id, user_id=user.id, alloc=alloc)
     rules = get_setting(db, "rules")
-    if new.stock_item_id:
-        change_stock(db, location_id=order.store.location_id, stock_item_id=new.stock_item_id,
-                     qty=-(Decimal(new.deduct_qty) * qty), kind="sale", order_id=order.id,
-                     allow_negative=rules["online_allow_negative"] if order.source == "online" else rules["pos_allow_negative"],
-                     user_id=user.id)
-    new.paid_share = new_paid
-    new.order_id = order.id
-    new.added_at = now()
-    db.add(new)
+    allow = rules["online_allow_negative"] if order.source == "online" else rules["pos_allow_negative"]
+    for sid, q in sorted(new_need.items()):
+        change_stock(db, location_id=store_loc, stock_item_id=sid, qty=-q, kind="exchange_out", order_id=order.id,
+                     allow_negative=allow, user_id=user.id)
+    at = now()
+    for i in new:
+        i.order_id, i.added_at, i.exchange_id = order.id, at, ex.id
+        db.add(i)
     if diff > 0:
-        db.add(Payment(order_id=order.id, kind="pay", method=method, amount=diff, received=diff, created_by=user.id))
+        db.add(Payment(order_id=order.id, kind="pay", method=method, amount=diff, received=diff, created_by=user.id,
+                       exchange_id=ex.id))
         order.paid_amount += diff
     elif diff < 0:
         db.add(Payment(order_id=order.id, kind="refund", method=method, amount=-diff, received=-diff,
-                       created_by=user.id, refund_id=rf.id))
+                       created_by=user.id, refund_id=rf.id, exchange_id=ex.id))
         order.refunded_amount += -diff
-    log(db, order, "换规格", detail, user)
+    name = lambda n, k: n + ("·" + k if k and k != "默认" else "")
+    detail = ("退回 " + "、".join(f"{name(it.product_name, it.sku_name)}×{q}" for it, q, _ in back)
+              + ("（完好，回可售库存）" if condition == "good" else "（拆封 / 破损，进残次品库）")
+              + "；换出 " + "、".join(f"{name(i.product_name, i.sku_name)}×{i.qty}" for i in new)
+              + (f"；补收 {diff / 100:.2f} 元（{PAY_METHODS[method]}）" if diff > 0 else "")
+              + (f"；退还 {-diff / 100:.2f} 元（{PAY_METHODS[method]}）" if diff < 0 else "")
+              + ("；差价为 0" if diff == 0 else "") + (f"；原因：{ex.reason}" if ex.reason else ""))
+    rf.reason = ("换货 " + ex.no + "：" + detail)[:200]
+    log(db, order, "换货", f"{ex.no} {detail}", user)
     from .. import audit
-    audit.record(db, user, "换规格", order.no, summary=detail)
+    audit.record(db, user, "换货", order.no, summary=f"{ex.no} {detail}")
+    from .printq import enqueue
+    enqueue(db, order.store, order, "exchange", user, exchange=ex)
     db.flush()
     db.expire(order, ["items", "payments"])
-    return order
+    return ex
 
 
 def refund(db: Session, order: Order, user: User, lines: list[dict], restock: bool = True,

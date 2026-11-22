@@ -13,6 +13,9 @@ from ..models import (BatchMove, Location, StockBalance, StockBatch, StockDoc, S
                       StockMove)
 
 
+SALE_KINDS = ("sale", "exchange_out")  # 卖给顾客的出库：不能出已过期批次
+
+
 def D(x) -> Decimal:
     return x if isinstance(x, Decimal) else Decimal(str(x))
 
@@ -30,6 +33,17 @@ def get_balance(db: Session, location_id: int, stock_item_id: int, lock: bool = 
                    .on_conflict_do_nothing(index_elements=["location_id", "stock_item_id"]))
         bal = db.scalar(q.execution_options(populate_existing=True))
     return bal
+
+
+def defective_location(db: Session, store_location: Location) -> Location:
+    """门店的残次品库（顾客退回的已拆封、破损商品放这里，不能再卖，只能报损或退供应商）。没有就建一个。"""
+    name = f"{store_location.name}残次品"
+    loc = db.scalar(select(Location).where(Location.name == name))
+    if loc is None:
+        loc = Location(name=name, kind="defective")
+        db.add(loc)
+        db.flush()
+    return loc
 
 
 def lock_balances(db: Session, pairs):
@@ -55,7 +69,8 @@ def change_stock(db: Session, *, location_id: int, stock_item_id: int, qty, kind
     qty = D(qty)
     bal = get_balance(db, location_id, stock_item_id, lock=True)
     new_qty = D(bal.qty) + qty
-    expired = _expired_qty(db, location_id, stock_item_id) if kind == "sale" and qty < 0 else Decimal(0)
+    selling = kind in SALE_KINDS and qty < 0
+    expired = _expired_qty(db, location_id, stock_item_id) if selling else Decimal(0)
     if qty < 0 and new_qty < expired and not allow_negative:
         item = db.get(StockItem, stock_item_id)
         loc = db.get(Location, location_id)
@@ -80,7 +95,7 @@ def change_stock(db: Session, *, location_id: int, stock_item_id: int, qty, kind
             elif q > 0:
                 _batch_record(db, mv, b, q)
     elif qty < 0:
-        _consume_fifo(db, mv, -qty, skip_expired=kind == "sale")  # 销售不扣已过期批次（过期的只能报损出库）
+        _consume_fifo(db, mv, -qty, skip_expired=selling)  # 销售不扣已过期批次（过期的只能报损出库）
     elif qty > 0 and batch and any(batch.get(k) for k in ("batch_no", "production_date", "expiry_date")):
         b = find_batch(db, location_id, stock_item_id, batch.get("batch_no") or "",
                        batch.get("production_date"), batch.get("expiry_date"), create=True)
@@ -201,12 +216,12 @@ def is_low(qty, alert_qty) -> bool:
 
 
 def low_stock(db: Session, location_id: int | None = None) -> list[dict]:
-    """所有启用的仓库 / 门店里，低于预警量的库存品。没有库存记录的按 0 算。"""
+    """所有启用的仓库 / 门店里，低于预警量的库存品。没有库存记录的按 0 算。残次品库不预警。"""
     items = db.scalars(select(StockItem).where(StockItem.active.is_(True), StockItem.alert_qty.is_not(None))
                        .order_by(StockItem.id)).all()
     if not items:
         return []
-    locs_q = select(Location).where(Location.active.is_(True)).order_by(Location.kind.desc(), Location.id)
+    locs_q = select(Location).where(Location.active.is_(True), Location.kind != "defective").order_by(Location.kind.desc(), Location.id)
     if location_id:
         locs_q = locs_q.where(Location.id == location_id)
     locs = db.scalars(locs_q).all()
@@ -418,7 +433,8 @@ def void_doc(db: Session, doc_id: int, user_id: int | None, reason: str = "") ->
 
 LEDGER_COLUMNS = {
     "in": "入库", "out": "出库", "transfer_in": "调入", "transfer_out": "调出",
-    "sale": "销售", "sale_return": "退货回补", "adjust": "盘点调整",
+    "sale": "销售", "sale_return": "退货回补", "exchange_out": "换货出库", "exchange_in": "换货入库",
+    "adjust": "盘点调整",
 }
 
 
@@ -455,7 +471,7 @@ def ledger(db: Session, location_id: int, begin: date, end: date, keyword: str =
         for k in LEDGER_COLUMNS:
             v = D(p.get(k, 0))
             # 出库类在表里显示为正数
-            row[k] = -v if k in ("out", "transfer_out", "sale") else v
+            row[k] = -v if k in ("out", "transfer_out", "sale", "exchange_out") else v
             total += v
         row["closing"] = total
         row["current"] = D(current.get(it.id) or 0)

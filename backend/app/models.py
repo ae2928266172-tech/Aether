@@ -63,7 +63,7 @@ class Location(Base, TimestampMixin):
     __tablename__ = "locations"
     id: Mapped[int] = mapped_column(primary_key=True)
     name: Mapped[str] = mapped_column(String(50), unique=True)
-    kind: Mapped[str] = mapped_column(String(20))  # warehouse / store
+    kind: Mapped[str] = mapped_column(String(20))  # warehouse / store / defective（门店残次品库，不可销售）
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 
@@ -274,6 +274,7 @@ class StockMove(Base):
     stock_item_id: Mapped[int] = mapped_column(ForeignKey("stock_items.id"), index=True)
     qty: Mapped[Decimal] = mapped_column(Qty)
     # in 入库 / out 出库 / transfer_in 调入 / transfer_out 调出 / sale 销售 / sale_return 退货回补 / adjust 盘点调整
+    # exchange_in 换货入库（顾客退回的旧商品）/ exchange_out 换货出库（换给顾客的新商品）
     kind: Mapped[str] = mapped_column(String(20))
     doc_id: Mapped[int | None] = mapped_column(ForeignKey("stock_docs.id"), nullable=True)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)
@@ -431,8 +432,9 @@ class OrderItem(Base):
     deduct_qty: Mapped[Decimal] = mapped_column(Qty, default=Decimal(1))
     refunded_qty: Mapped[int] = mapped_column(Integer, default=0)
     medical_info: Mapped[dict] = mapped_column(JSON, default=dict)
-    # 收款后换规格换进来的行：记换货时间，报表按这个时间算销售；收银时就有的行为空（按订单收款时间算）
+    # 收款后换货换进来的行：记换货时间，报表按这个时间算销售；收银时就有的行为空（按订单收款时间算）
     added_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    exchange_id: Mapped[int | None] = mapped_column(ForeignKey("exchanges.id"), nullable=True)
 
 
 class Payment(Base):
@@ -451,6 +453,7 @@ class Payment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     refund_id: Mapped[int | None] = mapped_column(ForeignKey("refunds.id"), nullable=True)
+    exchange_id: Mapped[int | None] = mapped_column(ForeignKey("exchanges.id"), nullable=True)  # 换货补差 / 退差
 
 
 class Refund(Base):
@@ -460,12 +463,35 @@ class Refund(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     amount: Mapped[int] = mapped_column(Integer)
     restock: Mapped[bool] = mapped_column(Boolean, default=True)
-    kind: Mapped[str] = mapped_column(String(10), default="refund")  # refund 退货 / exchange 换规格（换出原规格）
+    kind: Mapped[str] = mapped_column(String(10), default="refund")  # refund 退货 / exchange 换货退回
     reason: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     lines: Mapped[list["RefundLine"]] = relationship(lazy="selectin")
+
+
+class Exchange(Base):
+    """售后换货单：顾客拿已购商品（可多件、可跨商品）换别的商品，多退少补。
+
+    退回的旧商品记在关联的退货记录（Refund.kind=exchange）里，换出的新商品是订单里 exchange_id 指向本单的行。
+    """
+    __tablename__ = "exchanges"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    no: Mapped[str] = mapped_column(String(32), unique=True)
+    order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
+    refund_id: Mapped[int] = mapped_column(ForeignKey("refunds.id"))
+    old_amount: Mapped[int] = mapped_column(Integer)  # 退回商品的原实收
+    new_original: Mapped[int] = mapped_column(Integer)  # 换出商品按现价的金额
+    new_amount: Mapped[int] = mapped_column(Integer)  # 换出商品成交金额（有权限可调低）
+    diff: Mapped[int] = mapped_column(Integer)  # 正数补收、负数退还
+    method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    condition: Mapped[str] = mapped_column(String(20))  # good 完好回可售库存 / defective 拆封破损进残次品库
+    reason: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    request_id: Mapped[str] = mapped_column(String(64), unique=True)
+    print_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class RefundLine(Base):
@@ -506,7 +532,8 @@ class PrintJob(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     store_id: Mapped[int] = mapped_column(ForeignKey("stores.id"), index=True)
     order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True)  # 测试页为空
-    kind: Mapped[str] = mapped_column(String(20))  # new_order 新订单 / pos 收银 / reprint 补打 / test 测试
+    exchange_id: Mapped[int | None] = mapped_column(ForeignKey("exchanges.id"), nullable=True)  # 换货凭证
+    kind: Mapped[str] = mapped_column(String(20))  # new_order 新订单 / pos 收银 / reprint 补打 / exchange 换货凭证 / test 测试
     status: Mapped[str] = mapped_column(String(20), default="pending", index=True)  # pending / sent / done / failed
     attempts: Mapped[int] = mapped_column(Integer, default=0)  # 已发给小助手的次数
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now)

@@ -51,7 +51,13 @@ def next_job(key: str, db: Session = Depends(get_db)):
             db.commit()
             continue
         try:
-            if job.order_id:
+            if job.exchange_id:  # 售后换货凭证
+                from ..models import Exchange
+                from ..services.receipt import build_exchange_receipt
+                ex = db.get(Exchange, job.exchange_id)
+                who = db.get(User, job.created_by) if job.created_by else None
+                data = escpos.build(build_exchange_receipt(db, ex, who, reprint=ex.print_count > 0))
+            elif job.order_id:
                 o = db.get(Order, job.order_id)
                 who = _job_user(db, job, o)
                 # 是否补打按“已经成功打印过几次”判断；打印次数和日志在小助手回报完成时才记
@@ -88,7 +94,11 @@ def job_done(job_id: int, key: str, db: Session = Depends(get_db)):
     if not job or job.store_id != store.id:
         raise HTTPException(404, "任务不存在")
     if job.status != "done":  # 重复回报只记一次
-        if job.order_id:
+        if job.exchange_id:
+            from ..models import Exchange
+            ex = db.get(Exchange, job.exchange_id)
+            ex.print_count += 1
+        elif job.order_id:
             o = db.get(Order, job.order_id)
             o.print_count += 1
             log(db, o, "补打小票" if (job.kind == "reprint" or o.print_count > 1) else "打印小票", "打印小助手",
