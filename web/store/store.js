@@ -650,8 +650,8 @@ const Orders = {
       </div>
       <div v-for="row in xNew" :key="row.sku_id" class="x-row">
         <div class="x-name">{{row.name}}<span class="muted">单价 ¥{{yuan(row.price)}}</span></div>
-        <div class="qty"><button type="button" aria-label="减少换出数量" @click="row.qty = Math.max(0, (parseInt(row.qty) || 0) - 1)">−</button>
-          <input v-model.number="row.qty" data-no-osk aria-label="换出数量" inputmode="none" @change="row.qty = Math.max(0, parseInt(row.qty) || 0)" />
+        <div class="qty"><button type="button" aria-label="减少换出数量" @click="xSetNewQty(row, (parseInt(row.qty) || 0) - 1)">−</button>
+          <input v-model.number="row.qty" data-no-osk aria-label="换出数量" inputmode="none" @change="xSetNewQty(row, row.qty)" />
           <button type="button" aria-label="增加换出数量" @click="row.qty = (parseInt(row.qty) || 0) + 1">＋</button></div>
       </div>
       <el-button size="large" class="x-add" :aria-expanded="xSearch" @click="xToggleSearch">{{xSearch ? '收起商品搜索' : '＋ 换其他商品'}}</el-button>
@@ -880,6 +880,16 @@ const Orders = {
       if (row) row.qty = (parseInt(row.qty) || 0) + 1;
       else xNew.value.push({ sku_id: sku.id, qty: 1, price: sku.price, name: product.name + (sku.name !== '默认' ? '（' + sku.name + '）' : '') });
     };
+    const xSetNewQty = (row, qty) => {
+      const i = xNew.value.indexOf(row);
+      if (i < 0) return;
+      const count = parseInt(qty) || 0;
+      if (count > 0) row.qty = count;
+      else {
+        xNew.value.splice(i, 1);
+        if (!xNew.value.length) x.amount = '';
+      }
+    };
     const xPickProduct = (product) => {
       if (product.skus.length === 1) xAddLine(product, product.skus[0]);
       else { xProduct.value = product; xMatches.value = null; xPickDlg.value = true; }
@@ -1002,7 +1012,7 @@ const Orders = {
     return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy,
       xDlg, xBack, xNew, xAlternatives, xSearch, xKw, xOptions, xSearchPanel, xPickDlg, xProduct, xMatches, xBusy, xScanning, xQ, xErr, x, xBody, xOriginal,
       xAmountOpen, xAmountDraft, xPad, PAD, xToggleAmount, xAmountKey, xReasons, xReasonInput, xReasonPanel, xReasonText, xReasonKeys, xPickReason, xReasonKey,
-      priceText, xToggleSearch, xConfirmSearch, xSearchKey, xPickProduct, openExchange, xAddLine, doExchange, printExchange, xSum, xRefund,
+      priceText, xToggleSearch, xConfirmSearch, xSearchKey, xPickProduct, openExchange, xAddLine, xSetNewQty, doExchange, printExchange, xSum, xRefund,
       mDlg, mLines, mReason, mBusy, mAdd, mKw, mPrice, mTotal, mOptions, openModify, addLine, doModify, print, yuan, methods: METHODS };
   },
 };
