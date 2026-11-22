@@ -1,0 +1,9 @@
+[Unit]
+Description=收银系统自动更新（拉取 GitHub deploy 分支）
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/shouyin-autodeploy
+TimeoutStartSec=900
