@@ -241,6 +241,22 @@ a:hover { text-decoration: underline; }
 /* 顶部提示：从上方滑入，曲线更利落 */
 .el-message { transition: opacity 220ms var(--ease-out), transform 300ms var(--ease-out), top 300ms var(--ease-out); }
 
+/* 后台快捷入口：鼠标悬停时上浮 2px、阴影加深（触屏不触发） */
+@media (hover: hover) and (pointer: fine) {
+  .quick .q { transition: background-color 150ms var(--ease-out), color 150ms var(--ease-out), box-shadow 150ms var(--ease-out), translate 150ms var(--ease-out), transform var(--dur-press) var(--ease-out); }
+  .quick .q:hover { translate: 0 -2px; box-shadow: 0 6px 16px rgba(0,0,0,.08); }
+  .stat.clickable { transition: background-color 150ms var(--ease-out); }
+  .stat.clickable:hover { background: var(--hover); }
+}
+
+/* 后台回到顶部：滚过一屏后浮出 */
+.totop { position: fixed; right: 28px; bottom: 28px; z-index: 20; width: 40px; height: 40px; border-radius: 20px; border: 0; display: grid; place-items: center; cursor: pointer; background: #fff; color: var(--text); box-shadow: 0 4px 14px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.06); transition: transform var(--dur-press) var(--ease-out), background-color 150ms var(--ease-out); }
+.totop:active { transform: scale(.92); }
+@media (hover: hover) and (pointer: fine) { .totop:hover { background: var(--hover); } }
+.totop-enter-active { transition: opacity 200ms var(--ease-out), scale 200ms var(--ease-out); }
+.totop-leave-active { transition: opacity 150ms var(--ease-out), scale 150ms var(--ease-out); }
+.totop-enter-from, .totop-leave-to { opacity: 0; scale: .8; }
+
 /* 登录卡片：打开时轻轻上浮（一天只见几次，可以有一点仪式感） */
 .login-card { animation: ui-rise-in 360ms var(--ease-out) both; }
 
@@ -252,5 +268,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outli
   @keyframes ui-pop-in { from { opacity: 0; } }
   @keyframes ui-pop-out { to { opacity: 0; } }
   @keyframes ui-rise-in { from { opacity: 0; } }
-  .el-button:active, .seg:active, .quick .q:active, .topbar .pill:active { transform: none !important; }
+  .el-button:active, .seg:active, .quick .q:active, .topbar .pill:active, .totop:active { transform: none !important; }
+  .quick .q:hover { translate: none; }
+  .totop-enter-from, .totop-leave-to { scale: 1; }
 }
