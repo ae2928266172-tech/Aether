@@ -37,9 +37,10 @@
     .cats::-webkit-scrollbar { display: none; }
     .cat { position: relative; display: block; width: 100%; text-align: left; padding: 18px 12px 18px 16px; font-size: 14px; line-height: 1.35; color: var(--ink-2); transition: color .2s ease, background-color .2s ease; }
     .cat.on { background: var(--paper); color: var(--ink); font-weight: 600; }
-    .cat::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 18px; margin-top: -9px; border-radius: 0 3px 3px 0; background: var(--accent-2);
-      opacity: 0; scale: 1 .4; transition: opacity .2s ease, scale 260ms var(--ease-out); }
-    .cat.on::before { opacity: 1; scale: 1 1; }
+    /* 选中竖条只有一根，在分类之间滑动过去（看得出从哪到哪），用 iOS 减速曲线 */
+    .cats { position: relative; }
+    .cat-ind { position: absolute; left: 0; top: 0; width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: var(--accent-2); z-index: 1;
+      transition: transform 320ms var(--ease-drawer), opacity .2s ease; }
     .cat .n { position: absolute; top: 6px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent-2); color: #fff; font-size: 11px; line-height: 16px; text-align: center; font-weight: 600; vertical-align: 1px; }
 
     /* 右侧：分类标题 + 搜索，商品列表 */
@@ -192,7 +193,8 @@
     </div>
     <div class="main">
       <div class="cats" v-show="!kw">
-        <button v-for="sec in sections" :key="sec.id" class="cat" :class="{on: active===sec.id}" @click="jump(sec.id)">{{sec.name}}<span v-if="secCount(sec)" class="n">{{secCount(sec)}}</span></button>
+        <i class="cat-ind" :style="indStyle"></i>
+        <button v-for="sec in sections" :key="sec.id" class="cat" :class="{on: active===sec.id}" :data-cat="sec.id" @click="jump(sec.id)">{{sec.name}}<span v-if="secCount(sec)" class="n">{{secCount(sec)}}</span></button>
       </div>
       <div class="menu">
         <div class="bar-top">
@@ -273,7 +275,7 @@
 <script src="../vendor/vue.global.prod.js"></script>
 <script src="../common/api.js?v=19"></script>
 <script>
-const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
+const { createApp, ref, reactive, computed, onMounted, nextTick, watch } = Vue;
 const { api, yuan, rid } = Shouyin;
 const app = createApp({
   setup() {
@@ -343,6 +345,13 @@ const app = createApp({
     });
     const active = ref(null), listEl = ref(null), intro = ref(true);
     const activeName = computed(() => kw.value ? '搜索结果' : ((sections.value.find(x => x.id === active.value) || sections.value[0] || {}).name || ''));
+    const catTick = ref(0);
+    const indStyle = computed(() => {
+      catTick.value; const b = document.querySelector('.cats [data-cat="' + active.value + '"]');
+      if (!b) return { opacity: 0 };
+      return { transform: 'translateY(' + (b.offsetTop + b.offsetHeight / 2 - 9) + 'px)' };
+    });
+    watch(sections, () => nextTick(() => catTick.value++));
     const secCount = (sec) => sec.items.reduce((a, p) => a + pTotal(p), 0);
     let jumping = 0;
     const jump = (id) => {
@@ -359,6 +368,7 @@ const app = createApp({
     };
     // 搜索：名称、拼音首字母、编码
     const kw = ref(''), searchOpen = ref(false), kwEl = ref(null);
+    watch(kw, () => nextTick(() => catTick.value++));  // 搜索时分类栏隐藏，回来后重新对齐竖条
     const openSearch = () => { searchOpen.value = true; nextTick(() => kwEl.value && kwEl.value.focus()); };
     const found = computed(() => { const k = kw.value.toLowerCase(); if (!k) return []; return products.value.filter(p => p.name.toLowerCase().includes(k) || (p.mnemonic || '').toLowerCase().includes(k) || (p.code || '').toLowerCase().includes(k)); });
     const spec = ref(null);
@@ -369,38 +379,54 @@ const app = createApp({
       try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; nextTick(() => { active.value = sections.value[0] && sections.value[0].id; }); document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { sections, active, activeName, secCount, jump, spy, listEl, intro, kw, searchOpen, kwEl, openSearch, found, spec, pimg, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, intro, kw, searchOpen, kwEl, openSearch, found, spec, pimg, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 });
 // 底部弹层：按住顶部抓手往下拉，手指在哪弹层就在哪（1:1 跟手）；松手时按速度预测落点，过半或快速下滑就关闭，否则弹回
 app.directive('drag-close', {
   mounted(el, binding) {
     const grab = el.querySelector('.grab'); if (!grab) return;
-    let y0 = 0, dy = 0, hist = [], id = null;
-    const project = (v) => (v / 1000) * 0.998 / (1 - 0.998);  // 惯性预测（与 iOS 滚动减速一致）
+    const mask = el.parentElement;
+    let y0 = 0, dy = 0, hist = [], id = null, closing = false;
+    const project = (v) => (v / 1000) * 0.998 / (1 - 0.998);  // 惯性预测：按松手速度算出会滑到哪（iOS 滚动减速同款公式）
+    const rubber = (x, dim) => (x * dim * 0.55) / (dim + 0.55 * Math.abs(x));  // 往上拉越拉越沉，不会硬停
+    const live = () => { const m = getComputedStyle(el).transform; return m && m !== 'none' ? new DOMMatrixReadOnly(m).m42 : 0; };
+    const dim = (y) => { if (mask) mask.style.backgroundColor = 'rgba(43,38,32,' + (0.4 * Math.max(0, 1 - y / el.offsetHeight)).toFixed(3) + ')'; };
     grab.addEventListener('pointerdown', (e) => {
-      if (e.target.closest('button')) return;  // 关闭按钮照常点击
-      id = e.pointerId; grab.setPointerCapture(id); y0 = e.clientY; dy = 0; hist = [{ y: e.clientY, t: e.timeStamp }];
-      el.style.transition = 'none';
+      if (closing || e.target.closest('button')) return;  // 关闭按钮照常点击
+      // 可中途接住：从弹层当前在屏幕上的位置开始跟手，不跳
+      const cur = live(); el.style.transition = 'none'; el.style.transform = 'translateY(' + cur + 'px)';
+      if (mask) mask.style.transition = 'none';
+      id = e.pointerId; grab.setPointerCapture(id); y0 = e.clientY - cur; dy = cur; hist = [{ y: e.clientY, t: e.timeStamp }];
     });
     grab.addEventListener('pointermove', (e) => {
       if (e.pointerId !== id) return;
       const d = e.clientY - y0;
-      dy = d > 0 ? d : -Math.pow(-d, 0.7);  // 往上拉有阻力，不会硬停
-      el.style.transform = 'translateY(' + dy + 'px)';
+      dy = d >= 0 ? d : rubber(d, el.offsetHeight);
+      el.style.transform = 'translateY(' + dy + 'px)'; dim(dy);  // 1:1 跟手，遮罩跟着变淡
       hist.push({ y: e.clientY, t: e.timeStamp }); if (hist.length > 5) hist.shift();
     });
     const end = (e) => {
       if (e.pointerId !== id) return; id = null;
       const a = hist[0], b = hist[hist.length - 1];
       const v = b.t > a.t ? (b.y - a.y) / (b.t - a.t) * 1000 : 0;  // 像素/秒
-      el.style.transition = 'transform 360ms cubic-bezier(.32, .72, 0, 1)';
-      if (dy + project(v) > el.offsetHeight / 2 && dy > 0) { el.style.transform = 'translateY(100%)'; setTimeout(binding.value, 200); }
-      else el.style.transform = '';
+      const close = dy > 0 && dy + project(v) > el.offsetHeight / 2;
+      const target = close ? el.offsetHeight : 0, dist = Math.abs(target - dy);
+      // 速度衔接：让动画起步速度等于手指松开时的速度（曲线起始斜率约 2.25）
+      const ms = Math.round(Math.min(460, Math.max(200, Math.abs(v) > 50 ? 2.25 * dist / Math.abs(v) * 1000 : 380)));
+      const ease = 'cubic-bezier(.32, .72, 0, 1)';
+      el.style.transition = 'transform ' + ms + 'ms ' + ease;
+      if (mask) mask.style.transition = 'background-color ' + ms + 'ms ' + ease;
+      if (close) {
+        closing = true; el.style.transform = 'translateY(100%)'; dim(el.offsetHeight);
+        setTimeout(binding.value, ms - 60);
+      } else { el.style.transform = ''; if (mask) mask.style.backgroundColor = ''; }
     };
     grab.addEventListener('pointerup', end); grab.addEventListener('pointercancel', end);
   },
 });
+// iOS Safari 要有 touchstart 监听，按钮的按下样式（:active）才会在手指一碰到就出现
+document.addEventListener('touchstart', () => {}, { passive: true });
 app.config.globalProperties.thumb = Shouyin.thumb;
 app.mount('#app');
 </script>
