@@ -38,6 +38,11 @@ admin 还是默认密码的换成随机密码（存在 `/root/shouyin-admin-初�
 
 上线：把已合并到 main、测试通过的提交推到 deploy，例如 `git push origin main:deploy`。回退：把旧提交推到 deploy（`git push -f origin <旧提交>:deploy`）。
 
+**只上线测试通过的提交**：每次推送 GitHub Actions 会自动跑全部测试（`.github/workflows/tests.yml`，job 名 `tests`）。
+服务器发现 deploy 有新提交后先查这一项：还在跑就等下一轮；没通过就不上线，发信提醒，线上保持原版本
+（在 GitHub 上重新跑通过后会自动上线）；等了 30 分钟还没有结果也发一次提醒。
+GitHub Actions 出故障又急着上线、或回退到加测试之前的旧提交时，在 `/etc/shouyin/autodeploy.env` 里写 `REQUIRE_CI=0`，上线后删掉这一行。
+
 第一次安装（root，在服务器上运行一次，`<提交>` 换成含本功能的提交、`<当前线上提交>` 换成服务器正在用的完整提交号）：
 
 ```bash
