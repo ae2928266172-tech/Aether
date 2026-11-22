@@ -4,43 +4,65 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>顾客副屏</title>
-  <link rel="stylesheet" href="display.css?v=1">
+  <link rel="stylesheet" href="display.css?v=2">
 </head>
 <body>
   <div id="screen" class="mode-idle">
-    <header class="top"><span class="store" id="store"></span><span class="clock" id="clock"></span></header>
+    <header class="top">
+      <img class="logo" src="logo.svg?v=1" alt="">
+      <span class="title" id="title"></span>
+      <span class="clock" id="clock"></span>
+    </header>
 
+    <!-- 欢迎：左侧品牌色（LOGO + 大时钟），右侧浅底（门店、地址、问候） -->
     <section class="idle">
-      <div class="welcome">欢迎光临</div>
-      <div class="store-big" id="storeBig"></div>
+      <div class="idle-l">
+        <img class="logo-big" src="logo.svg?v=1" alt="">
+        <div class="big-time" id="bigTime"></div>
+        <div class="big-date" id="bigDate"></div>
+      </div>
+      <div class="idle-r">
+        <div class="addr" id="idleAddr"></div>
+        <div class="name" id="idleName"></div>
+        <div class="rule"></div>
+        <div class="greet">欢迎光临，祝您早日康复</div>
+      </div>
     </section>
 
+    <!-- 购物明细 / 收款：左 6 右 4 -->
     <section class="order">
       <div class="list">
-        <div class="list-head"><span>商品</span><span>数量</span><span>金额</span></div>
-        <div class="rows" id="rows"></div>
+        <div class="card">
+          <div class="list-head"><span>商品</span><span>单价 × 数量</span><span>金额</span></div>
+          <div class="rows" id="rows"></div>
+        </div>
+        <div class="note">请核对您的消费信息 · 凭小票办理退换</div>
       </div>
       <aside class="sum">
-        <div class="kv"><span>共</span><b id="count"></b></div>
-        <div class="kv"><span>商品金额</span><b id="total"></b></div>
-        <div class="kv disc" id="discRow"><span>优惠</span><b id="disc"></b></div>
-        <div class="due"><div class="k" id="dueLabel">合计</div><div class="v" id="due"></div></div>
+        <div class="sum-main">
+          <div class="cnt" id="count"></div>
+          <div class="orig" id="origRow"><s id="orig"></s><span class="cut" id="cut"></span></div>
+          <div class="due-k" id="dueLabel">合计</div>
+          <div class="due" id="due"></div>
+          <div class="pill" id="pill"></div>
+        </div>
         <div class="cash" id="cashBox">
-          <div class="kv"><span id="recvLabel">实收</span><b id="recv"></b></div>
+          <div class="kv"><span>实收</span><b id="recv"></b></div>
           <div class="kv chg"><span>找零</span><b id="chg"></b></div>
         </div>
       </aside>
     </section>
 
+    <!-- 收款成功 -->
     <section class="done">
-      <div class="ok"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg></div>
-      <div class="t">收款成功</div>
+      <div class="ok"><svg viewBox="0 0 52 52" aria-hidden="true"><circle class="ring" cx="26" cy="26" r="24" /><path class="tick" d="M15 27l7.5 7.5L38 19" /></svg></div>
+      <div class="t">支付成功，谢谢惠顾</div>
       <div class="d" id="doneText"></div>
-      <div class="chg-big" id="doneChg"></div>
-      <div class="thanks">谢谢惠顾，欢迎再次光临</div>
+      <div class="chg-box" id="doneChgBox"><span>请收好找零</span><b id="doneChg"></b></div>
+      <div class="thanks">祝您早日康复，欢迎再次光临</div>
     </section>
   </div>
-  <script src="../common/display.js?v=1"></script>
-  <script src="display.js?v=1"></script>
+  <script src="../common/display.js?v=2"></script>
+  <script src="display.js?v=2"></script>
 </body>
 </html>

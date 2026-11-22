@@ -1330,7 +1330,7 @@ const App = {
     const cur = computed(() => stores.value.find(s => s.id === storeId.value) || {});
     const storeName = computed(() => cur.value.name || '门店工作台');
     // 顾客副屏显示门店名；退出登录后副屏回到欢迎画面
-    watch(() => user.value ? cur.value.name || '' : '', (n) => { ShouyinDisplay.sender.setStore(n); if (!n) ShouyinDisplay.sender.send({ mode: 'idle' }); }, { immediate: true });
+    watch(() => user.value ? [cur.value.name || '', cur.value.address || ''] : ['', ''], ([n, a]) => { ShouyinDisplay.sender.setStore(n, a); if (!n) ShouyinDisplay.sender.send({ mode: 'idle' }); }, { immediate: true });
     const stockVisible = computed(() => can('inventory') || (can('stock_view') && cur.value.staff_can_view_stock));
     const stockEditable = computed(() => can('inventory') || (can('stock_edit') && cur.value.staff_can_edit_stock));
     let lastId = 0, timer = null, printing = Promise.resolve(), polling = false, primed = false, pollStore = null;

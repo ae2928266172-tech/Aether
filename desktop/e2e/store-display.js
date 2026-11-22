@@ -16,14 +16,14 @@ const { chromium } = require('playwright');
   await p.fill('input[placeholder=账号]', 'store1'); await p.fill('input[type=password]', 'store123');
   await p.click('.login-card .el-button--primary'); await p.waitForSelector('.card'); await p.waitForTimeout(400);
   const store = (await p.textContent('.ws-top .store > span:not(.mark)')).trim();
-  assert.strictEqual(await d.textContent('#storeBig'), store, '欢迎画面显示门店名');
+  assert.strictEqual(await d.textContent('#idleName'), store, '欢迎画面显示门店名');
   if (shots) await d.screenshot({ path: shots + '/副屏-欢迎.png' });
   // 加商品
   await p.tap('.card:has-text("湿巾")'); await p.tap('.card:has-text("湿巾")'); await p.waitForTimeout(300);
   assert.strictEqual(await d.getAttribute('#screen', 'class'), 'mode-cart');
   assert.strictEqual(await d.locator('.row').count(), 1);
-  assert.strictEqual((await d.textContent('.row .q')).trim(), '×2');
-  const total = (await p.$$eval('.line', ls => ls.length)) && await d.textContent('#due');
+  assert.strictEqual((await d.textContent('.row .q')).trim(), '× 2');
+  const total = await d.textContent('#due');
   assert.ok(/^¥\d+\.\d\d$/.test(total), '合计 ' + total);
   await p.tap('.card:has-text("纸杯")'); await p.waitForTimeout(300);
   assert.strictEqual(await d.locator('.row').count(), 2);
@@ -34,7 +34,8 @@ const { chromium } = require('playwright');
   // 收款：现金实收 100
   await p.tap('.paybtn'); await p.waitForSelector('.paybox .pay-ok'); await p.waitForTimeout(500);
   assert.strictEqual(await d.getAttribute('#screen', 'class'), 'mode-pay');
-  assert.strictEqual(await d.textContent('#dueLabel'), '应付');
+  assert.strictEqual(await d.textContent('#dueLabel'), '应付金额');
+  assert.strictEqual(await d.textContent('#pill'), '等待支付');
   await p.fill('.paybox input[placeholder]:not([placeholder="自定"]):not([placeholder="不改"])', '100'); await p.waitForTimeout(300);
   const due = await d.textContent('#due'), chg = await d.textContent('#chg');
   assert.ok(await d.isVisible('#cashBox'), '现金显示实收找零');
@@ -48,7 +49,8 @@ const { chromium } = require('playwright');
   await p.fill('.paybox input[placeholder]:not([placeholder="自定"]):not([placeholder="不改"])', '100'); await p.waitForTimeout(300);
   await p.click('.paybox .pay-ok'); await p.waitForTimeout(800);
   assert.strictEqual(await d.getAttribute('#screen', 'class'), 'mode-done', '收款成功画面');
-  assert.ok((await d.textContent('#doneChg')).startsWith('找零 ¥'));
+  assert.ok(await d.isVisible('#doneChgBox'), '有找零时大字显示');
+  assert.ok((await d.textContent('#doneChg')).startsWith('¥'));
   if (shots) await d.screenshot({ path: shots + '/副屏-收款成功.png' });
   // 8 秒后回到欢迎画面；期间加了新商品立刻显示明细
   await p.tap('.card:has-text("湿巾")'); await p.waitForTimeout(300);

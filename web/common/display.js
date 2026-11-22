@@ -23,8 +23,8 @@
   // 收银页用：send(状态) 发给所有副屏；副屏后打开时会发 hello，这边重发一遍当前状态
   function createSender() {
     const ch = typeof BroadcastChannel === 'function' ? new BroadcastChannel(NAME) : null;
-    let store = '', last = { mode: 'idle' }, lastKey = '';
-    const post = () => { if (ch) try { ch.postMessage({ type: 'state', state: { ...last, store } }); } catch (e) {} };
+    let store = '', address = '', last = { mode: 'idle' }, lastKey = '';
+    const post = () => { if (ch) try { ch.postMessage({ type: 'state', state: { ...last, store, address } }); } catch (e) {} };
     if (ch) ch.onmessage = (e) => { if (e.data && e.data.type === 'hello') post(); };
     return {
       send(s) {
@@ -32,7 +32,8 @@
         if (k === lastKey) return;  // 内容没变不重发
         lastKey = k; last = s.mode === 'done' ? { ...s, at: Date.now() } : s; post();
       },
-      setStore(n) { n = n || ''; if (n !== store) { store = n; post(); } },
+      // 门店名和地址（后台“门店与区域”里填的地址，如“南京市中医院门诊 3F”）显示在副屏顶部和欢迎画面
+      setStore(n, addr) { n = n || ''; addr = addr || ''; if (n !== store || addr !== address) { store = n; address = addr; post(); } },
     };
   }
 
