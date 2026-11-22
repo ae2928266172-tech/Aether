@@ -1,4 +1,4 @@
-"""规格整理：尺码排序、找写法不同的重复规格、合并规格（2026-11-21 Aether 要求）。"""
+"""规格整理：尺码排序、合并规格（2026-11-21 Aether 要求；合并在后台商品编辑里“合并到”操作）。"""
 import re
 import unicodedata
 from decimal import Decimal
@@ -37,39 +37,6 @@ def size_rank(name: str) -> float | None:
 def sort_skus(skus):
     """有尺码的规格按尺码从小到大排在前面，其余保持原来的顺序。"""
     return sorted(skus, key=lambda s: (size_rank(s.name) is None, size_rank(s.name) or 0, s.sort, s.id))
-
-
-def norm_name(name: str) -> str:
-    """把写法不同但意思一样的规格名归成一样：全角半角、大小写、空格、× * x、括号、cm、片/P。
-
-    例：“10*10cm*8 5p”“10*10*cm8 *5P”都归成 10*10*8*5p；数字之间的空格当作分隔，小数点保留。
-    """
-    s = unicodedata.normalize("NFKC", name or "").lower()
-    s = s.replace("厘米", "cm").replace("片装", "片").replace("片/包", "片").replace("片", "p").replace("cm", "")
-    s = re.sub(r"(?<=\d)\s*[×x＊]\s*(?=\d)", "*", s)
-    s = re.sub(r"[()\[\]【】{}\-_—~～·,，、:：/]", " ", s)
-    s = re.sub(r"(?<!\d)\.|\.(?!\d)", " ", s)
-    s = re.sub(r"(?<=\d)\s+(?=\d)", "*", s)
-    s = re.sub(r"\s+", "", s)
-    s = re.sub(r"\*+", "*", s).strip("*")
-    return s
-
-
-def duplicate_groups(db: Session) -> list[dict]:
-    from ..models import Product
-    out = []
-    for p in db.scalars(select(Product).where(Product.active.is_(True)).order_by(Product.id)):
-        groups: dict[str, list[Sku]] = {}
-        for s in p.skus:
-            if s.active:
-                groups.setdefault(norm_name(s.name), []).append(s)
-        for key, ss in groups.items():
-            if len(ss) > 1:
-                out.append({"product_id": p.id, "product_name": p.name, "skus": [
-                    {"id": s.id, "name": s.name, "price": s.price, "barcode": s.barcode,
-                     "stock_item_id": s.stock_item_id, "stock_item_name": s.stock_item.name if s.stock_item else None,
-                     "deduct_qty": str(s.deduct_qty)} for s in ss]})
-    return out
 
 
 def _merge_stock_item(db: Session, keep_id: int, drop_id: int):
