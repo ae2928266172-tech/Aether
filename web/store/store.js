@@ -563,17 +563,18 @@ const Pos = {
 
 // ---------------- 订单 ----------------
 const Orders = {
-  props: ['user', 'storeId', 'settings', 'pendingCount', 'tick', 'agent'],
+  props: ['user', 'store', 'storeId', 'settings', 'pendingCount', 'tick', 'agent'],
   components: { PayDialog, PosKeyboard, PickDialog },
   template: `
   <div class="ws-body" style="flex-direction:column">
     <div class="otool">
       <el-radio-group v-model="status" @change="load">
         <el-radio-button value="">全部</el-radio-button>
-        <el-radio-button value="pending">待接单 {{pendingCount ? '(' + pendingCount + ')' : ''}}</el-radio-button>
-        <el-radio-button value="accepted">已接单待收款</el-radio-button>
         <el-radio-button value="completed">已完成</el-radio-button>
         <el-radio-button value="cancelled">已取消</el-radio-button>
+        <el-radio-button v-if="showPending" value="pending">待接单 {{pendingCount ? '(' + pendingCount + ')' : ''}}</el-radio-button>
+        <el-radio-button value="accepted">已接单待收款</el-radio-button>
+        <el-radio-button value="refund">退款退货</el-radio-button>
       </el-radio-group>
       <el-select v-model="source" placeholder="全部来源" clearable style="width:120px" @change="load"><el-option label="扫码点单" value="online" /><el-option label="门店收银" value="pos" /></el-select>
       <el-date-picker v-model="day" type="date" value-format="YYYY-MM-DD" placeholder="日期" style="width:150px" @change="load" />
@@ -742,10 +743,17 @@ const Orders = {
     const rDlg = ref(false), rLines = ref([]), rf = reactive({ method: 'cash', restock: true, reason: '', rid: '' });
     const can = (p) => props.user.permissions.includes(p);
     const tagType = (o) => o.status === 'pending' ? 'danger' : o.status === 'cancelled' ? 'info' : o.pay_status === 'unpaid' ? 'warning' : o.pay_status === 'paid' ? 'success' : 'info';
+    // 开了自动接单，新单进店就是“已接单待收款”，不会有待接单的；关掉才显示这个筛选项
+    const autoAccept = computed(() => !props.store || props.store.accept_online_orders !== false);
+    const showPending = computed(() => !autoAccept.value || props.pendingCount > 0);
     const load = async () => {
-      try { rows.value = (await api.get('/api/orders', { store_id: props.storeId, status: status.value, source: source.value, begin: day.value, end: day.value, keyword: kw.value })).items; } catch (e) { err(e); }
+      const q = { store_id: props.storeId, source: source.value, begin: day.value, end: day.value, keyword: kw.value };
+      if (status.value === 'refund') q.pay_status = 'partial_refunded,refunded';
+      else if (status.value) q.status = status.value;
+      try { rows.value = (await api.get('/api/orders', q)).items; } catch (e) { err(e); }
     };
     watch(() => props.tick, load);
+    watch(showPending, (v) => { if (!v && status.value === 'pending') { status.value = ''; load(); } });
     const open = async (o) => { try { cur.value = await api.get('/api/orders/' + o.id); drawer.value = true; } catch (e) { err(e); } };
     const refresh = async () => { cur.value = await api.get('/api/orders/' + cur.value.id); load(); };
     const act = async (a) => { try { await api.post('/api/orders/' + cur.value.id + '/' + a); await refresh(); ElMessage.success('已接单'); } catch (e) { err(e); } };
@@ -1020,7 +1028,7 @@ const Orders = {
     const refundAll = () => rLines.value.forEach(l => { l.qty = l.max; });
     const print = async () => { try { await printOrder(cur.value.id, cur.value.print_count > 0); } catch (e) { err(e); } try { await refresh(); } catch (e) {} };
     onMounted(load);
-    return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy,
+    return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy, showPending,
       xDlg, xBack, xNew, xAlternatives, xSearch, xKw, xOptions, xSearchPanel, xPickDlg, xProduct, xMatches, xBusy, xScanning, xQ, xErr, x, xBody, xOriginal,
       xAmountOpen, xAmountDraft, xPad, PAD, xToggleAmount, xAmountKey, xReasons, xReasonInput, xReasonPanel, xReasonText, xReasonKeys, xPickReason, xReasonKey,
       priceText, xToggleSearch, xConfirmSearch, xSearchKey, xPickProduct, openExchange, xAddLine, xSetNewQty, doExchange, printExchange, xSum, xRefund,
@@ -1278,7 +1286,7 @@ const App = {
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
     <template v-else>
       <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" :sync="syncN" />
-      <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
+      <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store="cur" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
       <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" :sync="syncN" />
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" :sync="syncN" />
       <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" :sync="syncN" />
