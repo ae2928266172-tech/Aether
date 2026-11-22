@@ -70,6 +70,7 @@ def world(client, admin):
 
 def build_world(client, admin):
     """两家门店、各一个区域；库存品“纸杯”，商品“杯装水”小份扣 1、大份扣 2，另一商品“冰水”也扣纸杯。"""
+    admin.put("/api/settings/rules", {"online_auto_accept": False})  # 这些测试走“待接单 → 接单”流程；自动接单在 test_orders 单独测
     s1 = admin.post("/api/stores", {"name": "一号店"})
     s2 = admin.post("/api/stores", {"name": "二号店"})
     a1 = admin.post("/api/areas", {"store_id": s1["id"], "name": "一病区"})

@@ -87,7 +87,7 @@ def product_out(p: Product, admin: bool = True) -> dict:
 
 
 def order_out(o: Order, detail: bool = True) -> dict:
-    d = {"id": o.id, "no": o.no, "source": o.source, "source_text": "门店收银" if o.source == "pos" else "小程序",
+    d = {"id": o.id, "no": o.no, "source": o.source, "source_text": "门店收银" if o.source == "pos" else "扫码点单",
          "store_id": o.store_id, "store_name": o.store.name, "area_id": o.area_id, "area_name": o.area_name,
          "location_note": o.location_note, "contact_phone": o.contact_phone, "remark": o.remark,
          "status": o.status, "status_text": STATUS_TEXT[o.status], "pay_status": o.pay_status,

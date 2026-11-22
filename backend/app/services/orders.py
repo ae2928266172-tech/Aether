@@ -287,6 +287,12 @@ def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], 
     if rules["online_deduct_on"] == "create":
         deduct_stock(db, order, rules["online_allow_negative"], None)
     log(db, order, "下单", f"{area.name} {location_note}")
+    if rules.get("online_auto_accept", True):  # 默认直接接单，不用店员手动点
+        if not order.stock_deducted:
+            deduct_stock(db, order, rules["online_allow_negative"], None)
+        order.status = "accepted"
+        order.accepted_at = now()
+        log(db, order, "接单", "自动接单")
     db.flush()
     auto_enqueue(db, order)
     return order

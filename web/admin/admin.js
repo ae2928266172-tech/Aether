@@ -1188,6 +1188,7 @@ const Rules = {
   template: `
   <div class="panel">
     <el-form :model="f" label-width="200px" style="max-width:640px">
+      <el-form-item label="扫码点单自动接单"><el-switch v-model="f.online_auto_accept" /><span class="muted" style="margin-left:8px">打开后顾客下单即接单，不用店员手动点；出小票按门店的自动出票设置</span></el-form-item>
       <el-form-item label="小程序订单扣库存时机"><el-radio-group v-model="f.online_deduct_on"><el-radio value="create">下单时</el-radio><el-radio value="accept">接单时</el-radio></el-radio-group></el-form-item>
       <el-form-item label="门店收银库存不够也能卖"><el-switch v-model="f.pos_allow_negative" /></el-form-item>
       <el-form-item label="小程序库存不够也能下单"><el-switch v-model="f.online_allow_negative" /></el-form-item>
@@ -1264,7 +1265,7 @@ const AUDIT_LABEL = { name: '名称', code: '编码', unit: '单位', online_vis
   max_adjust_amount: '最多可调低', is_admin: '后台角色', permissions: '权限', address: '地址', phone: '电话', staff_can_view_stock: '店员可看库存',
   staff_can_edit_stock: '店员可改库存', accept_online_orders: '接小程序订单', print_mode: '出票方式', auto_print_online: '小程序单自动出票',
   auto_print_pos: '收银自动出票', alert_qty: '预警数量', pos_allow_negative: '收银库存不够也能卖', online_allow_negative: '小程序库存不够也能下单',
-  online_deduct_on: '小程序扣库存时机', expiry_alert_days: '临期提醒天数', refund_days: '退款期限天数' };
+  online_deduct_on: '小程序扣库存时机', online_auto_accept: '扫码点单自动接单', expiry_alert_days: '临期提醒天数', refund_days: '退款期限天数' };
 const AUDIT_MONEY = new Set(['price', 'cost', 'max_adjust_amount']);
 const Audit = {
   props: ['meta'],

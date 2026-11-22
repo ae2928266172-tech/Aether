@@ -152,3 +152,17 @@ def test_refund_needs_permission_and_payment(client, admin, world):
     admin.put(f"/api/roles/{role['id']}", {"name": role["name"], "permissions": [p for p in role["permissions"] if p != "refund"]})
     clerk.post(f"/api/orders/{o['id']}/collect", {"payments": [{"method": "cash", "amount": 1000}]})
     clerk.post(f"/api/orders/{o['id']}/refund", {"lines": [{"order_item_id": item["id"], "qty": 1}]}, expect=403)
+
+
+def test_online_auto_accept(client, admin, world):
+    """扫码点单默认自动接单：下单即“已接单待收款”，库存照扣，日志记“自动接单”，顾客不能再自己取消。"""
+    w = world
+    admin.put("/api/settings/rules", {"online_auto_accept": True})
+    loc, cup = w["s1"]["location_id"], w["cup"]["id"]
+    before = stock_of(admin, loc, cup)
+    c, o = place(client, w, [{"sku_id": w["big"]["id"], "qty": 1}])
+    assert (o["status"], o["pay_status"], o["source_text"]) == ("accepted", "unpaid", "扫码点单")
+    assert stock_of(admin, loc, cup) == before - 2
+    logs = w["clerk"].get(f"/api/orders/{o['id']}")["logs"]
+    assert any(l["action"] == "接单" and "自动接单" in l["detail"] for l in logs)
+    w["clerk"].post(f"/api/orders/{o['id']}/collect", {"payments": [{"method": "cash", "amount": o["payable_amount"]}]})

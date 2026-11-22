@@ -13,6 +13,7 @@ DEFAULTS: dict[str, dict] = {
     "rules": {
         # 小程序订单在下单时扣库存（create），或接单时扣（accept）
         "online_deduct_on": "create",
+        "online_auto_accept": True,  # 扫码点单下单后自动接单（出小票按门店的自动出票设置）
         # 门店收银库存不足时是否允许卖成负数
         "pos_allow_negative": True,
         # 小程序订单库存不足时是否允许下单

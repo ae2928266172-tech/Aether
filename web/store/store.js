@@ -569,23 +569,23 @@ const Orders = {
   <div class="ws-body" style="flex-direction:column">
     <div class="otool">
       <el-radio-group v-model="status" @change="load">
+        <el-radio-button value="">全部</el-radio-button>
         <el-radio-button value="pending">待接单 {{pendingCount ? '(' + pendingCount + ')' : ''}}</el-radio-button>
         <el-radio-button value="accepted">已接单待收款</el-radio-button>
         <el-radio-button value="completed">已完成</el-radio-button>
         <el-radio-button value="cancelled">已取消</el-radio-button>
-        <el-radio-button value="">全部</el-radio-button>
       </el-radio-group>
-      <el-select v-model="source" placeholder="全部来源" clearable style="width:120px" @change="load"><el-option label="小程序" value="online" /><el-option label="门店收银" value="pos" /></el-select>
+      <el-select v-model="source" placeholder="全部来源" clearable style="width:120px" @change="load"><el-option label="扫码点单" value="online" /><el-option label="门店收银" value="pos" /></el-select>
       <el-date-picker v-model="day" type="date" value-format="YYYY-MM-DD" placeholder="日期" style="width:150px" @change="load" />
       <el-input v-model="kw" placeholder="单号 / 床号 / 电话" clearable style="width:170px" @keyup.enter="load" />
       <el-button @click="load">刷新</el-button>
     </div>
     <div class="orders">
       <el-empty v-if="!rows.length" description="没有订单" style="grid-column:1/-1" />
-      <div v-for="o in rows" :key="o.id" class="ocard" :class="{pending: o.status==='pending'}" @click="open(o)">
-        <div class="h"><span class="where">{{o.area_name || '门店收银'}} {{o.location_note}}</span>
+      <div v-for="o in rows" :key="o.id" class="ocard" :class="[o.source, {pending: o.status==='pending'}]" @click="open(o)">
+        <div class="h"><span class="where"><span class="src" :class="o.source">{{o.source === 'online' ? '扫码点单' : '门店收银'}}</span>{{o.source === 'online' ? (o.area_name + ' ' + o.location_note).trim() : ''}}</span>
           <el-tag :type="tagType(o)" effect="light" round>{{o.status_text}} · {{o.pay_status_text}}</el-tag></div>
-        <div class="meta">{{o.created_at.slice(5, 16)}} · {{o.no}} · {{o.source_text}}</div>
+        <div class="meta">{{o.created_at.slice(5, 16)}} · {{o.no}}</div>
         <div class="goods">{{o.items.map(i => i.product_name + (i.sku_name !== '默认' ? '(' + i.sku_name + ')' : '') + ' × ' + i.qty).join('，')}}</div>
         <div class="f"><span class="muted">{{o.remark ? '备注：' + o.remark : '共 ' + o.item_count + ' 件'}}</span><b class="money">¥{{yuan(o.payable_amount)}}</b></div>
       </div>
@@ -737,7 +737,7 @@ const Orders = {
     </el-dialog>
   </div>`,
   setup(props) {
-    const status = ref('pending'), source = ref(null), day = ref(''), kw = ref(''), rows = ref([]), drawer = ref(false), cur = ref(null), payDlg = ref(false);
+    const status = ref(''), source = ref(null), day = ref(''), kw = ref(''), rows = ref([]), drawer = ref(false), cur = ref(null), payDlg = ref(false);
     const rBusy = ref(false);
     const rDlg = ref(false), rLines = ref([]), rf = reactive({ method: 'cash', restock: true, reason: '', rid: '' });
     const can = (p) => props.user.permissions.includes(p);
