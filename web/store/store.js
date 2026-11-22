@@ -352,6 +352,11 @@ const Pos = {
       if (el && el.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches)
         el.animate([{ backgroundColor: '#cce3f9' }, { backgroundColor: '#e8f2fd' }], { duration: 600, easing: 'cubic-bezier(.23, 1, .32, 1)' });
     });
+    // 选中行（新加的、再加一件的、上下键选的）不在可见范围内时，购物车滚到这一行
+    watch(() => [sel.value, cart.value.length], () => Vue.nextTick(() => {
+      const el = document.querySelectorAll('.pos-right .line')[sel.value];
+      if (el) el.scrollIntoView({ block: 'nearest', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+    }));
     const add = (p, s) => {
       const i = cart.value.findIndex(x => x.sku_id === s.id);
       if (i >= 0) { cart.value[i].qty++; sel.value = i; flashLine(i); }
