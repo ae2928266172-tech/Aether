@@ -5,7 +5,7 @@ function current() {
   return {
     server: $('server').value, printer: $('printer').value, paperWidth: Number($('paper').value),
     printMode: (document.querySelector('input[name=mode]:checked') || {}).value || 'raw',
-    drawer: $('drawer').checked, autoStart: $('autoStart').checked, fullscreen: $('fullscreen').checked,
+    drawer: $('drawer').checked, autoStart: $('autoStart').checked, fullscreen: $('fullscreen').checked, customerDisplay: $('customerDisplay').checked,
   };
 }
 
@@ -23,7 +23,7 @@ async function init() {
   sel.value = guess;
   $('paper').value = String(c.paperWidth);
   document.querySelector('input[name=mode][value=' + c.printMode + ']').checked = true;
-  $('drawer').checked = c.drawer; $('autoStart').checked = c.autoStart; $('fullscreen').checked = c.fullscreen;
+  $('drawer').checked = c.drawer; $('autoStart').checked = c.autoStart; $('fullscreen').checked = c.fullscreen; $('customerDisplay').checked = c.customerDisplay;
   if (!names.length) msg('printMsg', '这台电脑没有找到打印机，请先装好小票机驱动（如 POS58）');
   $('server').focus();
 }

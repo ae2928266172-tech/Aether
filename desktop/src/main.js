@@ -1,6 +1,6 @@
 // 收银系统 · 门店收银桌面软件（Windows）
-// 一个窗口打开服务端的门店工作台；小票直接发给本机小票机，不弹打印框；服务器地址、小票机在“桌面软件设置”里选。
-const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
+// 一个窗口打开服务端的门店工作台，接了第二块屏时在上面全屏显示顾客副屏；小票直接发给本机小票机，不弹打印框；服务器地址、小票机在“桌面软件设置”里选。
+const { app, BrowserWindow, ipcMain, shell, dialog, screen } = require('electron');
 const path = require('path');
 const http = require('http');
 const https = require('https');
@@ -15,7 +15,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 const CONFIG_FILE = () => path.join(app.getPath('userData'), 'config.json');
 let cfg = config.normalize({});
-let win = null, setupWin = null;
+let win = null, setupWin = null, displayWin = null;
 let raw = null;
 let printChain = Promise.resolve();  // 小票一张一张按顺序出
 
@@ -65,6 +65,8 @@ function createWindow() {
     if (isMain && code !== -3 && !url.startsWith('file:')) win.loadFile(page('offline.html'), { query: { server: cfg.server, error: '页面打不开（' + desc + '）' } });
   });
   win.webContents.on('render-process-gone', () => openStore());
+  win.on('closed', () => { win = null; if (displayWin) displayWin.close(); });
+  win.on('moved', () => setTimeout(syncDisplay, 300));  // 收银窗口拖到另一块屏，副屏跟着换
 
   // 窗口快捷键：F11 全屏，F5 刷新，Ctrl+Shift+S 设置，Ctrl+Shift+I 调试
   win.webContents.on('before-input-event', (e, input) => {
@@ -81,6 +83,37 @@ function createWindow() {
     }
   });
   openStore();
+}
+
+// ---------------- 顾客副屏 ----------------
+// 有第二块屏就在上面全屏打开 /web/display/；副屏不能获得焦点，顾客点它也不会抢走收银窗口的扫码输入
+function syncDisplay() {
+  const want = cfg.customerDisplay && cfg.server && win && !win.isDestroyed();
+  const main = win && !win.isDestroyed() ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
+  const target = want ? config.pickDisplay(screen.getAllDisplays(), main.id) : null;
+  if (!target) { if (displayWin) displayWin.close(); return; }
+  if (displayWin) {
+    displayWin.setFullScreen(false); displayWin.setBounds(target.bounds); displayWin.setFullScreen(true);
+    if (!config.isDisplayPage(cfg.server, displayWin.webContents.getURL())) displayWin.loadURL(config.displayUrl(cfg.server));
+    return;
+  }
+  displayWin = new BrowserWindow({
+    ...target.bounds, frame: false, show: false, focusable: false, skipTaskbar: true, fullscreen: true, backgroundColor: '#f5f5f7',
+    title: '顾客副屏', icon: path.join(__dirname, '..', 'build', 'icon.ico'),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, spellcheck: false },
+  });
+  displayWin.setMenu(null);
+  displayWin.once('ready-to-show', () => displayWin && displayWin.showInactive());
+  displayWin.on('closed', () => { displayWin = null; });
+  displayWin.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  displayWin.webContents.on('will-navigate', (e, url) => { if (!config.isDisplayPage(cfg.server, url)) e.preventDefault(); });
+  displayWin.webContents.on('page-title-updated', (e) => e.preventDefault());
+  // 服务器暂时连不上：过 10 秒再试
+  displayWin.webContents.on('did-fail-load', (e, code, desc, url, isMain) => {
+    if (isMain && code !== -3) setTimeout(() => { if (displayWin && cfg.server) displayWin.loadURL(config.displayUrl(cfg.server)); }, 10000);
+  });
+  displayWin.webContents.on('render-process-gone', () => { if (displayWin && cfg.server) displayWin.loadURL(config.displayUrl(cfg.server)); });
+  displayWin.loadURL(config.displayUrl(cfg.server));
 }
 
 function openSetup() {
@@ -173,6 +206,7 @@ ipcMain.handle('setup:save', async (e, c) => {
   cfg = config.save(CONFIG_FILE(), v);
   applyAutoStart();
   if (cfg.printMode === 'raw') raw.warm();
+  syncDisplay();
   if (win) { if (serverChanged || !win.webContents.getURL().startsWith(cfg.server)) openStore(); else win.webContents.reload(); }
   setupWin && setupWin.close();
   return '';
@@ -189,4 +223,7 @@ app.whenReady().then(() => {
   raw = new RawPrinter(app.getPath('userData'));
   if (cfg.printMode === 'raw' && cfg.printer) raw.warm();
   createWindow();
+  syncDisplay();
+  // 插拔副屏、改分辨率后重新摆放
+  for (const ev of ['display-added', 'display-removed', 'display-metrics-changed']) screen.on(ev, () => setTimeout(syncDisplay, 500));
 }).catch((e) => { dialog.showErrorBox('收银系统启动失败', String(e && e.stack || e)); app.quit(); });
