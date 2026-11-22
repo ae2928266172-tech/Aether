@@ -5,121 +5,152 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>扫码点单</title>
   <style>
-    /* 苹果风格：系统字体、浅灰底 + 白色圆角卡片、无描边、半透明毛玻璃顶栏和底栏、胶囊按钮；动效只动 transform / opacity */
+    /* 苹果风格（参照 Apple Store App）：大标题导航、横向分类胶囊、白色大圆角卡片、浅色毛玻璃悬浮结算条、iOS 分组表单。
+       动效只动 transform / opacity：进入 ease-out，退出更快；系统设置“减少动态效果”时只留淡入淡出。 */
     :root {
-      --bg: #f2f2f7; --card: #fff; --label: #1d1d1f; --label-2: #6e6e73; --label-3: #aeaeb2; --sep: rgba(60,60,67,.12);
-      --fill: rgba(118,118,128,.12); --blue: #0071e3; --red: #ff3b30; --orange: #c93400;
+      --bg: #f5f5f7; --card: #fff; --label: #1d1d1f; --label-2: #6e6e73; --label-3: #aeaeb2; --sep: rgba(60,60,67,.13);
+      --fill: rgba(118,118,128,.12); --blue: #0071e3; --blue-press: #0062c4; --red: #ff3b30;
       --ease-out: cubic-bezier(.23, 1, .32, 1); --ease-drawer: cubic-bezier(.32, .72, 0, 1);
-      --head-h: 64px; --bar-h: 64px;
+      --nav-h: 44px; --chips-h: 56px;
     }
     * { box-sizing: border-box; }
-    html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
-    body { margin: 0; background: var(--bg); color: var(--label); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
-      -webkit-font-smoothing: antialiased; letter-spacing: -.01em; }
-    button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; touch-action: manipulation; }
+    html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; background: var(--bg); }
+    body { margin: 0; background: var(--bg); color: var(--label); font: 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
+      -webkit-font-smoothing: antialiased; letter-spacing: -.022em; }
+    button { font: inherit; color: inherit; letter-spacing: inherit; border: 0; background: none; padding: 0; cursor: pointer; touch-action: manipulation; }
     button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .page { padding-bottom: calc(120px + env(safe-area-inset-bottom)); }
 
-    /* 顶栏：毛玻璃，内容从下面滚过 */
-    header { position: fixed; top: 0; left: 0; right: 0; z-index: 5; height: calc(var(--head-h) + env(safe-area-inset-top)); padding: env(safe-area-inset-top) 16px 0;
-      display: flex; align-items: center; gap: 12px; background: rgba(242,242,247,.8); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
-      border-bottom: .5px solid var(--sep); }
-    header .t { flex: 1; min-width: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    header .s { color: var(--label-2); font-size: 13px; font-weight: 400; letter-spacing: 0; margin-top: 2px; }
-    header .mine { height: 34px; padding: 0 14px; border-radius: 17px; background: var(--fill); color: var(--blue); font-size: 15px; font-weight: 600; white-space: nowrap; }
+    /* 顶部小导航：大标题滚出去后才出现（iOS 大标题收起） */
+    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 8; height: calc(var(--nav-h) + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top);
+      display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; pointer-events: none; }
+    .nav::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(245,245,247,.82); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
+      border-bottom: .5px solid var(--sep); opacity: 0; transition: opacity 200ms ease; }
+    .nav span { opacity: 0; translate: 0 6px; transition: opacity 200ms ease, translate 260ms var(--ease-out); }
+    .nav.on::before, .nav.on span { opacity: 1; translate: 0 0; }
 
-    .wrap { display: flex; position: fixed; left: 0; right: 0; top: calc(var(--head-h) + env(safe-area-inset-top)); bottom: 0; }
-    /* 左侧分类：选中项是白色圆角块 */
-    .cats { width: 92px; flex-shrink: 0; overflow-y: auto; padding: 10px 6px calc(var(--bar-h) + 40px + env(safe-area-inset-bottom)); }
-    .cats div { padding: 11px 6px; margin-bottom: 4px; border-radius: 12px; font-size: 14px; text-align: center; color: var(--label-2); cursor: pointer; line-height: 1.3; }
-    .cats div.on { background: var(--card); color: var(--label); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
-    .list { flex: 1; min-width: 0; overflow-y: auto; padding: 10px 12px calc(var(--bar-h) + 40px + env(safe-area-inset-bottom)) 4px; -webkit-overflow-scrolling: touch; }
+    /* 大标题 */
+    .hero { padding: calc(18px + env(safe-area-inset-top)) 20px 6px; display: flex; align-items: flex-end; gap: 12px; }
+    .hero .tt { flex: 1; min-width: 0; }
+    .hero .eyebrow { font-size: 14px; font-weight: 600; color: var(--label-2); letter-spacing: -.01em; }
+    .hero h1 { margin: 2px 0 0; font-size: 34px; line-height: 1.12; font-weight: 700; letter-spacing: -.03em; }
+    .hero .mine { flex-shrink: 0; height: 36px; padding: 0 16px; border-radius: 18px; background: var(--card); color: var(--blue); font-size: 15px; font-weight: 600;
+      box-shadow: 0 1px 2px rgba(0,0,0,.06); margin-bottom: 4px; }
 
-    /* 商品卡片 */
-    .item { background: var(--card); border-radius: 18px; padding: 12px; margin-bottom: 10px; display: flex; gap: 12px; }
-    .item .img { width: 68px; height: 68px; border-radius: 14px; background: #f5f5f7 center/cover no-repeat; flex-shrink: 0;
-      display: flex; align-items: center; justify-content: center; color: var(--label-3); font-size: 26px; font-weight: 600; }
-    .item .info { flex: 1; min-width: 0; padding-top: 2px; }
-    .item .n { font-size: 16px; font-weight: 600; letter-spacing: -.02em; line-height: 1.3; }
-    .item .d { color: var(--label-2); font-size: 13px; margin-top: 3px; line-height: 1.4; }
-    .lim { display: inline-block; color: var(--orange); background: rgba(255,149,0,.12); font-size: 12px; font-weight: 500; border-radius: 6px; padding: 1px 7px; margin-top: 5px; }
-    .sku { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 46px; padding: 4px 0; margin-top: 2px; }
+    /* 分类：横向胶囊，选中为深色；吸顶在小导航下面 */
+    .chips { position: sticky; top: calc(var(--nav-h) + env(safe-area-inset-top)); z-index: 7; display: flex; gap: 8px; overflow-x: auto; padding: 10px 20px 12px;
+      scrollbar-width: none; -webkit-overflow-scrolling: touch; background: var(--bg); }
+    .chips::-webkit-scrollbar { display: none; }
+    .chips.stuck { background: rgba(245,245,247,.82); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); }
+    .chip { flex-shrink: 0; height: 36px; padding: 0 16px; border-radius: 18px; background: var(--card); color: var(--label); font-size: 15px; font-weight: 500; white-space: nowrap;
+      box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    .chip.on { background: var(--label); color: #fff; box-shadow: none; }
+
+    /* 商品：白色大圆角卡片 */
+    .list { padding: 6px 16px 0; }
+    .sec { font-size: 22px; font-weight: 700; letter-spacing: -.025em; margin: 14px 4px 12px; }
+    .item { background: var(--card); border-radius: 22px; padding: 18px 16px 10px 18px; margin-bottom: 12px; display: flex; gap: 14px; align-items: flex-start; }
+    .item .img { width: 72px; height: 72px; border-radius: 16px; background: #f5f5f7 center/cover no-repeat; flex-shrink: 0; }
+    .item .info { flex: 1; min-width: 0; }
+    .item .n { font-size: 19px; font-weight: 600; letter-spacing: -.025em; line-height: 1.26; }
+    .item .d { color: var(--label-2); font-size: 14px; margin-top: 4px; line-height: 1.43; letter-spacing: -.01em; }
+    .lim { display: inline-block; color: #b25000; background: rgba(255,149,0,.12); font-size: 12px; font-weight: 600; letter-spacing: 0; border-radius: 6px; padding: 2px 8px; margin-top: 8px; }
+    .skus { margin-top: 6px; }
+    .sku { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 54px; padding: 6px 0; }
     .sku + .sku { border-top: .5px solid var(--sep); }
-    .sku .sn { display: flex; align-items: center; min-width: 0; font-size: 14px; color: var(--label-2); }
+    .sku .sn { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .sku .simg { width: 36px; height: 36px; border-radius: 9px; object-fit: cover; flex-shrink: 0; background: #f5f5f7; }
     .sku .sx { display: flex; flex-direction: column; min-width: 0; }
-    .sku .sk { font-size: 13px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-    .sku .pr { color: var(--label); font-weight: 600; font-size: 16px; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
-    .sku .simg { width: 32px; height: 32px; border-radius: 8px; object-fit: cover; margin-right: 8px; flex-shrink: 0; background: #f5f5f7; }
+    .sku .sk { font-size: 14px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
+    .sku .pr { color: var(--label); font-weight: 600; font-size: 17px; font-variant-numeric: tabular-nums; }
 
-    /* 加减：未选时一个蓝色圆形加号，选了变成灰色胶囊 − 数量 + */
-    .qty { display: flex; align-items: center; flex-shrink: 0; border-radius: 17px; transition: background-color .2s ease; }
-    .qty.has { background: var(--fill); }
-    .qty button { width: 34px; height: 34px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: var(--blue); }
-    .qty button svg { width: 16px; height: 16px; display: block; }
-    .qty button.add { background: var(--blue); color: #fff; }
-    .qty.has button.add { background: transparent; color: var(--blue); }
-    .qty .num { min-width: 22px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; animation: pop-in 220ms var(--ease-out); }
+    /* 加减：未选时蓝色“添加”胶囊，选了变成灰色胶囊 − 数量 + */
+    .qty { display: flex; align-items: center; flex-shrink: 0; height: 36px; border-radius: 18px; background: var(--blue); color: #fff; }
+    .qty.has { background: var(--fill); color: var(--blue); }
+    .qty button { height: 36px; min-width: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; }
+    .qty button svg { width: 15px; height: 15px; display: block; }
+    .qty .addt { padding: 0 16px; font-size: 15px; font-weight: 600; letter-spacing: 0; }
+    .qty .num { min-width: 22px; text-align: center; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--label); animation: pop-in 220ms var(--ease-out); }
+    .empty-list { text-align: center; color: var(--label-2); padding: 60px 0; font-size: 15px; }
 
-    /* 底部悬浮购物条：毛玻璃胶囊 */
-    .bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); height: var(--bar-h); z-index: 6; border-radius: 32px; padding: 0 8px 0 10px;
-      display: flex; align-items: center; gap: 12px; background: rgba(29,29,31,.88); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
-      color: #fff; box-shadow: 0 8px 30px rgba(0,0,0,.18); }
-    .bar .cart { width: 44px; height: 44px; border-radius: 22px; background: rgba(255,255,255,.14); display: flex; align-items: center; justify-content: center; position: relative; }
+    /* 结算条：浅色毛玻璃，悬浮在底部 */
+    .bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); height: 68px; z-index: 6; border-radius: 34px; padding: 0 10px 0 12px;
+      display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,.78); -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px);
+      box-shadow: 0 10px 40px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.06); translate: 0 0; transition: translate 360ms var(--ease-drawer), opacity 200ms ease; }
+    .bar.off { translate: 0 calc(100% + 30px); opacity: 0; pointer-events: none; }
+    .bar .cart { width: 46px; height: 46px; border-radius: 23px; background: var(--fill); display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
     .bar .cart svg { width: 22px; height: 22px; }
     .bar .cart i { position: absolute; top: -3px; right: -5px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--red); color: #fff;
-      font: 600 12px/20px -apple-system, sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px rgba(29,29,31,.9); }
-    .bar .t { flex: 1; min-width: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
-    .bar .t small { display: block; font-size: 12px; font-weight: 400; color: rgba(255,255,255,.6); letter-spacing: 0; margin-top: -1px; }
-    .bar .t.empty { color: rgba(255,255,255,.55); font-size: 15px; font-weight: 500; }
-    .btn { height: 48px; padding: 0 26px; border-radius: 24px; background: var(--blue); color: #fff; font-size: 16px; font-weight: 600; letter-spacing: 0; }
-    .btn:disabled { background: rgba(255,255,255,.16); color: rgba(255,255,255,.45); }
-    .btn.block { width: 100%; height: 52px; border-radius: 14px; font-size: 17px; }
-    .btn.block:disabled { background: #d1d1d6; color: #fff; }
+      font: 600 12px/20px -apple-system, sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px #fff; }
+    .bar .t { flex: 1; min-width: 0; line-height: 1.2; }
+    .bar .t b { display: block; font-size: 21px; font-weight: 700; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
+    .bar .t small { font-size: 13px; color: var(--label-2); letter-spacing: -.01em; }
+    .btn { height: 50px; padding: 0 26px; border-radius: 25px; background: var(--blue); color: #fff; font-size: 17px; font-weight: 600; }
+    .btn:active:not(:disabled) { background: var(--blue-press); }
+    .btn.block { width: 100%; height: 54px; border-radius: 16px; }
+    .btn:disabled { background: #b3d4f7; }
 
     /* 底部弹层：iOS 表单，顶部抓手可下拉关闭 */
-    .mask { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-end; z-index: 9; }
-    .sheet { background: var(--bg); width: 100%; border-radius: 20px 20px 0 0; max-height: 88vh; max-height: 88dvh; display: flex; flex-direction: column; will-change: transform; }
-    .sheet .grab { flex-shrink: 0; padding: 8px 16px 6px; touch-action: none; cursor: grab; }
-    .sheet .grab::before { content: ""; display: block; width: 36px; height: 5px; border-radius: 3px; background: rgba(60,60,67,.3); margin: 0 auto 10px; }
-    .sheet h3 { margin: 0; font-size: 20px; font-weight: 700; letter-spacing: -.02em; }
-    .sheet .body { overflow-y: auto; padding: 8px 16px calc(16px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
-    .group { background: var(--card); border-radius: 14px; margin-bottom: 14px; overflow: hidden; }
-    .group-t { color: var(--label-2); font-size: 13px; margin: 0 16px 6px; }
-    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 16px; font-size: 15px; }
+    .mask { position: fixed; inset: 0; background: rgba(0,0,0,.32); display: flex; align-items: flex-end; z-index: 9; }
+    .sheet { background: #f2f2f7; width: 100%; border-radius: 24px 24px 0 0; max-height: 90vh; max-height: 90dvh; display: flex; flex-direction: column; will-change: transform; }
+    .sheet .grab { flex-shrink: 0; padding: 8px 20px 4px; touch-action: none; cursor: grab; display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
+    .sheet .grab::before { content: ""; flex-basis: 100%; height: 5px; border-radius: 3px; background: rgba(60,60,67,.3); margin: 0 calc(50% - 18px) 14px; }
+    .sheet h3 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.03em; }
+    .sheet .x { width: 30px; height: 30px; border-radius: 15px; background: var(--fill); color: var(--label-2); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+    .sheet .x svg { width: 12px; height: 12px; }
+    .sheet .body { overflow-y: auto; padding: 14px 16px calc(20px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+    .group { background: var(--card); border-radius: 14px; margin-bottom: 22px; overflow: hidden; }
+    .group-t { color: var(--label-2); font-size: 13px; text-transform: uppercase; margin: 0 16px 7px; letter-spacing: 0; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 16px; font-size: 17px; }
     .group .row + .row { border-top: .5px solid var(--sep); }
+    .row .q { color: var(--label-2); margin-left: 6px; }
     .row .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
     .row.total { font-weight: 600; }
-    .row.total .money { font-size: 18px; }
-    .field { display: flex; align-items: center; gap: 12px; padding: 0 16px; min-height: 48px; }
+    .row.total .money { font-size: 20px; letter-spacing: -.02em; }
+    .field { display: flex; align-items: center; gap: 12px; padding: 0 16px; min-height: 50px; }
     .field + .field { border-top: .5px solid var(--sep); }
-    .field label { width: 76px; flex-shrink: 0; font-size: 15px; }
+    .field label { width: 84px; flex-shrink: 0; font-size: 17px; }
     .field label em { color: var(--red); font-style: normal; margin-left: 2px; }
-    .field input, .field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 16px; color: var(--label); padding: 13px 0; resize: none; }
+    .field input, .field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 17px; color: var(--label); padding: 13px 0; resize: none; text-align: right; }
     .field input::placeholder, .field textarea::placeholder { color: var(--label-3); }
-    .note { color: var(--label-2); font-size: 13px; line-height: 1.5; margin: -6px 16px 16px; }
-    .ord { background: var(--card); border-radius: 14px; padding: 14px 16px; margin-bottom: 10px; }
-    .ord .h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px; }
-    .ord .h b { font-size: 16px; }
-    .ord .g { color: var(--label-2); font-size: 14px; line-height: 1.5; }
-    .ord .f { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-size: 15px; }
-    .link { color: var(--red); font-size: 15px; height: 32px; padding: 0 12px; border-radius: 16px; background: rgba(255,59,48,.1); font-weight: 500; }
-    .muted { color: var(--label-2); font-size: 13px; }
-    .empty-t { text-align: center; color: var(--label-2); padding: 40px 0; }
-    .tip { position: fixed; left: 50%; bottom: calc(var(--bar-h) + 28px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 20; max-width: 86%; text-align: center;
-      background: rgba(29,29,31,.86); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #fff; padding: 10px 18px; border-radius: 20px; font-size: 14px; }
-    .err { padding: 30vh 24px 0; text-align: center; color: var(--label-2); font-size: 16px; }
+    .note { color: var(--label-2); font-size: 13px; line-height: 1.5; margin: -14px 16px 22px; letter-spacing: 0; }
+    .ord { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+    .ord .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .ord .h b { font-size: 17px; font-weight: 600; }
+    .ord .g { color: var(--label-2); font-size: 15px; line-height: 1.45; }
+    .ord .f { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 15px; }
+    .ord .f .money { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .tag { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: 0; padding: 3px 8px; border-radius: 6px; background: var(--fill); color: var(--label-2); }
+    .tag.blue { background: #e8f2fd; color: var(--blue); }
+    .link { color: var(--red); font-size: 15px; height: 34px; padding: 0 14px; border-radius: 17px; background: rgba(255,59,48,.1); font-weight: 600; }
+    .muted { color: var(--label-2); font-size: 13px; letter-spacing: 0; }
+    .empty-t { text-align: center; color: var(--label-2); padding: 48px 0; }
+    .tip { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 20; max-width: 86%; text-align: center;
+      background: rgba(29,29,31,.86); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #fff; padding: 11px 18px; border-radius: 22px; font-size: 15px; }
+    .err { padding: 32vh 24px 0; text-align: center; color: var(--label-2); font-size: 17px; }
+    .spin { width: 28px; height: 28px; margin: 0 auto 14px; border-radius: 50%; border: 3px solid var(--fill); border-top-color: var(--label-2); animation: spin 700ms linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     /* 动效 */
     button { transition: transform 160ms var(--ease-out), background-color .2s ease, color .2s ease; }
-    .qty button:active, header .mine:active, .link:active, .bar .cart:active { transform: scale(.9); }
-    .btn:active:not(:disabled) { transform: scale(.96); }
-    .item, .cats div { transition: transform 200ms var(--ease-out), background-color .2s ease; }
+    .qty button:active, .hero .mine:active, .link:active, .chip:active, .sheet .x:active { transform: scale(.92); }
+    .btn:active:not(:disabled) { transform: scale(.97); }
     @keyframes pop-in { from { opacity: 0; scale: .6; } }
+    @keyframes rise { from { opacity: 0; translate: 0 14px; } }
+    /* 首次打开：商品卡片依次浮现（只在打开页面时一次） */
+    .list.intro .item { animation: rise 460ms var(--ease-out) both; }
+    .list.intro .item:nth-child(2) { animation-delay: 40ms; } .list.intro .item:nth-child(3) { animation-delay: 75ms; }
+    .list.intro .item:nth-child(4) { animation-delay: 105ms; } .list.intro .item:nth-child(5) { animation-delay: 130ms; } .list.intro .item:nth-child(n+6) { animation-delay: 150ms; }
+    .hero { animation: rise 460ms var(--ease-out) both; }
+    /* 切换分类：列表快速淡入 */
+    .fade-enter-active { transition: opacity 180ms ease-out; }
+    .fade-enter-from { opacity: 0; }
     .bar .cart i.bump { animation: bump 320ms var(--ease-out); }
     @keyframes bump { 35% { scale: 1.3; } }
-    .sheet-enter-active { transition: background-color 420ms var(--ease-drawer); }
+    .sheet-enter-active { transition: background-color 440ms var(--ease-drawer); }
     .sheet-leave-active { transition: background-color 260ms var(--ease-drawer); }
     .sheet-enter-from, .sheet-leave-to { background-color: rgba(0,0,0,0); }
-    .sheet-enter-active .sheet { transition: transform 420ms var(--ease-drawer); }
+    .sheet-enter-active .sheet { transition: transform 440ms var(--ease-drawer); }
     .sheet-leave-active .sheet { transition: transform 260ms var(--ease-drawer); }
     .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: translateY(100%) !important; }
     .tip-enter-active { transition: opacity 220ms var(--ease-out), translate 220ms var(--ease-out); }
@@ -129,77 +160,94 @@
     @media (prefers-reduced-motion: reduce) {
       button:active { transform: none !important; }
       .bar .cart i.bump, .qty .num { animation: none; }
+      @keyframes rise { from { opacity: 0; } }
       .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: none !important; opacity: 0; }
       .sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: opacity 200ms ease; }
-      .tip-enter-from { translate: none; }
+      .tip-enter-from, .nav span { translate: none; }
+      .bar.off { translate: none; }
     }
     @media (prefers-reduced-transparency: reduce) {
-      header { background: #f2f2f7; -webkit-backdrop-filter: none; backdrop-filter: none; }
-      .bar { background: #1d1d1f; -webkit-backdrop-filter: none; backdrop-filter: none; }
+      .nav::before, .chips.stuck { background: #f5f5f7; -webkit-backdrop-filter: none; backdrop-filter: none; }
+      .bar { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
     }
   </style>
 </head>
 <body>
 <div id="app">
   <div v-if="error" class="err">{{error}}</div>
-  <template v-else-if="area">
-    <header><div class="t">{{area.store_name}}<div class="s">{{area.area_label}} · {{area.area_name}}</div></div><button class="mine" @click="showOrders">我的订单</button></header>
-    <div class="wrap">
-      <div class="cats"><div :class="{on:!cat}" @click="cat=null">全部</div><div v-for="c in topCats" :key="c.id" :class="{on:cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
-      <div class="list">
+  <div v-else-if="area" class="page">
+    <div class="nav" :class="{on: scrolled}"><span>{{area.store_name}}</span></div>
+    <div class="hero" ref="hero">
+      <div class="tt"><div class="eyebrow">{{area.area_label}} · {{area.area_name}}</div><h1>{{area.store_name}}</h1></div>
+      <button class="mine" @click="showOrders">我的订单</button>
+    </div>
+    <div class="chips" :class="{stuck: scrolled}" v-if="topCats.length">
+      <button class="chip" :class="{on:!cat}" @click="pickCat(null)">全部</button>
+      <button v-for="c in topCats" :key="c.id" class="chip" :class="{on:cat===c.id}" @click="pickCat(c.id)">{{c.name}}</button>
+    </div>
+    <transition name="fade" mode="out-in">
+      <div class="list" :class="{intro}" :key="cat || 0">
+        <div v-if="!shown.length" class="empty-list">这个分类暂时没有商品</div>
         <div v-for="p in shown" :key="p.id" class="item">
-          <div class="img" :style="p.image ? {backgroundImage:'url(' + JSON.stringify(thumb(p.image, 160)) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
+          <div class="img" v-if="p.image" :style="{backgroundImage:'url(' + JSON.stringify(thumb(p.image, 240)) + ')'}"></div>
           <div class="info">
             <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div><div class="lim" v-if="p.min_qty > 1 || p.max_qty">{{limText(p)}}</div>
-            <div v-for="s in p.skus" :key="s.id" class="sku">
-              <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg"><span class="sx"><span v-if="s.name !== '默认'" class="sk">{{s.name}}</span><span class="pr">¥{{yuan(s.price)}}</span></span></span>
-              <span class="qty" :class="{has: qty[s.id]}"><button v-if="qty[s.id]" aria-label="减少" @click="dec(p, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><span v-if="qty[s.id]" :key="qty[s.id]" class="num">{{qty[s.id]}}</span><button class="add" aria-label="增加" @click="inc(p, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></span>
+            <div class="skus">
+              <div v-for="s in p.skus" :key="s.id" class="sku">
+                <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg"><span class="sx"><span v-if="s.name !== '默认'" class="sk">{{s.name}}</span><span class="pr">¥{{yuan(s.price)}}</span></span></span>
+                <span class="qty" :class="{has: qty[s.id]}">
+                  <template v-if="qty[s.id]"><button aria-label="减少" @click="dec(p, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><span :key="qty[s.id]" class="num">{{qty[s.id]}}</span><button aria-label="增加" @click="inc(p, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></template>
+                  <button v-else class="addt" @click="inc(p, s.id)">添加</button>
+                </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
+    </transition>
     <transition name="tip"><div v-if="tip" class="tip">{{tip}}</div></transition>
-    <div class="bar">
+    <div class="bar" :class="{off: !count}">
       <div class="cart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><i v-if="count" :key="count" class="bump">{{count}}</i></div>
-      <div class="t" :class="{empty: !count}"><template v-if="count">¥{{yuan(total)}}<small>共 {{count}} 件</small></template><template v-else>还没有选商品</template></div>
-      <button class="btn" :disabled="!count" @click="sheet=true">去下单</button>
+      <div class="t"><b>¥{{yuan(total)}}</b><small>共 {{count}} 件</small></div>
+      <button class="btn" :disabled="!count" @click="sheet=true">去结算</button>
     </div>
     <transition name="sheet"><div v-if="sheet" class="mask" @click.self="sheet=false"><div class="sheet" v-drag-close="() => sheet = false">
-      <div class="grab"><h3>确认订单</h3></div>
+      <div class="grab"><h3>确认订单</h3><button class="x" aria-label="关闭" @click="sheet=false"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
       <div class="body">
+        <div class="group-t">商品</div>
         <div class="group">
-          <div v-for="l in lines" :key="l.sku_id" class="row"><span>{{l.name}} × {{l.qty}}</span><span class="money">¥{{yuan(l.price*l.qty)}}</span></div>
+          <div v-for="l in lines" :key="l.sku_id" class="row"><span>{{l.name}}<span class="q">× {{l.qty}}</span></span><span class="money">¥{{yuan(l.price*l.qty)}}</span></div>
           <div class="row total"><span>合计</span><span class="money">¥{{yuan(total)}}</span></div>
         </div>
+        <div class="group-t">配送信息</div>
         <div class="group">
           <div class="field"><label>{{area.location_label}}<em v-if="area.location_required">*</em></label><input v-model="loc" :placeholder="area.location_required ? '必填' : '选填'"></div>
           <div class="field"><label>联系电话</label><input v-model="phone" type="tel" inputmode="tel" maxlength="20" placeholder="选填"></div>
           <div class="field"><label>备注</label><textarea v-model="remark" rows="1" placeholder="选填"></textarea></div>
         </div>
         <div class="note">提交后由门店接单并配送，付款方式请听从门店工作人员安排。</div>
-        <button class="btn block" :disabled="busy" @click="submit">提交订单</button>
+        <button class="btn block" :disabled="busy" @click="submit">{{busy ? '正在提交…' : '提交订单'}}</button>
       </div>
     </div></div></transition>
     <transition name="sheet"><div v-if="ordersOpen" class="mask" @click.self="ordersOpen=false"><div class="sheet" v-drag-close="() => ordersOpen = false">
-      <div class="grab"><h3>我的订单</h3></div>
+      <div class="grab"><h3>我的订单</h3><button class="x" aria-label="关闭" @click="ordersOpen=false"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
       <div class="body">
         <div v-if="!orders.length" class="empty-t">还没有订单</div>
         <div v-for="o in orders" :key="o.id" class="ord">
           <div class="h"><b>{{o.status_text}}</b><span class="muted">{{o.created_at}}</span></div>
-          <div class="g">{{o.items.map(i => i.product_name + (i.sku_name!=='默认' ? '('+i.sku_name+')' : '') + '×' + i.qty).join('，')}}</div>
-          <div class="f"><span>¥{{yuan(o.payable_amount)}} · {{o.pay_status_text}}</span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
+          <div class="g">{{o.items.map(i => i.product_name + (i.sku_name!=='默认' ? '('+i.sku_name+')' : '') + ' × ' + i.qty).join('，')}}</div>
+          <div class="f"><span><span class="money">¥{{yuan(o.payable_amount)}}</span>　<span class="tag" :class="{blue: o.pay_status==='paid'}">{{o.pay_status_text}}</span></span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
         </div>
       </div>
     </div></div></transition>
-  </template>
-  <div v-else class="err">加载中…</div>
+  </div>
+  <div v-else class="err"><div class="spin"></div>正在加载</div>
 </div>
 <script>window.APP_KIND = 'customer';</script>
 <script src="../vendor/vue.global.prod.js"></script>
 <script src="../common/api.js?v=19"></script>
 <script>
-const { createApp, ref, reactive, computed, onMounted } = Vue;
+const { createApp, ref, reactive, computed, onMounted, nextTick } = Vue;
 const { api, yuan, rid } = Shouyin;
 const app = createApp({
   setup() {
@@ -260,12 +308,17 @@ const app = createApp({
     };
     const showOrders = async () => { try { await ensureLogin(); orders.value = await api.get('/api/customer/orders'); ordersOpen.value = true; } catch (e) { alert(e.message); } };
     const cancel = async (o) => { if (!confirm('确定取消这个订单？')) return; try { await api.post('/api/customer/orders/' + o.id + '/cancel'); showOrders(); } catch (e) { alert(e.message); } };
+    // 大标题滚出去后显示顶部小导航；首次进入时卡片依次浮现，之后切分类只淡入
+    const scrolled = ref(false), hero = ref(null), intro = ref(true);
+    const onScroll = () => { const h = hero.value; scrolled.value = !!h && h.getBoundingClientRect().bottom < 50; };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    const pickCat = (id) => { intro.value = false; if (cat.value === id) return; cat.value = id; const c = document.querySelector('.chips'); if (c && scrolled.value) window.scrollTo({ top: hero.value.offsetHeight, behavior: 'smooth' }); };
     onMounted(async () => {
       if (!code) { error.value = '请扫描区域二维码进入'; return; }
       try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { scrolled, hero, intro, pickCat, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 });
 // 底部弹层：按住顶部抓手往下拉，手指在哪弹层就在哪（1:1 跟手）；松手时按速度预测落点，过半或快速下滑就关闭，否则弹回
@@ -275,6 +328,7 @@ app.directive('drag-close', {
     let y0 = 0, dy = 0, hist = [], id = null;
     const project = (v) => (v / 1000) * 0.998 / (1 - 0.998);  // 惯性预测（与 iOS 滚动减速一致）
     grab.addEventListener('pointerdown', (e) => {
+      if (e.target.closest('button')) return;  // 关闭按钮照常点击
       id = e.pointerId; grab.setPointerCapture(id); y0 = e.clientY; dy = 0; hist = [{ y: e.clientY, t: e.timeStamp }];
       el.style.transition = 'none';
     });
