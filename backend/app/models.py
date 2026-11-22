@@ -377,6 +377,8 @@ class Order(Base, TimestampMixin):
     pay_status：unpaid 未收款 / paid 已收款 / partial_refunded 部分退款 / refunded 已全额退款
     """
     __tablename__ = "orders"
+    # 报表按收款时间查，常带门店条件
+    __table_args__ = (Index("ix_orders_store_paid", "store_id", "paid_at"),)
     id: Mapped[int] = mapped_column(primary_key=True)
     no: Mapped[str] = mapped_column(String(32), unique=True)
     source: Mapped[str] = mapped_column(String(20))  # pos / online
@@ -398,7 +400,7 @@ class Order(Base, TimestampMixin):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     accepted_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     cancel_reason: Mapped[str] = mapped_column(String(200), default="")
@@ -508,8 +510,8 @@ class Exchange(Base):
 class RefundLine(Base):
     __tablename__ = "refund_lines"
     id: Mapped[int] = mapped_column(primary_key=True)
-    refund_id: Mapped[int] = mapped_column(ForeignKey("refunds.id"))
-    order_item_id: Mapped[int] = mapped_column(ForeignKey("order_items.id"))
+    refund_id: Mapped[int] = mapped_column(ForeignKey("refunds.id"), index=True)
+    order_item_id: Mapped[int] = mapped_column(ForeignKey("order_items.id"), index=True)
     qty: Mapped[int] = mapped_column(Integer)
     amount: Mapped[int] = mapped_column(Integer)
 
