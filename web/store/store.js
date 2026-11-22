@@ -20,6 +20,68 @@ const editable = (el) => !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXT
 const msgBoxOpen = () => !!document.querySelector('.el-message-box');
 
 const METHODS = { cash: '现金', wechat: '微信', alipay: '支付宝', other: '其他' };
+const PAD = ['7', '8', '9', 'back', '4', '5', '6', 'clear', '1', '2', '3', 'ok', '00', '0', '.'];
+
+// 收银和换货使用同一套字母数字键盘、商品搜索和规格选择。
+const keys = (str) => str.split('').map(k => ({ k }));
+const KB = [
+  [...keys('1234567890'), { k: 'back', w: 1.5 }],
+  [{ gap: 0.5 }, ...keys('qwertyuiop'), { gap: 1 }],
+  [{ gap: 0.75 }, ...keys('asdfghjkl'), { k: 'enter', w: 1.75 }],
+  [{ gap: 1.25 }, ...keys('zxcvbnm'), { k: 'clear', w: 2 }, { gap: 1.25 }]];
+const PosKeyboard = {
+  props: ['space'],
+  emits: ['press'],
+  template: `
+    <div class="kb" @pointerdown.prevent @mousedown.prevent>
+      <div v-for="(r, i) in KB" :key="i" class="kb-row">
+        <template v-for="(k, j) in r" :key="j">
+          <span v-if="k.gap" class="kb-gap" :style="{flexGrow: k.gap}"></span>
+          <button v-else type="button" tabindex="-1" class="kb-k" :class="'kb-' + (k.k.length > 1 ? k.k : 'c')" :style="{flexGrow: k.w || 1}" :data-k="k.k" @click="$emit('press', k.k)">{{ {back: '⌫', clear: '清空', enter: '确认'}[k.k] || k.k.toUpperCase() }}</button>
+        </template>
+      </div>
+      <button v-if="space" type="button" tabindex="-1" class="kb-k" @click="$emit('press', ' ')">空格</button>
+    </div>`,
+  setup: () => ({ KB }),
+};
+
+const matchKw = (p, t) => {
+  const k = t.toLowerCase();
+  return p.name.toLowerCase().includes(k) || (p.mnemonic || '').includes(k) || (p.code || '').toLowerCase().includes(k)
+    || p.skus.some(s => (s.barcode || '').startsWith(t) || (s.name !== '默认' && s.name.toLowerCase().includes(k)));
+};
+const priceText = (p) => {
+  const ps = p.skus.map(s => s.price), a = Math.min(...ps), b = Math.max(...ps);
+  return a === b ? yuan(a) : yuan(a) + ' 起';
+};
+const barcodeMatches = async (code) => {
+  const r = await api.get('/api/products/by-barcode/' + encodeURIComponent(code));
+  return (r.matches || [r]).map(m => ({ product: m.product, sku: m.product.skus.find(s => s.id === m.sku_id) })).filter(m => m.sku);
+};
+const PickDialog = {
+  props: ['modelValue', 'product', 'matches', 'shortcuts'],
+  emits: ['update:modelValue', 'pick'],
+  template: `
+    <el-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)"
+      :title="matches ? '这个条码对应多个规格，请选择' : undefined" :width="width" class="pick-dlg">
+      <template v-if="!matches" #header><span class="pick-title">{{product && product.name}}</span><span class="muted pick-tip">点选规格</span></template>
+      <div class="pick-grid">
+        <button v-for="({product: p, sku: s}, i) in options" :key="s.id" type="button" class="pick" @click="$emit('pick', p, s); $emit('update:modelValue', false)">
+          <kbd v-if="shortcuts && i < 9" class="no">{{i + 1}}</kbd>
+          <div class="pimg" :style="bg(s.image || p.image)">{{(s.image || p.image) ? '' : (!matches && s.name !== '默认' ? s.name : p.name).slice(0, 1)}}</div>
+          <div class="pn">{{matches ? p.name : s.name}}</div><div v-if="matches && s.name !== '默认'" class="ps">{{s.name}}</div>
+          <div class="pp">¥{{yuan(s.price)}}</div>
+        </button>
+      </div>
+    </el-dialog>`,
+  setup(props) {
+    const options = computed(() => props.matches || (props.product ? props.product.skus.map(sku => ({ product: props.product, sku })) : []));
+    // 每格约 200px，一行最多 4 个。
+    const width = computed(() => Math.min(4, Math.max(2, options.value.length)) * 196 + 72 + 'px');
+    const bg = (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(Shouyin.thumb(img, 200)) + ')' } : {});
+    return { options, width, bg, yuan };
+  },
+};
 
 // 优惠（打折 / 调低应收）+ 收款，收银和订单收款共用
 const PayDialog = {
@@ -113,7 +175,6 @@ const PayDialog = {
     watch(rate, () => { rateInput.value = rate.value && ![95, 90, 88, 85, 80].includes(rate.value) ? rate.value / 10 : ''; payableInput.value = ''; quote(); });
     const applyRate = (v) => { rate.value = String(v == null ? '' : v).trim() ? Math.round(parseFloat(v) * 10) : null; };
     // 收款框内置数字键盘（触摸屏用）：输入到当前选中的框；“确定”应用折扣 / 改应收，“收款”直接确认收款
-    const PAD = ['7', '8', '9', 'back', '4', '5', '6', 'clear', '1', '2', '3', 'ok', '00', '0', '.'];
     const models = { received, rate: rateInput, payable: payableInput };
     const padPress = (k) => {
       const f = field.value, m = models[f];
@@ -174,7 +235,7 @@ const PayDialog = {
 // ---------------- 收银 ----------------
 const Pos = {
   props: ['user', 'storeId', 'settings', 'agent', 'sync'],
-  components: { PayDialog },
+  components: { PayDialog, PosKeyboard, PickDialog },
   template: `
   <div class="ws-body pos">
     <div class="rail">
@@ -201,14 +262,7 @@ const Pos = {
           <div v-else class="dock-tip">扫码枪直接扫，不用先点这里<br>也可以用右边键盘输入拼音首字母，如 <b>ZB</b> 找纸杯</div>
           <div class="keys"><span v-for="k in posKeys" :key="k[0]"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
         </div>
-        <div v-if="settings.osk !== 'off'" class="kb" @pointerdown.prevent @mousedown.prevent>
-          <div v-for="(r, i) in KB" :key="i" class="kb-row">
-            <template v-for="(k, j) in r" :key="j">
-              <span v-if="k.gap" class="kb-gap" :style="{flexGrow: k.gap}"></span>
-              <button v-else type="button" tabindex="-1" class="kb-k" :class="'kb-' + (k.k.length > 1 ? k.k : 'c')" :style="{flexGrow: k.w || 1}" :data-k="k.k" @click="kbPress(k.k)">{{ {back: '⌫', clear: '清空', enter: '确认'}[k.k] || k.k.toUpperCase() }}</button>
-            </template>
-          </div>
-        </div>
+        <pos-keyboard v-if="settings.osk !== 'off'" @press="kbPress" />
       </div>
     </div>
     <div class="pos-right">
@@ -242,16 +296,7 @@ const Pos = {
       <template #footer><el-button size="large" @click="remark = ''; remarkDlg = false">清除备注</el-button><el-button size="large" type="primary" @click="remarkDlg = false">完成</el-button></template>
     </el-dialog>
     <pay-dialog v-model="payDlg" :user="user" :lines="lines" @pay="pay" />
-    <el-dialog v-model="scanDlg" title="这个条码对应多个规格，请选择" :width="pickWidth(scanMatches.length)" class="pick-dlg">
-      <div class="pick-grid">
-        <div v-for="(m, i) in scanMatches" :key="m.sku.id" class="pick" @click="add(m.product, m.sku); scanDlg = false">
-          <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
-          <div class="pimg" :style="bg(m.sku.image || m.product.image)">{{(m.sku.image || m.product.image) ? '' : m.product.name.slice(0, 1)}}</div>
-          <div class="pn">{{m.product.name}}</div><div class="ps">{{m.sku.name !== '默认' ? m.sku.name : ''}}</div>
-          <div class="pp">¥{{yuan(m.sku.price)}}</div>
-        </div>
-      </div>
-    </el-dialog>
+    <pick-dialog v-model="scanDlg" :matches="scanMatches" shortcuts @pick="add" />
     <el-dialog v-model="heldDlg" width="min(960px, 94vw)" class="held-dlg">
       <template #header><span class="pick-title">挂单</span><span class="muted pick-tip">共 {{held.length}} 单</span></template>
       <div class="held-grid">
@@ -273,17 +318,7 @@ const Pos = {
       <div>确定删除 {{dropTarget && dropTarget.time}} 的挂单吗？删除后无法恢复。</div>
       <template #footer><el-button size="large" @click="dropDlg = false">取消</el-button><el-button size="large" type="danger" @click="dropHeld">删除</el-button></template>
     </el-dialog>
-    <el-dialog v-model="skuDlg" :width="pickWidth(skuProduct ? skuProduct.skus.length : 1)" class="pick-dlg">
-      <template #header><span class="pick-title">{{skuProduct && skuProduct.name}}</span><span class="muted pick-tip">点选规格</span></template>
-      <div class="pick-grid">
-        <div v-for="(s, i) in (skuProduct ? skuProduct.skus : [])" :key="s.id" class="pick" @click="add(skuProduct, s); skuDlg=false">
-          <kbd v-if="i < 9" class="no">{{i + 1}}</kbd>
-          <div class="pimg" :style="bg(s.image || skuProduct.image)">{{(s.image || skuProduct.image) ? '' : (s.name !== '默认' ? s.name : skuProduct.name).slice(0, 1)}}</div>
-          <div class="pn">{{s.name}}</div>
-          <div class="pp">¥{{yuan(s.price)}}</div>
-        </div>
-      </div>
-    </el-dialog>
+    <pick-dialog v-model="skuDlg" :product="skuProduct" shortcuts @pick="add" />
     <el-dialog v-model="doneDlg" title="收款成功" width="440px" class="done-dlg">
       <div class="done"><div class="ok"><span class="ico" v-html="icon('check')"></span></div>
         <div class="k">应收 ¥{{yuan(last.payable_amount)}}<span v-if="lastReceived !== last.payable_amount">　实收 ¥{{yuan(lastReceived)}}</span></div><div v-if="lastChange" class="chg">找零 <b class="money">¥{{yuan(lastChange)}}</b></div></div>
@@ -300,12 +335,6 @@ const Pos = {
     const payDlg = ref(false), skuDlg = ref(false), skuProduct = ref(null), doneDlg = ref(false), last = ref({}), lastChange = ref(0), lastReceived = ref(0), scan = ref(null);
     let reqId = rid();
     const topCats = computed(() => cats.value.filter(c => !c.parent_id && c.active));
-    // 边输边搜：名称、助记码（拼音首字母）、货号、规格名、条码
-    const matchKw = (p, t) => {
-      const k = t.toLowerCase();
-      return p.name.toLowerCase().includes(k) || (p.mnemonic || '').includes(k) || (p.code || '').toLowerCase().includes(k)
-        || p.skus.some(s => (s.barcode || '').startsWith(t) || (s.name !== '默认' && s.name.toLowerCase().includes(k)));
-    };
     const shown = computed(() => {
       const t = scanText.value.trim();
       if (t) return products.value.filter(p => matchKw(p, t));
@@ -313,7 +342,6 @@ const Pos = {
       const ids = new Set([cat.value, ...cats.value.filter(c => c.parent_id === cat.value).map(c => c.id)]);
       return products.value.filter(p => (p.category_ids || [p.category_id]).some(id => ids.has(id)));
     });
-    const priceText = (p) => { const ps = p.skus.map(s => s.price); const a = Math.min(...ps), b = Math.max(...ps); return a === b ? yuan(a) : yuan(a) + ' 起'; };
     const load = async () => { try { [products.value, cats.value] = await Promise.all([api.get('/api/products'), api.get('/api/categories')]); products.value = products.value.filter(p => p.skus.length); } catch (e) { err(e); } };
     const sel = ref(-1), qtyEls = [], remarkRef = ref(null), remarkDlg = ref(false); let qtyBefore = 1;
     const openRemark = () => { remarkDlg.value = true; };
@@ -334,8 +362,7 @@ const Pos = {
     const onScan = async () => {
       const t = scanText.value.trim(); if (!t) return;
       try {
-        const r = await api.get('/api/products/by-barcode/' + encodeURIComponent(t)); scanText.value = '';
-        const ms = (r.matches || [r]).map(m => ({ product: m.product, sku: m.product.skus.find(s => s.id === m.sku_id) })).filter(m => m.sku);
+        const ms = await barcodeMatches(t); scanText.value = '';
         if (ms.length === 1) add(ms[0].product, ms[0].sku);
         else { scanMatches.value = ms; scanDlg.value = true; }  // 一个条码对应多个规格：让店员选
       }
@@ -439,14 +466,6 @@ const Pos = {
     const move = (d) => { if (cart.value.length) sel.value = Math.max(0, Math.min(cart.value.length - 1, (sel.value < 0 ? cart.value.length : sel.value) + d)); };
     const bump = (d) => { const l = cart.value[sel.value]; if (!l) return; if (d < 0) dec(sel.value); else l.qty++; };
     const editQty = () => { const el = qtyEls[sel.value]; if (el) { el.focus(); el.select(); } };
-    // 搜索框旁边的固定键盘：只有英文字母和数字，拼音首字母、货号、条码都够用
-    // 按标准键盘排布（每行往右错开），只要英文字母和数字；退格在数字行右边，确认在 L 右边（回车的位置），清空在 M 右边
-    const keys = (str) => str.split('').map(k => ({ k }));
-    const KB = [
-      [...keys('1234567890'), { k: 'back', w: 1.5 }],
-      [{ gap: 0.5 }, ...keys('qwertyuiop'), { gap: 1 }],
-      [{ gap: 0.75 }, ...keys('asdfghjkl'), { k: 'enter', w: 1.75 }],
-      [{ gap: 1.25 }, ...keys('zxcvbnm'), { k: 'clear', w: 2 }, { gap: 1.25 }]];
     const kbPress = (k) => {
       if (k === 'enter') { scanText.value.trim() && !fresh ? onScan() : payNow(); }
       else if (k === 'back') scanText.value = fresh ? '' : scanText.value.slice(0, -1);
@@ -526,17 +545,15 @@ const Pos = {
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, askDropHeld, dropDlg, dropTarget, heldPg, heldPages, heldPage, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
-      visible, more, thumb: Shouyin.thumb, sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, KB, kbPress,
-      // 选规格框：每格 200px 左右，一行最多 4 个
-      pickWidth: (n) => Math.min(4, Math.max(2, n)) * 196 + 72 + 'px',
-      bg: (img) => (img ? { backgroundImage: 'url(' + JSON.stringify(Shouyin.thumb(img, 200)) + ')' } : {}), noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
+      visible, more, thumb: Shouyin.thumb, sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, kbPress,
+      noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
   },
 };
 
 // ---------------- 订单 ----------------
 const Orders = {
   props: ['user', 'storeId', 'settings', 'pendingCount', 'tick', 'agent'],
-  components: { PayDialog },
+  components: { PayDialog, PosKeyboard, PickDialog },
   template: `
   <div class="ws-body" style="flex-direction:column">
     <div class="otool">
@@ -615,38 +632,84 @@ const Orders = {
       <el-form label-width="60px" style="margin-top:12px"><el-form-item label="原因"><el-input v-model="mReason" placeholder="可不填，如：顾客要换尺码" /></el-form-item></el-form>
       <template #footer><span style="float:left;line-height:32px">修改后应收 <b>¥{{yuan(mTotal)}}</b></span><el-button @click="mDlg=false">取消</el-button><el-button type="primary" :loading="mBusy" @click="doModify">保存修改</el-button></template>
     </el-dialog>
-    <el-dialog v-model="xDlg" title="售后换货" width="min(760px, 96vw)" top="4vh" class="xd">
+    <el-dialog v-model="xDlg" title="售后换货" width="min(900px, 96vw)" top="4vh" class="xd"
+      :show-close="!xBusy" :close-on-press-escape="!xBusy" :close-on-click-modal="false">
+      <fieldset class="x-content" :disabled="xBusy">
       <div class="x-sec">退回商品 <span class="muted">按原单实收计价（已扣除优惠）</span></div>
       <div v-for="row in xBack" :key="row.id" class="x-row">
         <div class="x-name">{{row.name}}<span class="muted">可退换 {{row.max}} 件</span></div>
-        <div class="qty"><button type="button" @click="row.qty = Math.max(0, row.qty - 1)">−</button><input v-model.number="row.qty" inputmode="numeric" @change="row.qty = Math.min(row.max, Math.max(0, parseInt(row.qty) || 0))" /><button type="button" @click="row.qty = Math.min(row.max, row.qty + 1)">＋</button></div>
+        <div class="qty"><button type="button" aria-label="减少退回数量" @click="row.qty = Math.max(0, (parseInt(row.qty) || 0) - 1)">−</button>
+          <input v-model.number="row.qty" data-no-osk aria-label="退回数量" inputmode="none" @change="row.qty = Math.min(row.max, Math.max(0, parseInt(row.qty) || 0))" />
+          <button type="button" aria-label="增加退回数量" @click="row.qty = Math.min(row.max, (parseInt(row.qty) || 0) + 1)">＋</button></div>
       </div>
       <div class="x-sec">换成商品 <span class="muted">按现价计价，可换其他商品，也可一件换多件</span></div>
+      <div v-if="xAlternatives.length" class="x-grid">
+        <button v-for="({product, sku}) in xAlternatives" :key="sku.id" type="button" class="x-card" @click="xAddLine(product, sku)">
+          <span class="muted">{{product.name}}</span><strong>{{sku.name}}</strong><span>¥{{yuan(sku.price)}}</span>
+        </button>
+      </div>
       <div v-for="row in xNew" :key="row.sku_id" class="x-row">
         <div class="x-name">{{row.name}}<span class="muted">单价 ¥{{yuan(row.price)}}</span></div>
-        <div class="qty"><button type="button" @click="row.qty = Math.max(0, row.qty - 1)">−</button><input v-model.number="row.qty" inputmode="numeric" @change="row.qty = Math.max(0, parseInt(row.qty) || 0)" /><button type="button" @click="row.qty++">＋</button></div>
+        <div class="qty"><button type="button" aria-label="减少换出数量" @click="row.qty = Math.max(0, (parseInt(row.qty) || 0) - 1)">−</button>
+          <input v-model.number="row.qty" data-no-osk aria-label="换出数量" inputmode="none" @change="row.qty = Math.max(0, parseInt(row.qty) || 0)" />
+          <button type="button" aria-label="增加换出数量" @click="row.qty = (parseInt(row.qty) || 0) + 1">＋</button></div>
       </div>
-      <el-select v-model="xAdd" filterable :filter-method="v => (xKw = v)" size="large" placeholder="添加换出商品：输入名称或拼音首字母" class="x-add" @change="xAddLine">
-        <el-option v-for="o in xOptions" :key="o.id" :label="o.label" :value="o.id" />
-      </el-select>
+      <el-button size="large" class="x-add" :aria-expanded="xSearch" @click="xToggleSearch">{{xSearch ? '收起商品搜索' : '＋ 换其他商品'}}</el-button>
+      <div v-if="xSearch" ref="xSearchPanel" class="x-search">
+        <div class="x-search-input" data-no-osk>
+          <el-input v-model="xKw" size="large" inputmode="none" aria-label="搜索商品" placeholder="输入名称或拼音首字母" clearable @keydown.enter.prevent="xConfirmSearch" />
+          <p v-if="xKw.trim() && !xOptions.length" class="muted">未找到匹配的商品</p>
+        </div>
+        <pos-keyboard @press="xSearchKey" />
+        <div v-if="xOptions.length" class="x-grid">
+          <button v-for="p in xOptions" :key="p.id" type="button" class="x-card" @click="xPickProduct(p)">
+            <strong>{{p.name}}</strong><span class="muted">{{p.skus.map(s => s.name).join(' / ')}}</span><span>¥{{priceText(p)}}</span>
+          </button>
+        </div>
+      </div>
       <div class="x-sec">退回商品状态</div>
       <div class="x-opts two">
-        <button type="button" class="m" :class="{on: x.condition === 'good'}" @click="x.condition = 'good'">完好，可再次销售<small>回到本店可售库存</small></button>
-        <button type="button" class="m" :class="{on: x.condition === 'defective'}" @click="x.condition = 'defective'">已拆封或破损<small>进残次品库，不再销售</small></button>
+        <button type="button" class="m" :class="{on: x.condition === 'good'}" :aria-pressed="x.condition === 'good'" @click="x.condition = 'good'">完好，可再次销售<small>回到本店可售库存</small></button>
+        <button type="button" class="m" :class="{on: x.condition === 'defective'}" :aria-pressed="x.condition === 'defective'" @click="x.condition = 'defective'">已拆封或破损<small>进残次品库，不再销售</small></button>
       </div>
       <template v-if="xQ && xQ.diff">
         <div class="x-sec">{{xQ.diff > 0 ? '补收方式' : '退款方式'}} <span v-if="xQ.diff < 0" class="muted">默认退回原支付方式</span></div>
-        <div class="x-opts"><button v-for="(t,k) in methods" :key="k" type="button" class="m" :class="{on: x.method === k}" @click="x.method = k">{{t}}</button></div>
+        <div class="x-opts"><button v-for="(t,k) in methods" :key="k" type="button" class="m" :class="{on: x.method === k}" :aria-pressed="x.method === k" @click="x.method = k">{{t}}</button></div>
       </template>
-      <template v-if="can('adjust_amount') && xQ">
-        <div class="x-sec">换出商品金额 <span class="muted">不填按现价 ¥{{yuan(xQ.new_original)}}；只能调低</span></div>
-        <el-input v-model="x.amount" inputmode="decimal" size="large" :placeholder="'现价 ' + yuan(xQ.new_original)" clearable class="x-amt"><template #append>元</template></el-input>
+      <template v-if="can('adjust_amount') && xBody.items.length">
+        <div class="x-sec">换出商品金额 <span class="muted">不填按现价 ¥{{yuan(xOriginal)}}，只能调低</span></div>
+        <el-button size="large" class="x-amt" aria-label="换出商品金额" :aria-expanded="xAmountOpen" @click="xToggleAmount">{{x.amount || '现价 ' + yuan(xOriginal)}} 元</el-button>
+        <div v-if="xAmountOpen" ref="xPad" class="x-amount-panel">
+          <el-input v-model="xAmountDraft" data-no-osk inputmode="none" size="large" aria-label="输入换出商品金额" :placeholder="'现价 ' + yuan(xOriginal)" @keydown.enter.prevent="xAmountKey('ok')"><template #append>元</template></el-input>
+          <div class="pad">
+            <button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" :data-k="k" @pointerdown.prevent @mousedown.prevent @click="xAmountKey(k)">{{ {back: '⌫', clear: '清空', ok: '确定'}[k] || k }}</button>
+          </div>
+        </div>
       </template>
       <div class="x-sec">原因 <span class="muted">选填</span></div>
-      <el-input v-model="x.reason" size="large" placeholder="如：尺码不合适" />
-      <template #footer><div class="x-foot"><span v-if="xQ" class="x-sum">退回 ¥{{yuan(xQ.old_amount)}}　换出 ¥{{yuan(xQ.new_amount)}}　<template v-if="xQ.diff > 0">需补收 <b>¥{{yuan(xQ.diff)}}</b></template><template v-else-if="xQ.diff < 0">需退还 <b>¥{{yuan(-xQ.diff)}}</b></template><template v-else><b>无需补收或退还</b></template></span><span v-else class="muted">{{xErr || '请选择退回商品和换出商品'}}</span>
-        <span class="x-btns"><el-button size="large" @click="xDlg=false">取消</el-button><el-button size="large" type="primary" :loading="xBusy" :disabled="!xQ" @click="doExchange">确认换货</el-button></span></div></template>
+      <div class="x-opts x-reasons"><button v-for="t in xReasons" :key="t" type="button" class="m" :class="{on: x.reason === t}" :aria-pressed="x.reason === t" @click="xPickReason(t)">{{t}}</button></div>
+      <div v-if="x.reason === '其他'" ref="xReasonPanel" class="x-reason-input" data-no-osk>
+        <el-input ref="xReasonInput" v-model="xReasonText" size="large" aria-label="其他换货原因" placeholder="请输入其他原因" @focus="xReasonKeys = true" @keydown.enter.prevent="xReasonKeys = false" />
+        <pos-keyboard v-if="xReasonKeys" space @press="xReasonKey" />
+      </div>
+      </fieldset>
+      <template #footer>
+        <div class="x-foot">
+          <span v-if="xQ" class="x-sum" aria-live="polite">
+            退回 ¥{{yuan(xQ.old_amount)}}　换出 ¥{{yuan(xQ.new_amount)}}　
+            <template v-if="xQ.diff > 0">需补收 <b>¥{{yuan(xQ.diff)}}</b></template>
+            <template v-else-if="xQ.diff < 0">需退还 <b>¥{{yuan(-xQ.diff)}}</b></template>
+            <b v-else>无需补收或退还</b>
+          </span>
+          <span v-else class="muted" role="status">{{xErr || (xBody.returns.length && xBody.items.length ? '正在计算差价…' : '请选择退回商品和换出商品')}}</span>
+          <span class="x-btns">
+            <el-button size="large" :disabled="xBusy" @click="xDlg=false">取消</el-button>
+            <el-button size="large" type="primary" :loading="xBusy" :disabled="!xQ || xAmountOpen || xScanning > 0" @click="doExchange">确认换货</el-button>
+          </span>
+        </div>
+      </template>
     </el-dialog>
+    <pick-dialog v-model="xPickDlg" :product="xProduct" :matches="xMatches" class="x-picker" @pick="xAddLine" />
     <el-dialog v-model="rDlg" title="退货退款" width="560px">
       <el-table :data="rLines" border size="small">
         <el-table-column prop="name" label="商品" />
@@ -730,62 +793,197 @@ const Orders = {
       catch (e) { err(e); } finally { mBusy.value = false; }
     };
     // 售后换货：拿已购商品换其他商品或规格（可部分、可一换多），退回按原实收、换出按现价，多退少补
-    const xDlg = ref(false), xBack = ref([]), xNew = ref([]), xAdd = ref(null), xKw = ref(''), xBusy = ref(false), xQ = ref(null), xErr = ref('');
+    const xDlg = ref(false), xBack = ref([]), xNew = ref([]), xCatalog = ref([]), xOrderId = ref(null), xBusy = ref(false);
+    const xSearch = ref(false), xKw = ref(''), xSearchPanel = ref(null), xPickDlg = ref(false), xProduct = ref(null), xMatches = ref(null), xScanning = ref(0);
+    const xAmountOpen = ref(false), xAmountDraft = ref(''), xPad = ref(null);
+    const xReasonInput = ref(null), xReasonPanel = ref(null), xReasonText = ref(''), xReasonKeys = ref(false);
+    const xReasons = ['尺码不合适', '质量问题', '拿错商品', '顾客不需要', '其他'];
     const x = reactive({ condition: 'good', amount: '', method: 'cash', reason: '', rid: '' });
+    let xSession = 0;
+    const xAlternatives = computed(() => {
+      const selected = xBack.value.filter(l => l.qty > 0);
+      const rows = selected.length ? selected : xBack.value;
+      const productIds = new Set(rows.map(l => l.product_id));
+      const oldSkus = new Set(rows.map(l => l.sku_id));
+      return xCatalog.value.filter(p => productIds.has(p.id)).flatMap(product =>
+        product.skus.filter(sku => !oldSkus.has(sku.id)).map(sku => ({ product, sku })));
+    });
     const xOptions = computed(() => {
-      const k = xKw.value.trim().toLowerCase(); if (!k) return [];
-      const out = [];
-      for (const p of prods) {
-        if (!(p.name.toLowerCase().includes(k) || (p.mnemonic || '').includes(k) || (p.code || '').toLowerCase().includes(k))) continue;
-        for (const s of p.skus) out.push({ id: s.id, label: p.name + (s.name !== '默认' ? '（' + s.name + '）' : '') + '　¥' + yuan(s.price) });
-        if (out.length > 50) break;
-      }
-      return out;
+      const k = xKw.value.trim();
+      return k ? xCatalog.value.filter(p => matchKw(p, k)) : [];
     });
-    const xBody = () => {
-      const amt = String(x.amount).trim();
-      return { returns: xBack.value.filter(l => l.qty > 0).map(l => ({ order_item_id: l.id, qty: l.qty })),
-               items: xNew.value.filter(l => l.qty > 0).map(l => ({ sku_id: l.sku_id, qty: l.qty })),
-               new_amount: amt === '' ? null : toFen(amt) };
-    };
-    let xTimer = null;
-    watch(() => [xDlg.value, JSON.stringify(xBack.value.map(l => l.qty)), JSON.stringify(xNew.value.map(l => [l.sku_id, l.qty])), x.amount], () => {
-      clearTimeout(xTimer); xQ.value = null; xErr.value = '';
-      const b = xBody();
-      if (!xDlg.value || !b.returns.length || !b.items.length) return;
-      xTimer = setTimeout(async () => {
-        try { xQ.value = await api.post('/api/orders/' + cur.value.id + '/exchange/quote', b); }
-        catch (e) { xErr.value = (e && e.message) || '无法计算差价'; }
+    const xBody = computed(() => ({
+      returns: xBack.value.filter(l => Number.isInteger(l.qty) && l.qty > 0 && l.qty <= l.max).map(l => ({ order_item_id: l.id, qty: l.qty })),
+      items: xNew.value.filter(l => Number.isInteger(l.qty) && l.qty > 0).map(l => ({ sku_id: l.sku_id, qty: l.qty })),
+      new_amount: Shouyin.parseMoney(x.amount),
+    }));
+    const xQuote = ref(null), xErr = ref('');
+    const xQuoteKey = computed(() => JSON.stringify([xOrderId.value, xBody.value]));
+    const xQ = computed(() => xQuote.value?.key === xQuoteKey.value ? xQuote.value.result : null);
+    const xOriginal = computed(() => xQ.value?.new_original ?? xNew.value.reduce((n, l) => n + (Number.isInteger(l.qty) ? l.qty * l.price : 0), 0));
+    watch([xDlg, xQuoteKey], ([open, key], _, onCleanup) => {
+      xQuote.value = null; xErr.value = '';
+      const body = xBody.value, orderId = xOrderId.value;
+      if (!open || !body.returns.length || !body.items.length) return;
+      let current = true;
+      const timer = setTimeout(async () => {
+        try {
+          const result = await api.post('/api/orders/' + orderId + '/exchange/quote', body);
+          if (current) xQuote.value = { key, result };
+        } catch (e) {
+          if (current) xErr.value = e.message || '无法计算差价';
+        }
       }, 250);
+      onCleanup(() => { current = false; clearTimeout(timer); });
     });
+    watch(() => xBody.value.items.length, (n) => { if (!n) xAmountOpen.value = false; });
+    const xToggleAmount = async () => {
+      xAmountOpen.value = !xAmountOpen.value;
+      if (!xAmountOpen.value) return;
+      xAmountDraft.value = x.amount;
+      await Vue.nextTick();
+      xPad.value?.scrollIntoView({ block: 'nearest' });
+    };
+    const xAmountKey = (k) => {
+      const value = xAmountDraft.value;
+      if (k === 'ok') {
+        const amount = value.trim().replace(/\.$/, '');
+        if (amount && !Number.isSafeInteger(Shouyin.parseMoney(amount))) return ElMessage.warning('请输入有效金额，最多两位小数');
+        x.amount = amount;
+        xAmountOpen.value = false;
+      } else if (k === 'back') xAmountDraft.value = value.slice(0, -1);
+      else if (k === 'clear') xAmountDraft.value = '';
+      else {
+        const next = (value === '0' && k !== '.' ? '' : value || (k === '.' ? '0' : '')) + k;
+        if (/^\d+(\.\d{0,2})?$/.test(next)) xAmountDraft.value = next;
+      }
+    };
+    const xPickReason = async (reason) => {
+      x.reason = reason === x.reason && reason !== '其他' ? '' : reason;
+      xReasonKeys.value = x.reason === '其他';
+      if (xReasonKeys.value) {
+        await Vue.nextTick();
+        xReasonPanel.value?.scrollIntoView({ block: 'nearest' });
+      }
+    };
+    const xReasonKey = async (k) => {
+      if (k === 'enter') { xReasonKeys.value = false; return; }
+      const input = xReasonInput.value?.input;
+      if (!input) return;
+      const { value, caret } = ShouyinOSK.applyKey(xReasonText.value, input.selectionStart, input.selectionEnd, k);
+      xReasonText.value = value;
+      await Vue.nextTick();
+      input.setSelectionRange(caret, caret);
+    };
+    const xAddLine = (product, sku) => {
+      const row = xNew.value.find(l => l.sku_id === sku.id);
+      if (row) row.qty = (parseInt(row.qty) || 0) + 1;
+      else xNew.value.push({ sku_id: sku.id, qty: 1, price: sku.price, name: product.name + (sku.name !== '默认' ? '（' + sku.name + '）' : '') });
+    };
+    const xPickProduct = (product) => {
+      if (product.skus.length === 1) xAddLine(product, product.skus[0]);
+      else { xProduct.value = product; xMatches.value = null; xPickDlg.value = true; }
+    };
+    const xScan = async (code, fromSearch = false) => {
+      const session = xSession;
+      xScanning.value++;
+      try {
+        const matches = await barcodeMatches(code);
+        if (session !== xSession || !xDlg.value || xBusy.value) return;
+        if (fromSearch && xKw.value.trim() !== code) return;
+        if (matches.length === 1) xAddLine(matches[0].product, matches[0].sku);
+        else if (matches.length) { xMatches.value = matches; xPickDlg.value = true; }
+      } catch (e) {
+        if (session !== xSession || !xDlg.value || xBusy.value) return;
+        if (!fromSearch) err(e);
+        else if (xKw.value.trim() === code && xOptions.value.length === 1) xPickProduct(xOptions.value[0]);
+      } finally {
+        if (session === xSession) xScanning.value--;
+      }
+    };
+    const xToggleSearch = async () => {
+      xSearch.value = !xSearch.value;
+      if (!xSearch.value) return;
+      await Vue.nextTick();
+      xSearchPanel.value?.scrollIntoView({ block: 'start' });
+    };
+    const xConfirmSearch = () => { const code = xKw.value.trim(); if (code) xScan(code, true); };
+    const xSearchKey = (k) => {
+      if (k === 'enter') xConfirmSearch();
+      else if (k === 'back') xKw.value = xKw.value.slice(0, -1);
+      else if (k === 'clear') xKw.value = '';
+      else xKw.value += k;
+    };
+    const xDetector = K.createScanDetector();
+    let xScanInput = null;
+    const xScanKey = (e) => {
+      if (!xDlg.value || xBusy.value || e.isComposing || e.keyCode === 229 || msgBoxOpen()) return;
+      const input = e.target, now = e.timeStamp || performance.now();
+      if (K.printable(e)) {
+        if (!xDetector.key(e.key, now)) {
+          xScanInput = input.tagName === 'INPUT' && input.closest('.xd')
+            ? { input, value: input.value, start: input.selectionStart, end: input.selectionEnd } : null;
+        }
+      } else if (e.key === 'Enter') {
+        const code = xDetector.enter(now), before = xScanInput;
+        xScanInput = null;
+        if (!code) return;
+        e.preventDefault(); e.stopPropagation();
+        // 扫码枪会向当前输入框打字。还原原文和光标，再按条码查商品。
+        if (before && before.input === input && input.value !== before.value) {
+          input.value = before.value;
+          input.setSelectionRange(before.start, before.end);
+          input.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+        xScan(code);
+      } else if (['Escape', 'Backspace', 'Delete', 'Tab'].includes(e.key)) {
+        xDetector.reset(); xScanInput = null;
+      }
+    };
+    watch(xDlg, (open) => {
+      if (open) return;
+      xSession++; xPickDlg.value = false; xScanning.value = 0;
+      xDetector.reset(); xScanInput = null;
+    });
+    onMounted(() => window.addEventListener('keydown', xScanKey, true));
+    onUnmounted(() => window.removeEventListener('keydown', xScanKey, true));
     const openExchange = async () => {
-      try { if (!prods.length) prods = (await api.get('/api/products')).filter(p => p.skus.length); } catch (e) { return err(e); }
-      xBack.value = cur.value.items.filter(i => i.qty > i.refunded_qty).map(i => ({ id: i.id, qty: 0, max: i.qty - i.refunded_qty,
+      const order = cur.value, session = ++xSession;
+      xOrderId.value = order.id;
+      xBack.value = order.items.filter(i => i.qty > i.refunded_qty).map(i => ({ id: i.id, sku_id: i.sku_id, product_id: i.product_id, qty: 0, max: i.qty - i.refunded_qty,
         name: i.product_name + (i.sku_name !== '默认' ? '（' + i.sku_name + '）' : '') + (i.added_at ? '（换货）' : '') }));
-      if (xBack.value.length === 1) xBack.value[0].qty = xBack.value[0].max;
-      xNew.value = []; xAdd.value = null; xKw.value = '';
-      const pay = cur.value.payments.find(p => p.kind === 'pay');
+      if (xBack.value.length === 1) xBack.value[0].qty = 1;
+      xNew.value = []; xCatalog.value = []; xSearch.value = false; xKw.value = '';
+      xAmountOpen.value = false; xReasonText.value = ''; xReasonKeys.value = false;
+      const pay = order.payments.find(p => p.kind === 'pay');
       Object.assign(x, { condition: 'good', amount: '', method: pay ? pay.method : 'cash', reason: '', rid: rid() });
       xDlg.value = true;
-    };
-    const xAddLine = (sid) => {
-      xAdd.value = null; xKw.value = '';
-      const ex = xNew.value.find(l => l.sku_id === sid); if (ex) { ex.qty++; return; }
-      const p = prodOf(sid); if (!p) return;
-      const k = p.skus.find(s => s.id === sid);
-      xNew.value.push({ sku_id: sid, qty: 1, price: k ? k.price : 0, name: p.name + (k && k.name !== '默认' ? '（' + k.name + '）' : '') });
+      try {
+        const products = await api.get('/api/products');
+        if (session === xSession && xDlg.value) xCatalog.value = products
+          .map(p => ({ ...p, skus: p.skus.filter(s => s.active !== false) })).filter(p => p.skus.length);
+      } catch (e) { if (session === xSession && xDlg.value) err(e); }
     };
     const doExchange = async () => {
-      if (xBusy.value || !xQ.value) return;
+      if (xBusy.value || !xQ.value || xAmountOpen.value || xScanning.value) return;
       xBusy.value = true;
+      let r;
       try {
-        const r = await api.post('/api/orders/' + cur.value.id + '/exchange', { ...xBody(), condition: x.condition, method: x.method,
-          reason: x.reason, request_id: x.rid, ...printOpts() });
-        xDlg.value = false; await refresh();
-        const d = r.exchange.diff;
-        ElMessage.success('换货完成' + (d > 0 ? '，已补收 ¥' + yuan(d) : d < 0 ? '，已退还 ¥' + yuan(-d) : ''));
-        if (r.receipt) await outPrint(r.receipt);
-      } catch (e) { err(e); } finally { xBusy.value = false; }
+        r = await api.post('/api/orders/' + xOrderId.value + '/exchange', { ...xBody.value, condition: x.condition, method: x.method,
+          reason: x.reason === '其他' ? xReasonText.value.trim() : x.reason, request_id: x.rid, ...printOpts() });
+      } catch (e) { return err(e); } finally { xBusy.value = false; }
+      xDlg.value = false;
+      const exchanges = (cur.value.exchanges || []).filter(e => e.id !== r.exchange.id);
+      cur.value = { ...cur.value, ...r.order, exchanges: [...exchanges, r.exchange] };
+      const updated = cur.value;
+      api.get('/api/orders/' + r.order.id).then(detail => { if (cur.value === updated) cur.value = detail; }).catch(() => {});
+      load();
+      const d = r.exchange.diff;
+      ElMessage.success('换货完成' + (d > 0 ? '，已补收 ¥' + yuan(d) : d < 0 ? '，已退还 ¥' + yuan(-d) : ''));
+      if (r.receipt) {
+        try { await outPrint(r.receipt); }
+        catch (e) { ElMessage.warning('换货已完成，但凭证打印失败，可在换货单中补打'); }
+      }
     };
     const xSum = computed(() => ((cur.value && cur.value.exchanges) || []).reduce((a, e) => a + e.diff, 0));
     const xRefund = computed(() => ((cur.value && cur.value.exchanges) || []).reduce((a, e) => a + Math.max(0, -e.diff), 0));
@@ -802,7 +1000,9 @@ const Orders = {
     const print = async () => { try { await printOrder(cur.value.id, cur.value.print_count > 0); } catch (e) { err(e); } try { await refresh(); } catch (e) {} };
     onMounted(load);
     return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy,
-      xDlg, xBack, xNew, xAdd, xKw, xOptions, xBusy, xQ, xErr, x, openExchange, xAddLine, doExchange, printExchange, xSum, xRefund,
+      xDlg, xBack, xNew, xAlternatives, xSearch, xKw, xOptions, xSearchPanel, xPickDlg, xProduct, xMatches, xBusy, xScanning, xQ, xErr, x, xBody, xOriginal,
+      xAmountOpen, xAmountDraft, xPad, PAD, xToggleAmount, xAmountKey, xReasons, xReasonInput, xReasonPanel, xReasonText, xReasonKeys, xPickReason, xReasonKey,
+      priceText, xToggleSearch, xConfirmSearch, xSearchKey, xPickProduct, openExchange, xAddLine, doExchange, printExchange, xSum, xRefund,
       mDlg, mLines, mReason, mBusy, mAdd, mKw, mPrice, mTotal, mOptions, openModify, addLine, doModify, print, yuan, methods: METHODS };
   },
 };
