@@ -783,13 +783,13 @@ const OrderDetail = {
       <el-descriptions-item v-if="order.remark" label="备注" :span="3">{{order.remark}}</el-descriptions-item>
     </el-descriptions>
     <el-table :data="order.items" border size="small" style="margin-top:10px">
-      <el-table-column prop="product_name" label="商品" />
+      <el-table-column label="商品"><template #default="{row}">{{row.product_name}}<el-tag v-if="row.added_at" size="small" type="info" style="margin-left:4px">换入</el-tag></template></el-table-column>
       <el-table-column prop="sku_name" label="规格" width="100" />
       <el-table-column prop="qty" label="数量" width="70" />
       <el-table-column label="单价" width="80"><template #default="{row}">{{yuan(row.unit_price)}}</template></el-table-column>
       <el-table-column label="金额" width="80"><template #default="{row}">{{yuan(row.amount)}}</template></el-table-column>
       <el-table-column label="实收分摊" width="90"><template #default="{row}">{{yuan(row.paid_share)}}</template></el-table-column>
-      <el-table-column prop="refunded_qty" label="已退" width="60" />
+      <el-table-column prop="refunded_qty" label="已退换" width="70" />
     </el-table>
     <el-table v-if="order.payments.length" :data="order.payments" border size="small" style="margin-top:10px">
       <el-table-column label="类型" width="70"><template #default="{row}">{{row.kind==='pay' ? '收款' : '退款'}}</template></el-table-column>

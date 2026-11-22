@@ -89,15 +89,17 @@ def test_exchange_size_on_paid_order(client, admin, world):
     e = clerk.post(f"/api/orders/{o['id']}/exchange", {"order_item_id": it, "sku_id": w["big"]["id"], "qty": 2,
                                                         "method": "wechat", "reason": "要大份"})
     assert stock_of(admin, loc, cup) == 95
-    assert sorted((i["sku_name"], i["qty"], i["paid_share"]) for i in e["items"]) == [("大份", 2, 3600), ("小份", 1, 1000)]
-    assert (e["payable_amount"], e["paid_amount"], e["pay_status"]) == (4600, 4600, "paid")
+    # 原商品行不改不删（换出的 2 件记成已退）；换进的大份另起一行，记了换货时间
+    rows = sorted((i["sku_name"], i["qty"], i["refunded_qty"], i["paid_share"], bool(i["added_at"])) for i in e["items"])
+    assert rows == [("大份", 2, 0, 3600, True), ("小份", 3, 2, 3000, False)]
+    assert (e["payable_amount"], e["paid_amount"], e["refunded_amount"], e["pay_status"]) == (3000, 4600, 0, "paid")
     # 换回来：大份 1 件换小份，退差价 8 元
     big_line = next(i for i in e["items"] if i["sku_name"] == "大份")
     e2 = clerk.post(f"/api/orders/{o['id']}/exchange", {"order_item_id": big_line["id"], "sku_id": w["small"]["id"], "qty": 1,
                                                          "method": "cash"})
-    assert e2["payable_amount"] == 3800 and stock_of(admin, loc, cup) == 96
+    assert (e2["paid_amount"], e2["refunded_amount"]) == (4600, 800) and stock_of(admin, loc, cup) == 96
     # 换完照常退货：全部退完金额正好等于实收
-    lines = [{"order_item_id": i["id"], "qty": i["qty"]} for i in e2["items"]]
+    lines = [{"order_item_id": i["id"], "qty": i["qty"] - i["refunded_qty"]} for i in e2["items"] if i["qty"] > i["refunded_qty"]]
     r = clerk.post(f"/api/orders/{o['id']}/refund", {"lines": lines})
     assert r["refund"]["amount"] == 3800 and r["order"]["pay_status"] == "refunded"
     assert stock_of(admin, loc, cup) == 100
@@ -109,3 +111,49 @@ def test_exchange_size_on_paid_order(client, admin, world):
     clerk.post(f"/api/orders/{o2['id']}/exchange", {"order_item_id": i2, "sku_id": w["big"]["id"], "qty": 2}, expect=400)
     clerk.post(f"/api/orders/{o2['id']}/exchange", {"order_item_id": i2, "sku_id": w["small"]["id"], "qty": 1}, expect=400)
     # 交班：现金 30+10 收、8 退；微信补收 16
+
+
+def test_exchange_discounted_order_never_refunds_more_than_paid(client, admin, world):
+    """原价 100 打 5 折实收 50，换 40 元规格：差价按同样折扣折算，退 30，新规格实收 20，不会倒贴。"""
+    w = world
+    p = admin.post("/api/products", {"name": "护理裤", "skus": [{"name": "L", "price": 10000}, {"name": "S", "price": 4000}]})
+    L, S = (next(k["id"] for k in p["skus"] if k["name"] == n) for n in ("L", "S"))
+    o = admin.post("/api/pos/checkout", {"store_id": w["s1"]["id"], "lines": [{"sku_id": L, "qty": 1}], "discount_rate": 50,
+                                         "payments": [{"method": "cash", "amount": 5000}]})
+    assert o["paid_amount"] == 5000
+    it = o["items"][0]["id"]
+    q = admin.post(f"/api/orders/{o['id']}/exchange/quote", {"order_item_id": it, "sku_id": S, "qty": 1})
+    assert q == {"old_paid": 5000, "new_paid": 2000, "diff": -3000}
+    e = admin.post(f"/api/orders/{o['id']}/exchange", {"order_item_id": it, "sku_id": S, "qty": 1, "request_id": "x-1"})
+    new = next(i for i in e["items"] if i["added_at"])
+    assert new["paid_share"] == 2000 and e["refunded_amount"] == 3000
+    # 断网重试同一个请求号：不会再换一次、再退一次
+    e2 = admin.post(f"/api/orders/{o['id']}/exchange", {"order_item_id": it, "sku_id": S, "qty": 1, "request_id": "x-1"})
+    assert len(e2["items"]) == 2 and e2["refunded_amount"] == 3000
+    # 退掉新规格只能退 20
+    r = admin.post(f"/api/orders/{o['id']}/refund", {"lines": [{"order_item_id": new["id"], "qty": 1}]})
+    assert r["refund"]["amount"] == 2000 and r["order"]["pay_status"] == "refunded"
+
+
+def test_exchange_keeps_history_reports(client, admin, world):
+    """换规格不改历史：原单收款日的销量不变，换货按换货当天记“换出 / 换入”。"""
+    import datetime as dt
+    from app import db as dbmod
+    from app.models import Order, OrderItem, Refund
+    w = world
+    o = admin.post("/api/pos/checkout", {"store_id": w["s1"]["id"], "lines": [{"sku_id": w["small"]["id"], "qty": 2}],
+                                         "payments": [{"method": "cash", "amount": 2000}]})
+    # 把这张单挪到 3 天前收款
+    past = dt.datetime.now() - dt.timedelta(days=3)
+    with dbmod.SessionLocal() as s:
+        s.get(Order, o["id"]).paid_at = past
+        s.commit()
+    day = past.date().isoformat()
+    before = admin.get(f"/api/reports/revenue?begin={day}&end={day}")["total"]
+    admin.post(f"/api/orders/{o['id']}/exchange", {"order_item_id": o["items"][0]["id"], "sku_id": w["big"]["id"], "qty": 1})
+    after = admin.get(f"/api/reports/revenue?begin={day}&end={day}")["total"]
+    assert (after["qty"], after["cost"], after["original"]) == (before["qty"], before["cost"], before["original"])
+    today = dt.date.today().isoformat()
+    lines = admin.get(f"/api/reports/product-sales/detail?sku_id={w['big']['id']}&begin={today}&end={today}")
+    rows = lines["rows"] if isinstance(lines, dict) else lines
+    assert any(r["type_text"] == "换入" for r in rows)

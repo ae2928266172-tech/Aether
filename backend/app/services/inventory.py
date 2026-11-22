@@ -32,6 +32,12 @@ def get_balance(db: Session, location_id: int, stock_item_id: int, lock: bool = 
     return bal
 
 
+def lock_balances(db: Session, pairs):
+    """按（库存品、地点）从小到大依次锁住余额行；同一事务里之后再锁同一行不会再等。"""
+    for sid, lid in sorted(set(pairs)):
+        get_balance(db, lid, sid, lock=True)
+
+
 def _insert(db: Session):
     if db.get_bind().dialect.name == "postgresql":
         from sqlalchemy.dialects.postgresql import insert
@@ -49,11 +55,13 @@ def change_stock(db: Session, *, location_id: int, stock_item_id: int, qty, kind
     qty = D(qty)
     bal = get_balance(db, location_id, stock_item_id, lock=True)
     new_qty = D(bal.qty) + qty
-    if qty < 0 and new_qty < 0 and not allow_negative:
+    expired = _expired_qty(db, location_id, stock_item_id) if kind == "sale" and qty < 0 else Decimal(0)
+    if qty < 0 and new_qty < expired and not allow_negative:
         item = db.get(StockItem, stock_item_id)
         loc = db.get(Location, location_id)
         raise HTTPException(409, f"{loc.name if loc else ''}库存不足：{item.name if item else stock_item_id} "
-                                 f"现有 {fmt(bal.qty)}，需要 {fmt(-qty)}")
+                                 f"现有 {fmt(bal.qty)}" + (f"（其中已过期 {fmt(expired)}，不能销售）" if expired else "")
+                                 + f"，需要 {fmt(-qty)}")
     bal.qty = new_qty
     mv = StockMove(location_id=location_id, stock_item_id=stock_item_id, qty=qty, kind=kind,
                    doc_id=doc_id, order_id=order_id, created_by=user_id, created_at=at or now(),
@@ -72,7 +80,7 @@ def change_stock(db: Session, *, location_id: int, stock_item_id: int, qty, kind
             elif q > 0:
                 _batch_record(db, mv, b, q)
     elif qty < 0:
-        _consume_fifo(db, mv, -qty)
+        _consume_fifo(db, mv, -qty, skip_expired=kind == "sale")  # 销售不扣已过期批次（过期的只能报损出库）
     elif qty > 0 and batch and any(batch.get(k) for k in ("batch_no", "production_date", "expiry_date")):
         b = find_batch(db, location_id, stock_item_id, batch.get("batch_no") or "",
                        batch.get("production_date"), batch.get("expiry_date"), create=True)
@@ -120,11 +128,20 @@ def _batch_record(db: Session, mv: StockMove, b: StockBatch, q: Decimal):
     db.add(BatchMove(move_id=mv.id, batch_id=b.id, qty=q))
 
 
-def _consume_fifo(db: Session, mv: StockMove, need: Decimal):
+def _expired_qty(db: Session, location_id: int, stock_item_id: int) -> Decimal:
+    """这个地点这个库存品已过期批次的数量（有效期至早于今天）。"""
+    return D(db.scalar(select(func.sum(StockBatch.qty)).where(
+        StockBatch.location_id == location_id, StockBatch.stock_item_id == stock_item_id, StockBatch.qty > 0,
+        StockBatch.expiry_date < now().date())) or 0)
+
+
+def _consume_fifo(db: Session, mv: StockMove, need: Decimal, skip_expired: bool = False):
     db.flush()
-    for b in db.scalars(select(StockBatch).where(
-            StockBatch.location_id == mv.location_id, StockBatch.stock_item_id == mv.stock_item_id,
-            StockBatch.qty > 0).order_by(*_batch_sort()).with_for_update(of=StockBatch)):
+    q = select(StockBatch).where(
+        StockBatch.location_id == mv.location_id, StockBatch.stock_item_id == mv.stock_item_id, StockBatch.qty > 0)
+    if skip_expired:
+        q = q.where(StockBatch.expiry_date.is_(None) | (StockBatch.expiry_date >= now().date()))
+    for b in db.scalars(q.order_by(*_batch_sort()).with_for_update(of=StockBatch)):
         if need <= 0:
             break
         take = min(need, D(b.qty))
@@ -309,7 +326,11 @@ def create_doc(db: Session, *, kind: str, lines: list[dict], user_id: int | None
                    created_by=user_id, request_id=request_id)
     db.add(doc)
     db.flush()
-    for key, q in merged.items():
+    # 先按（库存品、地点）从小到大把要动的余额行都锁上，再逐行处理：两张单据顺序相反地动同几样
+    # 库存品（或一张 A→B、一张 B→A 的调拨）时，不会各锁一半互相等成死锁
+    lock_balances(db, [(sid, lid) for sid in {k[0] for k in merged}
+                       for lid in (from_location_id, to_location_id) if lid is not None])
+    for key, q in sorted(merged.items(), key=lambda kv: kv[0][0]):
         sid = key[0]
         if kind == "adjust":
             # 盘点：读账面数时就锁住余额行，到下面按“实盘 − 账面”调整之前，别人改不了这行
@@ -383,6 +404,7 @@ def void_doc(db: Session, doc_id: int, user_id: int | None, reason: str = "") ->
     db.refresh(doc)
     moves = db.scalars(select(StockMove).where(StockMove.doc_id == doc.id, (StockMove.note == "") | StockMove.note.is_(None))
                        .order_by(StockMove.id)).all()
+    lock_balances(db, [(m.stock_item_id, m.location_id) for m in moves])  # 按顺序先锁，防死锁
     for m in moves:
         rev = [(b, -q) for b, q in move_allocs(db, [m.id])]  # 批次也按原样冲回
         mv = change_stock(db, location_id=m.location_id, stock_item_id=m.stock_item_id, qty=-D(m.qty),
