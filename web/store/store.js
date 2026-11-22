@@ -615,34 +615,37 @@ const Orders = {
       <el-form label-width="60px" style="margin-top:12px"><el-form-item label="原因"><el-input v-model="mReason" placeholder="可不填，如：顾客要换尺码" /></el-form-item></el-form>
       <template #footer><span style="float:left;line-height:32px">修改后应收 <b>¥{{yuan(mTotal)}}</b></span><el-button @click="mDlg=false">取消</el-button><el-button type="primary" :loading="mBusy" @click="doModify">保存修改</el-button></template>
     </el-dialog>
-    <el-dialog v-model="xDlg" title="售后换货" width="700px" top="5vh">
+    <el-dialog v-model="xDlg" title="售后换货" width="min(760px, 96vw)" top="4vh" class="xd">
       <div class="x-sec">退回商品 <span class="muted">按原单实收计价（已扣除优惠）</span></div>
-      <el-table :data="xBack" border size="small">
-        <el-table-column label="商品"><template #default="{row}">{{row.name}}</template></el-table-column>
-        <el-table-column label="可退换" width="70" align="center"><template #default="{row}">{{row.max}}</template></el-table-column>
-        <el-table-column label="退回件数" width="150"><template #default="{row}"><el-input-number v-model="row.qty" :min="0" :max="row.max" size="small" /></template></el-table-column>
-      </el-table>
+      <div v-for="row in xBack" :key="row.id" class="x-row">
+        <div class="x-name">{{row.name}}<span class="muted">可退换 {{row.max}} 件</span></div>
+        <div class="qty"><button type="button" @click="row.qty = Math.max(0, row.qty - 1)">−</button><input v-model.number="row.qty" inputmode="numeric" @change="row.qty = Math.min(row.max, Math.max(0, parseInt(row.qty) || 0))" /><button type="button" @click="row.qty = Math.min(row.max, row.qty + 1)">＋</button></div>
+      </div>
       <div class="x-sec">换成商品 <span class="muted">按现价计价，可换其他商品，也可一件换多件</span></div>
-      <el-table v-if="xNew.length" :data="xNew" border size="small">
-        <el-table-column label="商品"><template #default="{row}">{{row.name}}</template></el-table-column>
-        <el-table-column label="单价" width="80" align="right"><template #default="{row}">{{yuan(row.price)}}</template></el-table-column>
-        <el-table-column label="件数" width="150"><template #default="{row}"><el-input-number v-model="row.qty" :min="0" size="small" /></template></el-table-column>
-      </el-table>
-      <el-select v-model="xAdd" filterable :filter-method="v => (xKw = v)" placeholder="添加换出商品：输入名称或拼音首字母" style="width:100%;margin-top:8px" @change="xAddLine">
+      <div v-for="row in xNew" :key="row.sku_id" class="x-row">
+        <div class="x-name">{{row.name}}<span class="muted">单价 ¥{{yuan(row.price)}}</span></div>
+        <div class="qty"><button type="button" @click="row.qty = Math.max(0, row.qty - 1)">−</button><input v-model.number="row.qty" inputmode="numeric" @change="row.qty = Math.max(0, parseInt(row.qty) || 0)" /><button type="button" @click="row.qty++">＋</button></div>
+      </div>
+      <el-select v-model="xAdd" filterable :filter-method="v => (xKw = v)" size="large" placeholder="添加换出商品：输入名称或拼音首字母" class="x-add" @change="xAddLine">
         <el-option v-for="o in xOptions" :key="o.id" :label="o.label" :value="o.id" />
       </el-select>
-      <el-form label-width="96px" style="margin-top:14px">
-        <el-form-item label="退回商品状态"><el-radio-group v-model="x.condition">
-          <el-radio-button value="good">完好，可再次销售</el-radio-button><el-radio-button value="defective">已拆封或破损</el-radio-button></el-radio-group>
-          <div class="muted" style="width:100%">{{x.condition === 'good' ? '退回商品回到本店可售库存' : '退回商品进入本店残次品库，不能再次销售'}}</div></el-form-item>
-        <el-form-item v-if="can('adjust_amount') && xQ" label="换出商品金额"><el-input v-model="x.amount" inputmode="decimal" :placeholder="'现价 ' + yuan(xQ.new_original)" style="width:160px" clearable><template #append>元</template></el-input>
-          <span class="muted" style="margin-left:8px">不填按现价；只能调低</span></el-form-item>
-        <el-form-item v-if="xQ && xQ.diff" :label="xQ.diff > 0 ? '补收方式' : '退款方式'"><el-select v-model="x.method" style="width:140px"><el-option v-for="(t,k) in methods" :key="k" :label="t" :value="k" /></el-select>
-          <span v-if="xQ.diff < 0" class="muted" style="margin-left:8px">默认退回原支付方式</span></el-form-item>
-        <el-form-item label="原因"><el-input v-model="x.reason" placeholder="选填，如：尺码不合适" /></el-form-item>
-      </el-form>
-      <template #footer><div class="x-foot"><span v-if="xQ">退回 ¥{{yuan(xQ.old_amount)}}　换出 ¥{{yuan(xQ.new_amount)}}　<template v-if="xQ.diff > 0">需补收 <b>¥{{yuan(xQ.diff)}}</b></template><template v-else-if="xQ.diff < 0">需退还 <b>¥{{yuan(-xQ.diff)}}</b></template><template v-else><b>无需补收或退还</b></template></span><span v-else class="muted">{{xErr || '请选择退回商品和换出商品'}}</span>
-        <span><el-button @click="xDlg=false">取消</el-button><el-button type="primary" :loading="xBusy" :disabled="!xQ" @click="doExchange">确认换货</el-button></span></div></template>
+      <div class="x-sec">退回商品状态</div>
+      <div class="x-opts two">
+        <button type="button" class="m" :class="{on: x.condition === 'good'}" @click="x.condition = 'good'">完好，可再次销售<small>回到本店可售库存</small></button>
+        <button type="button" class="m" :class="{on: x.condition === 'defective'}" @click="x.condition = 'defective'">已拆封或破损<small>进残次品库，不再销售</small></button>
+      </div>
+      <template v-if="xQ && xQ.diff">
+        <div class="x-sec">{{xQ.diff > 0 ? '补收方式' : '退款方式'}} <span v-if="xQ.diff < 0" class="muted">默认退回原支付方式</span></div>
+        <div class="x-opts"><button v-for="(t,k) in methods" :key="k" type="button" class="m" :class="{on: x.method === k}" @click="x.method = k">{{t}}</button></div>
+      </template>
+      <template v-if="can('adjust_amount') && xQ">
+        <div class="x-sec">换出商品金额 <span class="muted">不填按现价 ¥{{yuan(xQ.new_original)}}；只能调低</span></div>
+        <el-input v-model="x.amount" inputmode="decimal" size="large" :placeholder="'现价 ' + yuan(xQ.new_original)" clearable class="x-amt"><template #append>元</template></el-input>
+      </template>
+      <div class="x-sec">原因 <span class="muted">选填</span></div>
+      <el-input v-model="x.reason" size="large" placeholder="如：尺码不合适" />
+      <template #footer><div class="x-foot"><span v-if="xQ" class="x-sum">退回 ¥{{yuan(xQ.old_amount)}}　换出 ¥{{yuan(xQ.new_amount)}}　<template v-if="xQ.diff > 0">需补收 <b>¥{{yuan(xQ.diff)}}</b></template><template v-else-if="xQ.diff < 0">需退还 <b>¥{{yuan(-xQ.diff)}}</b></template><template v-else><b>无需补收或退还</b></template></span><span v-else class="muted">{{xErr || '请选择退回商品和换出商品'}}</span>
+        <span class="x-btns"><el-button size="large" @click="xDlg=false">取消</el-button><el-button size="large" type="primary" :loading="xBusy" :disabled="!xQ" @click="doExchange">确认换货</el-button></span></div></template>
     </el-dialog>
     <el-dialog v-model="rDlg" title="退货退款" width="560px">
       <el-table :data="rLines" border size="small">
