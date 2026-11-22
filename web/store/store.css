@@ -148,6 +148,10 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .orders { flex: 1; overflow: auto; padding: 14px 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-content: start; }
 .ocard { background: #fff; border-radius: 16px; padding: 14px 16px; border: 0; box-shadow: var(--shadow-card); cursor: pointer; }
 .ocard.pending { box-shadow: 0 0 0 2px var(--danger); }
+.ocard.online { background: #fffbf3; }
+.ocard .src { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 6px; margin-right: 8px; vertical-align: 2px; }
+.ocard .src.online { background: #fef3c7; color: #b45309; }
+.ocard .src.pos { background: #eef2f7; color: #475569; }
 .ocard .h { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .ocard .where { font-size: 16px; font-weight: 700; }
 .ocard .meta { color: var(--muted); font-size: 12px; margin: 6px 0 8px; }
