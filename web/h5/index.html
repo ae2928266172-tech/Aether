@@ -158,9 +158,17 @@
     @keyframes pop-in { from { opacity: 0; scale: .6; } }
     @keyframes rise { from { opacity: 0; translate: 0 12px; } }
     .main { animation: rise 480ms var(--ease-out) both; }
-    .list.intro .item { animation: rise 460ms var(--ease-out) both; }
-    .list.intro .sec:first-child .item:nth-child(3) { animation-delay: 50ms; } .list.intro .sec:first-child .item:nth-child(4) { animation-delay: 90ms; }
-    .list.intro .sec:first-child .item:nth-child(n+5), .list.intro .sec:not(:first-child) .item { animation-delay: 120ms; }
+    /* 滚动渐显：商品进入视口 15% 时从下方 24px 淡入上移，400ms；同一批依次晚 80ms；每个只播一次 */
+    .item.rv { opacity: 0; translate: 0 24px; }
+    .item.rv.in { opacity: 1; translate: 0 0; transition: opacity 400ms var(--ease-out), translate 400ms var(--ease-out); transition-delay: var(--d, 0ms); }
+    /* 回到顶部：滚过一屏后从右下角浮出，点一下平滑回顶 */
+    .totop { position: fixed; right: 18px; bottom: calc(var(--bar-h) + 26px + env(safe-area-inset-bottom)); z-index: 5; width: 44px; height: 44px; border-radius: 22px;
+      background: var(--paper); color: var(--ink); box-shadow: 0 4px 16px rgba(43,38,32,.16), 0 0 0 1px var(--line); display: flex; align-items: center; justify-content: center; }
+    .totop svg { width: 18px; height: 18px; }
+    .totop.nobar { bottom: calc(22px + env(safe-area-inset-bottom)); }
+    .pop-enter-active { transition: opacity 200ms var(--ease-out), scale 200ms var(--ease-out); }
+    .pop-leave-active { transition: opacity 150ms ease-out, scale 150ms ease-out; }
+    .pop-enter-from, .pop-leave-to { opacity: 0; scale: .8; }
     .cartbar .bag i.bump { animation: bump 320ms var(--ease-out); }
     @keyframes bump { 35% { scale: 1.3; } }
     .sheet-enter-active { transition: background-color 420ms var(--ease-drawer); }
@@ -179,7 +187,8 @@
       @keyframes rise { from { opacity: 0; } }
       .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: none !important; opacity: 0; }
       .sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: opacity 200ms ease; }
-      .tip-enter-from, .cartbar.off { translate: none; }
+      .tip-enter-from, .cartbar.off, .item.rv { translate: none; }
+      .pop-enter-from, .pop-leave-to { scale: none; }
     }
   </style>
 </head>
@@ -201,11 +210,11 @@
           <h2 v-if="!searchOpen">{{activeName}}</h2>
           <label class="search" :class="{open: searchOpen}" @click="openSearch"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg><input ref="kwEl" v-model.trim="kw" placeholder="搜索" enterkeyhint="search" @blur="!kw && (searchOpen=false)"><button v-if="kw" class="clr" aria-label="清除" @click.prevent="kw='';kwEl && kwEl.focus()"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></label>
         </div>
-        <div class="list" ref="listEl" :class="{intro}" @scroll.passive="spy">
+        <div class="list" ref="listEl" @scroll.passive="spy">
           <div v-if="kw && !found.length" class="empty-list">没有找到“{{kw}}”</div>
           <div v-for="sec in (kw ? [{id: 'kw', name: '搜索结果', items: found}] : sections)" :key="sec.id" class="sec" :data-sec="sec.id">
             <h4 class="sec-t">{{sec.name}}</h4>
-            <div v-for="p in sec.items" :key="p.id" class="item">
+            <div v-for="p in sec.items" :key="p.id" class="item" v-reveal>
               <div class="img" :style="pimg(p) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(p), 240)) + ')'} : {}"><template v-if="!pimg(p)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div>
               <div class="info">
                 <div class="n">{{p.name}}</div>
@@ -222,6 +231,7 @@
         </div>
       </div>
     </div>
+    <transition name="pop"><button v-if="showTop" class="totop" :class="{nobar: !count}" aria-label="回到顶部" @click="toTop"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></svg></button></transition>
     <transition name="tip"><div v-if="tip" class="tip">{{tip}}</div></transition>
     <div class="cartbar" :class="{off: !count}">
       <div class="bag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><i v-if="count" :key="count" class="bump">{{count}}</i></div>
@@ -343,7 +353,7 @@ const app = createApp({
       if (rest.length) out.push({ id: 'other', name: out.length ? '其他' : '全部商品', items: rest });
       return out.filter(x => x.items.length);
     });
-    const active = ref(null), listEl = ref(null), intro = ref(true);
+    const active = ref(null), listEl = ref(null), showTop = ref(false);
     const activeName = computed(() => kw.value ? '搜索结果' : ((sections.value.find(x => x.id === active.value) || sections.value[0] || {}).name || ''));
     const catTick = ref(0);
     const indStyle = computed(() => {
@@ -355,11 +365,12 @@ const app = createApp({
     const secCount = (sec) => sec.items.reduce((a, p) => a + pTotal(p), 0);
     let jumping = 0;
     const jump = (id) => {
-      intro.value = false; active.value = id; const el = listEl.value && listEl.value.querySelector('[data-sec="' + id + '"]');
+      active.value = id; const el = listEl.value && listEl.value.querySelector('[data-sec="' + id + '"]');
       if (el) { jumping = Date.now(); listEl.value.scrollTo({ top: el.offsetTop - listEl.value.offsetTop, behavior: 'smooth' }); }
     };
+    const toTop = () => { const b = listEl.value; if (b) { jumping = Date.now(); b.scrollTo({ top: 0, behavior: 'smooth' }); active.value = sections.value[0] && sections.value[0].id; } };
     const spy = () => {
-      intro.value = false;
+      if (listEl.value) showTop.value = listEl.value.scrollTop > listEl.value.clientHeight;
       if (Date.now() - jumping < 600 || kw.value) return;
       const box = listEl.value; if (!box) return;
       const top = box.scrollTop + 8; let cur = sections.value[0] && sections.value[0].id;
@@ -379,7 +390,7 @@ const app = createApp({
       try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; nextTick(() => { active.value = sections.value[0] && sections.value[0].id; }); document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, intro, kw, searchOpen, kwEl, openSearch, found, spec, pimg, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, showTop, toTop, kw, searchOpen, kwEl, openSearch, found, spec, pimg, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 });
 // 底部弹层：按住顶部抓手往下拉，手指在哪弹层就在哪（1:1 跟手）；松手时按速度预测落点，过半或快速下滑就关闭，否则弹回
@@ -424,6 +435,25 @@ app.directive('drag-close', {
     };
     grab.addEventListener('pointerup', end); grab.addEventListener('pointercancel', end);
   },
+});
+// 滚动渐显：进入列表可见区 15% 时淡入上移，只播一次；同一批出现的依次晚 80ms
+let revealIO = null;
+app.directive('reveal', {
+  mounted(el) {
+    if (!('IntersectionObserver' in window) || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    if (!revealIO) {
+      revealIO = new IntersectionObserver((entries) => {
+        let n = 0;
+        entries.forEach((en) => {
+          if (!en.isIntersecting) return;
+          en.target.style.setProperty('--d', Math.min(n++, 4) * 80 + 'ms');
+          en.target.classList.add('in'); revealIO.unobserve(en.target);
+        });
+      }, { root: el.closest('.list'), threshold: 0.15 });
+    }
+    el.classList.add('rv'); revealIO.observe(el);
+  },
+  unmounted(el) { if (revealIO) revealIO.unobserve(el); },
 });
 // iOS Safari 要有 touchstart 监听，按钮的按下样式（:active）才会在手指一碰到就出现
 document.addEventListener('touchstart', () => {}, { passive: true });
