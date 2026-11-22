@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db, now
@@ -91,8 +91,19 @@ def revenue(begin: date | None = None, end: date | None = None, store_id: int | 
         r["pos_orders" if o.source == "pos" else "online_orders"] += 1
         r["original"] += o.original_amount
         r["discount"] += o.original_amount - o.payable_amount
-        r["qty"] += sum(i.qty for i in o.items)
-        r["cost"] += sum(i.unit_cost * i.qty for i in o.items)
+        r["qty"] += sum(i.qty for i in o.items if i.added_at is None)
+        r["cost"] += sum(i.unit_cost * i.qty for i in o.items if i.added_at is None)
+    # 收款后换规格换进来的行：按换货时间统计
+    xq = select(OrderItem, Order.store_id).join(Order, Order.id == OrderItem.order_id) \
+        .where(OrderItem.added_at >= start, OrderItem.added_at < stop)
+    if store_id:
+        xq = xq.where(Order.store_id == store_id)
+    for it, sid in db.execute(xq):
+        r = data[(_bucket(it.added_at, group), sid)]
+        r["original"] += it.amount
+        r["discount"] += it.amount - it.paid_share
+        r["qty"] += it.qty
+        r["cost"] += it.unit_cost * it.qty
 
     pq = select(Payment, Order.store_id).join(Order, Order.id == Payment.order_id) \
         .where(Payment.created_at >= start, Payment.created_at < stop)
@@ -159,8 +170,9 @@ def category_product_ids(db: Session, category_id: int) -> set[int]:
 def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids: set[int] | None = None):
     """商品销售明细：收款的销售行 + 退货行。product_ids 不为空时只看这些商品（按分类筛选用）。"""
     lines = []
+    at = func.coalesce(OrderItem.added_at, Order.paid_at)  # 换规格换进来的行按换货时间
     q = select(OrderItem, Order).join(Order, Order.id == OrderItem.order_id) \
-        .where(Order.paid_at >= start, Order.paid_at < stop)
+        .where(Order.paid_at.is_not(None), at >= start, at < stop)
     if store_id:
         q = q.where(Order.store_id == store_id)
     if sku_id:
@@ -170,7 +182,7 @@ def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids
     if keyword:
         q = q.where(OrderItem.product_name.contains(keyword) | OrderItem.sku_name.contains(keyword))
     for it, o in db.execute(q):
-        lines.append({"type": "sale", "type_text": "销售", "time": o.paid_at, "order_id": o.id, "order_no": o.no,
+        lines.append({"type": "sale", "type_text": "换入" if it.added_at else "销售", "time": it.added_at or o.paid_at, "order_id": o.id, "order_no": o.no,
                       "store_id": o.store_id, "store_name": o.store.name, "source": o.source,
                       "area": (o.area_name + " " + o.location_note).strip(), "sku_id": it.sku_id,
                       "product_name": it.product_name, "sku_name": it.sku_name, "qty": it.qty,
@@ -188,7 +200,7 @@ def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids
     if keyword:
         q = q.where(OrderItem.product_name.contains(keyword) | OrderItem.sku_name.contains(keyword))
     for ln, rf, it, o in db.execute(q):
-        lines.append({"type": "refund", "type_text": "退货", "time": rf.created_at, "order_id": o.id, "order_no": o.no,
+        lines.append({"type": "refund", "type_text": "换出" if rf.kind == "exchange" else "退货", "time": rf.created_at, "order_id": o.id, "order_no": o.no,
                       "refund_no": rf.no, "store_id": o.store_id, "store_name": o.store.name, "source": o.source,
                       "area": (o.area_name + " " + o.location_note).strip(), "sku_id": it.sku_id,
                       "product_name": it.product_name, "sku_name": it.sku_name, "qty": -ln.qty,

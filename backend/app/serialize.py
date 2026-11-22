@@ -94,14 +94,14 @@ def order_out(o: Order, detail: bool = True) -> dict:
          "pay_status_text": PAY_STATUS_TEXT[o.pay_status], "original_amount": o.original_amount,
          "discount_rate": o.discount_rate, "discount_amount": o.discount_amount,
          "payable_amount": o.payable_amount, "paid_amount": o.paid_amount, "refunded_amount": o.refunded_amount,
-         "item_count": sum(i.qty for i in o.items), "created_at": dt(o.created_at), "paid_at": dt(o.paid_at),
+         "item_count": sum(i.qty for i in o.items if i.added_at is None), "created_at": dt(o.created_at), "paid_at": dt(o.paid_at),
          "accepted_at": dt(o.accepted_at), "completed_at": dt(o.completed_at), "cancelled_at": dt(o.cancelled_at),
          "cancel_reason": o.cancel_reason, "print_count": o.print_count}
     if detail:
         d["items"] = [{"id": i.id, "product_id": i.product_id, "sku_id": i.sku_id, "product_name": i.product_name,
                        "sku_name": i.sku_name, "unit": i.unit, "qty": i.qty, "unit_price": i.unit_price,
                        "amount": i.amount, "paid_share": i.paid_share, "refunded_qty": i.refunded_qty,
-                       "medical_info": i.medical_info or {}} for i in o.items]
+                       "added_at": dt(i.added_at), "medical_info": i.medical_info or {}} for i in o.items]
         d["payments"] = [{"id": p.id, "kind": p.kind, "method": p.method, "method_text": PAY_METHODS[p.method],
                           "amount": p.amount, "received": p.received, "change": p.change,
                           "created_at": dt(p.created_at)} for p in o.payments]
@@ -110,5 +110,5 @@ def order_out(o: Order, detail: bool = True) -> dict:
 
 def refund_out(r: Refund) -> dict:
     return {"id": r.id, "no": r.no, "order_id": r.order_id, "amount": r.amount, "restock": r.restock,
-            "reason": r.reason, "created_at": dt(r.created_at),
+            "kind": r.kind or "refund", "reason": r.reason, "created_at": dt(r.created_at),
             "lines": [{"order_item_id": ln.order_item_id, "qty": ln.qty, "amount": ln.amount} for ln in r.lines]}

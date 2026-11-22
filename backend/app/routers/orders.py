@@ -205,13 +205,20 @@ class ExchangeIn(BaseModel):
     qty: int = Field(gt=0)
     method: str | None = None
     reason: str = ""
+    request_id: str | None = None
+
+
+@router.post("/orders/{oid}/exchange/quote")
+def exchange_quote(oid: int, body: ExchangeIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
+    """换规格前先算差价（按原行折扣比例），不改数据。"""
+    return svc.exchange_quote(db, _load(db, oid, user), body.order_item_id, body.sku_id, body.qty)
 
 
 @router.post("/orders/{oid}/exchange")
 def exchange(oid: int, body: ExchangeIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
-    o = _load(db, oid, user, lock=True)
-    svc.exchange(db, o, user, body.order_item_id, body.sku_id, body.qty, body.method, body.reason)
-    db.commit()
+    svc.once(db, lambda: svc.exchange(db, _load(db, oid, user, lock=True), user, body.order_item_id, body.sku_id,
+                                      body.qty, body.method, body.reason, body.request_id))
+    o = _load(db, oid, user)
     db.refresh(o)
     return order_out(o)
 

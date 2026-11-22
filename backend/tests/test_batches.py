@@ -91,3 +91,26 @@ def test_expiry_alerts(admin, world):
     admin.post("/api/stock-docs", {"kind": "in", "to_location_id": wh["id"], "lines": [
         {"stock_item_id": pad["id"], "qty": 1, "production_date": d(0), "expiry_date": d(-5)}]}, expect=400)
     world["clerk"].get("/api/expiry-alerts", expect=403)
+
+
+def test_sale_skips_expired_batches(admin, world):
+    """医疗器械：已过期批次不能正常销售，只能报损出库；不允许负库存时，过期的不算可卖库存。"""
+    s1, pad, clerk = world["s1"], world["pad"], world["clerk"]
+    loc = s1["location_id"]
+    admin.post("/api/stock-docs", {"kind": "in", "to_location_id": loc, "lines": [
+        {"stock_item_id": pad["id"], "qty": 20, "batch_no": "OLD", "expiry_date": d(-1)},
+        {"stock_item_id": pad["id"], "qty": 20, "batch_no": "NEW", "expiry_date": d(100)}]})
+    sku = world["padp"]["skus"][0]  # 每包扣 10 片
+    clerk.post("/api/pos/checkout", {"store_id": s1["id"], "lines": [{"sku_id": sku["id"], "qty": 2}],
+                                     "payments": [{"method": "cash", "amount": 6000}]})
+    assert batch_qty(admin, loc, pad["id"]) == {("OLD", d(-1)): 20}  # 扣的是没过期的 NEW 批
+    # 不允许负库存：一号店 120 片里 20 片已过期，最多只能卖 100 片
+    admin.put("/api/settings/rules", {"pos_allow_negative": False})
+    r = clerk.req("POST", "/api/pos/checkout", expect=409, json={
+        "store_id": s1["id"], "lines": [{"sku_id": sku["id"], "qty": 11}], "payments": [{"method": "cash", "amount": 33000}]})
+    assert "已过期 20" in r["detail"]
+    # 过期的走报损出库：先出最早到期的 OLD 批
+    admin.post("/api/stock-docs", {"kind": "out", "from_location_id": loc, "reason": "报损",
+                                   "lines": [{"stock_item_id": pad["id"], "qty": 20}]})
+    assert batch_qty(admin, loc, pad["id"]) == {}
+    assert stock_of(admin, loc, pad["id"]) == 100

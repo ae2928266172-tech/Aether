@@ -431,6 +431,8 @@ class OrderItem(Base):
     deduct_qty: Mapped[Decimal] = mapped_column(Qty, default=Decimal(1))
     refunded_qty: Mapped[int] = mapped_column(Integer, default=0)
     medical_info: Mapped[dict] = mapped_column(JSON, default=dict)
+    # 收款后换规格换进来的行：记换货时间，报表按这个时间算销售；收银时就有的行为空（按订单收款时间算）
+    added_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
 
 
 class Payment(Base):
@@ -458,6 +460,7 @@ class Refund(Base):
     order_id: Mapped[int] = mapped_column(ForeignKey("orders.id"), index=True)
     amount: Mapped[int] = mapped_column(Integer)
     restock: Mapped[bool] = mapped_column(Boolean, default=True)
+    kind: Mapped[str] = mapped_column(String(10), default="refund")  # refund 退货 / exchange 换规格（换出原规格）
     reason: Mapped[str] = mapped_column(String(200), default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
