@@ -102,6 +102,7 @@ class OrderIn(BaseModel):
     contact_phone: str = ""
     remark: str = Field("", max_length=200)
     request_id: str | None = None
+    channel: str = "wechat"  # 微信小程序 wechat / 支付宝小程序 alipay，只影响单号前缀
 
 
 def _public(o: Order) -> dict:
@@ -117,7 +118,7 @@ def _public(o: Order) -> dict:
 def create_order(body: OrderIn, db: Session = Depends(get_db), c: Customer = Depends(current_customer)):
     o = svc.once(db, lambda: svc.online_create(
         db, c.id, _area(db, body.area_code), [l.model_dump() for l in body.lines], body.location_note,
-        body.contact_phone, body.remark, body.request_id))
+        body.contact_phone, body.remark, body.request_id, body.channel))
     return _public(o)
 
 

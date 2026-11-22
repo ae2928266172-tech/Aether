@@ -413,6 +413,17 @@ class Order(Base, TimestampMixin):
         return self.original_amount - self.payable_amount
 
 
+class OrderNoCounter(Base):
+    """单号计数器：门店收银和扫码订单各自一条线，每天从 1 重新数。
+
+    kind：pos / online。day：YYYYMMDD（本地时区）。订单号 = 前缀 + day + seq（四位）。
+    """
+    __tablename__ = "order_no_counters"
+    kind: Mapped[str] = mapped_column(String(10), primary_key=True)
+    day: Mapped[str] = mapped_column(String(8), primary_key=True)
+    seq: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class OrderItem(Base):
     __tablename__ = "order_items"
     id: Mapped[int] = mapped_column(primary_key=True)

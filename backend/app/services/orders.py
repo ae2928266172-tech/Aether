@@ -16,8 +16,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import now
-from ..models import (Area, Exchange, Location, Order, OrderItem, OrderLog, Payment, Product, Refund, RefundLine,
-                      Sku, StockItem, Store, User)
+from ..models import (Area, Exchange, Location, Order, OrderItem, OrderLog, OrderNoCounter, Payment, Product, Refund,
+                      RefundLine, Sku, StockItem, Store, User)
 from ..security import has_perm
 from ..settings_store import get_setting
 from .inventory import change_stock, defective_location, find_batch, lock_balances, return_alloc
@@ -30,6 +30,29 @@ PAY_STATUS_TEXT = {"unpaid": "未收款", "paid": "已收款", "partial_refunded
 
 def _no(prefix: str) -> str:
     return f"{prefix}{now():%Y%m%d%H%M%S}{uuid.uuid4().hex[:4].upper()}"
+
+
+# 订单号：门店收银 NJYFZX + 日期 + 四位序号；扫码订单 WECHAT / ALIPAY + 日期 + 四位序号。
+# 门店和扫码各数各的，每天零点重新从 0001 开始。
+NO_PREFIX = {"pos": "NJYFZX", "wechat": "WECHAT", "alipay": "ALIPAY"}
+
+
+def order_no(db: Session, channel: str = "pos") -> str:
+    """按天流水号取单号。channel：pos / wechat / alipay。
+
+    写库事务在 SQLite 上是 BEGIN IMMEDIATE，两台收银机同时下单会排队，读-加-写不会重复；
+    PostgreSQL 上给计数器行加锁，并发下也只有一个能拿到当前号。
+    """
+    channel = channel if channel in NO_PREFIX else "pos"
+    kind = "pos" if channel == "pos" else "online"
+    day = f"{now():%Y%m%d}"
+    row = db.get(OrderNoCounter, {"kind": kind, "day": day}, with_for_update=db.get_bind().dialect.name != "sqlite")
+    if row is None:
+        row = OrderNoCounter(kind=kind, day=day, seq=0)
+        db.add(row)
+    row.seq = (row.seq or 0) + 1
+    db.flush()
+    return f"{NO_PREFIX[channel]}{day}{row.seq:04d}"
 
 
 def log(db: Session, order: Order, action: str, detail: str = "", user: User | None = None):
@@ -238,7 +261,7 @@ def pos_checkout(db: Session, user: User, store: Store, lines: list[dict], payme
                      and _qty_map((i.sku_id, i.qty) for i in exist.items)
                      == _qty_map((ln["sku_id"], ln["qty"]) for ln in lines))
         return exist
-    order = Order(no=_no("S"), source="pos", store_id=store.id, status="completed", remark=remark,
+    order = Order(no=order_no(db, "pos"), source="pos", store_id=store.id, status="completed", remark=remark,
                   created_by=user.id, request_id=request_id)
     order.items = build_items(db, lines, online=False)
     order.store = store
@@ -259,7 +282,8 @@ def pos_checkout(db: Session, user: User, store: Store, lines: list[dict], payme
 # ---------------- 小程序订单 ----------------
 
 def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], location_note: str = "",
-                  contact_phone: str = "", remark: str = "", request_id: str | None = None) -> Order:
+                  contact_phone: str = "", remark: str = "", request_id: str | None = None,
+                  channel: str = "wechat") -> Order:
     exist = _by_request(db, Order, request_id)
     if exist:
         same_request(exist.source == "online" and exist.customer_id == customer_id and exist.area_id == area.id
@@ -267,6 +291,7 @@ def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], 
                      == _qty_map((ln["sku_id"], ln["qty"]) for ln in lines))
         return exist
     store = area.store
+    channel = channel if channel in ("alipay", "wechat") else "wechat"  # 认不出平台就按微信算
     if not area.active or not store.active:
         raise HTTPException(400, "该区域暂停接单")
     if not store.accept_online_orders:
@@ -274,7 +299,7 @@ def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], 
     rules = get_setting(db, "rules")
     if rules["online_location_required"] and not location_note.strip():
         raise HTTPException(400, f"请填写{rules['location_label']}")
-    order = Order(no=_no("W"), source="online", store_id=store.id, area_id=area.id, area_name=area.name,
+    order = Order(no=order_no(db, channel), source="online", store_id=store.id, area_id=area.id, area_name=area.name,
                   location_note=location_note.strip(), customer_id=customer_id, contact_phone=contact_phone,
                   remark=remark, status="pending", request_id=request_id)
     order.items = build_items(db, lines, online=True)
