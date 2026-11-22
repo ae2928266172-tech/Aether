@@ -572,8 +572,8 @@ const Orders = {
         <el-radio-button value="">全部</el-radio-button>
         <el-radio-button value="completed">已完成</el-radio-button>
         <el-radio-button value="cancelled">已取消</el-radio-button>
-        <el-radio-button v-if="showPending" value="pending">待接单 {{pendingCount ? '(' + pendingCount + ')' : ''}}</el-radio-button>
-        <el-radio-button value="accepted">已接单待收款</el-radio-button>
+        <el-radio-button v-if="showPending" value="pending">待接单{{counts.pending ? ' ' + counts.pending : ''}}</el-radio-button>
+        <el-radio-button v-if="showUnpaid" value="accepted">已接单待收款{{counts.unpaid ? ' ' + counts.unpaid : ''}}</el-radio-button>
         <el-radio-button value="refund">退款退货</el-radio-button>
       </el-radio-group>
       <el-select v-model="source" placeholder="全部来源" clearable style="width:120px" @change="load"><el-option label="扫码点单" value="online" /><el-option label="门店收银" value="pos" /></el-select>
@@ -739,21 +739,25 @@ const Orders = {
   </div>`,
   setup(props) {
     const status = ref(''), source = ref(null), day = ref(''), kw = ref(''), rows = ref([]), drawer = ref(false), cur = ref(null), payDlg = ref(false);
+    const counts = ref({});
     const rBusy = ref(false);
     const rDlg = ref(false), rLines = ref([]), rf = reactive({ method: 'cash', restock: true, reason: '', rid: '' });
     const can = (p) => props.user.permissions.includes(p);
     const tagType = (o) => o.status === 'pending' ? 'danger' : o.status === 'cancelled' ? 'info' : o.pay_status === 'unpaid' ? 'warning' : o.pay_status === 'paid' ? 'success' : 'info';
     // 开了自动接单，新单进店就是“已接单待收款”，不会有待接单的；关掉才显示这个筛选项
     const autoAccept = computed(() => !props.store || props.store.accept_online_orders !== false);
-    const showPending = computed(() => !autoAccept.value || props.pendingCount > 0);
+    // 两个中间态都按需出现：手上真压着这类单才显示，免得常驻空筛选项
+    const showPending = computed(() => !autoAccept.value || (counts.value.pending || 0) > 0 || status.value === 'pending');
+    const showUnpaid = computed(() => (counts.value.unpaid || 0) > 0 || status.value === 'accepted');
     const load = async () => {
       const q = { store_id: props.storeId, source: source.value, begin: day.value, end: day.value, keyword: kw.value };
       if (status.value === 'refund') q.pay_status = 'partial_refunded,refunded';
       else if (status.value) q.status = status.value;
-      try { rows.value = (await api.get('/api/orders', q)).items; } catch (e) { err(e); }
+      try { const r = await api.get('/api/orders', q); rows.value = r.items; counts.value = r.counts || {}; } catch (e) { err(e); }
     };
     watch(() => props.tick, load);
     watch(showPending, (v) => { if (!v && status.value === 'pending') { status.value = ''; load(); } });
+    watch(showUnpaid, (v) => { if (!v && status.value === 'accepted') { status.value = ''; load(); } });
     const open = async (o) => { try { cur.value = await api.get('/api/orders/' + o.id); drawer.value = true; } catch (e) { err(e); } };
     const refresh = async () => { cur.value = await api.get('/api/orders/' + cur.value.id); load(); };
     const act = async (a) => { try { await api.post('/api/orders/' + cur.value.id + '/' + a); await refresh(); ElMessage.success('已接单'); } catch (e) { err(e); } };
@@ -1028,7 +1032,7 @@ const Orders = {
     const refundAll = () => rLines.value.forEach(l => { l.qty = l.max; });
     const print = async () => { try { await printOrder(cur.value.id, cur.value.print_count > 0); } catch (e) { err(e); } try { await refresh(); } catch (e) {} };
     onMounted(load);
-    return { status, source, day, kw, rows, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy, showPending,
+    return { status, source, day, kw, rows, counts, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy, showPending, showUnpaid,
       xDlg, xBack, xNew, xAlternatives, xSearch, xKw, xOptions, xSearchPanel, xPickDlg, xProduct, xMatches, xBusy, xScanning, xQ, xErr, x, xBody, xOriginal,
       xAmountOpen, xAmountDraft, xPad, PAD, xToggleAmount, xAmountKey, xReasons, xReasonInput, xReasonPanel, xReasonText, xReasonKeys, xPickReason, xReasonKey,
       priceText, xToggleSearch, xConfirmSearch, xSearchKey, xPickProduct, openExchange, xAddLine, xSetNewQty, doExchange, printExchange, xSum, xRefund,
