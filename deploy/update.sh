@@ -11,7 +11,6 @@ mkdir -p "$REL" && tar -xzf "$TGZ" -C "$REL" && chown -R root:root "$REL"
 [ -f "$REL/backend/app/main.py" ] || { echo "代码包不对"; rm -rf "$REL"; exit 1; }
 PYTHONUTF8=1 $APP/venv/bin/pip install -q -i "$PIP_INDEX" -r "$REL/backend/requirements.txt"
 install -m 755 "$REL/deploy/backup_pg.sh" /usr/local/bin/shouyin-backup
-[ -f "$REL/deploy/autodeploy.sh" ] && install -m 755 "$REL/deploy/autodeploy.sh" /usr/local/bin/shouyin-autodeploy
 ln -sfn "$REL" $APP/current
 systemctl restart shouyin
 for i in $(seq 1 30); do curl -fs http://127.0.0.1:8000/api/health >/dev/null && break; sleep 1; done
