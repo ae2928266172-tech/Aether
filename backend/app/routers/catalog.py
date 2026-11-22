@@ -364,14 +364,7 @@ async def upload(file: UploadFile = File(...), user: User = Depends(current_user
     return {"url": "/media/" + name}
 
 
-# ---------------- 规格整理：找写法不同的重复规格、合并 ----------------
-
-@router.get("/sku-duplicates")
-def sku_duplicates(db: Session = Depends(get_db), _: User = Depends(require("catalog"))):
-    """同一商品里写法不同、意思一样的规格（如“10x10cm”和“10*10”），给后台确认后合并。"""
-    from ..services.skus import duplicate_groups
-    return duplicate_groups(db)
-
+# ---------------- 规格合并（后台商品编辑里“合并到”） ----------------
 
 class SkuMergeIn(BaseModel):
     keep_id: int
