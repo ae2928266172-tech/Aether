@@ -10,6 +10,7 @@ const DEFAULTS = {
   drawer: false,         // 现金收款后弹钱箱（钱箱接在小票机上）
   autoStart: false,      // 开机自动打开
   fullscreen: false,     // 启动即全屏
+  customerDisplay: true, // 接了第二块屏时，在上面全屏显示顾客副屏
 };
 
 // 把用户填的地址整理成 http://主机:端口（不带末尾斜杠和路径）；填错返回空字符串
@@ -31,6 +32,7 @@ function normalize(c) {
   if (!['raw', 'driver', 'off'].includes(out.printMode)) out.printMode = 'raw';
   out.paperWidth = Number(out.paperWidth) === 80 ? 80 : 58;
   out.drawer = !!out.drawer; out.autoStart = !!out.autoStart; out.fullscreen = !!out.fullscreen;
+  out.customerDisplay = out.customerDisplay !== false;
   return out;
 }
 
@@ -58,4 +60,18 @@ function isStorePage(server, url) {
   } catch (e) { return false; }
 }
 
-module.exports = { DEFAULTS, normalizeServer, normalize, load, save, storeUrl, isStorePage };
+// 顾客副屏地址
+const displayUrl = (server) => server + '/web/display/';
+function isDisplayPage(server, url) {
+  try {
+    const u = new URL(url);
+    return u.protocol + '//' + u.host === server && u.pathname.startsWith('/web/display/');
+  } catch (e) { return false; }
+}
+
+// 选副屏：收银窗口所在的那块屏以外的第一块屏；只有一块屏返回 null
+function pickDisplay(displays, mainId) {
+  return (displays || []).find(d => d.id !== mainId) || null;
+}
+
+module.exports = { DEFAULTS, normalizeServer, normalize, load, save, storeUrl, isStorePage, displayUrl, isDisplayPage, pickDisplay };
