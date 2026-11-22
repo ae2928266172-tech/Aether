@@ -5,101 +5,277 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>扫码点单</title>
   <style>
-    :root { --p: #18181b; --bg: #fafafa; --b: #e4e4e7; --m: #a1a1aa; }
+    /* 扫码点单：米白底 + 浅橙强调。左侧分类、右侧按分类分段的商品列表（滚动时左侧跟着高亮），大图、标签、简介、价格；
+       多规格商品点“选规格”从底部弹出规格面板。动效只动 transform / opacity，进入 ease-out、退出更快。 */
+    :root {
+      --bg: #faf7f2; --paper: #fffdf9; --rail: #f3eee6; --line: rgba(80,60,40,.1);
+      --ink: #2b2620; --ink-2: #8c8277; --ink-3: #b9b0a5;
+      --accent: #f3b49c; --accent-2: #ec9a78; --accent-soft: #fdf3ee; --accent-ink: #b5573a;  /* 浅橙：比 Claude 图标的橙 #d97757 浅很多，不偏黄 */
+      --ease-out: cubic-bezier(.23, 1, .32, 1); --ease-drawer: cubic-bezier(.32, .72, 0, 1);
+      --head-h: 108px; --bar-h: 64px;
+    }
     * { box-sizing: border-box; }
-    body { margin: 0; background: var(--bg); font-family: -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; color: #1f2329; }
-    header { background: #fff; color: #18181b; border-bottom: 1px solid var(--b); padding: 16px 16px 14px; display: flex; align-items: center; gap: 12px; height: 70px; }
-    header .mk { width: 38px; height: 38px; border-radius: 9px; background: #18181b; color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 700; }
-    header .t { flex: 1; font-weight: 600; font-size: 17px; }
-    header .s { color: var(--m); font-size: 13px; margin-top: 2px; font-weight: 400; }
-    header .mine { background: #fff; color: #18181b; border: 1px solid var(--b); border-radius: 8px; padding: 7px 12px; font-size: 13px; }
-    .wrap { display: flex; height: calc(100vh - 70px - 64px); height: calc(100dvh - 70px - 64px - env(safe-area-inset-bottom)); }
-    .item .img { display: flex; align-items: center; justify-content: center; color: #a1a1aa; font-size: 22px; font-weight: 600; background-color: #f4f4f5; }
-    .bar { }
-    .bar .cart { width: 42px; height: 42px; border-radius: 10px; background: var(--p); color: #fff; display: flex; align-items: center; justify-content: center; position: relative; font-weight: 700; }
-    .bar .cart i { position: absolute; top: -4px; right: -4px; background: #ef4444; font-style: normal; font-size: 11px; border-radius: 9px; padding: 0 5px; line-height: 18px; }
-    .cats { width: 88px; background: #fff; overflow: auto; flex-shrink: 0; }
-    .cats div { padding: 14px 8px; font-size: 14px; text-align: center; border-left: 3px solid transparent; }
-    .cats div.on { background: var(--bg); border-left-color: var(--p); font-weight: 600; }
-    .list { flex: 1; overflow: auto; padding: 8px 12px 20px; }
-    .item { background: #fff; border: 1px solid var(--b); border-radius: 10px; padding: 10px; margin-bottom: 10px; display: flex; gap: 10px; }
-    .item .img { width: 72px; height: 72px; border-radius: 8px; background: #eef3f2 center/cover no-repeat; flex-shrink: 0; }
-    .item .info { flex: 1; min-width: 0; }
-    .item .n { font-weight: 600; }
-    .item .d { color: var(--m); font-size: 12px; margin: 2px 0 6px; }
-    .sku { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
-    .sku .pr { color: var(--p); font-weight: 600; }
-    .sku .sn { display: flex; align-items: center; min-width: 0; }
-    .sku .simg { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; margin-right: 8px; flex-shrink: 0; background: #eef3f2; }
-    .qty { display: flex; align-items: center; gap: 8px; }
-    .qty button { width: 28px; height: 28px; border-radius: 50%; border: 1px solid var(--p); background: #fff; color: var(--p); font-size: 18px; line-height: 1; }
-    .qty button.add { background: var(--p); color: #fff; }
-    .bar { position: fixed; left: 0; right: 0; bottom: 0; height: calc(64px + env(safe-area-inset-bottom)); padding-bottom: env(safe-area-inset-bottom) !important; background: #fff; border-top: 1px solid var(--b); display: flex; align-items: center; padding: 0 16px; gap: 12px; }
-    .bar .t { flex: 1; font-size: 20px; font-weight: 800; color: #0f172a; }
-    .btn { background: #18181b; color: #fff; border: 0; border-radius: 10px; padding: 12px 24px; font-size: 16px; }
-    .btn:disabled { background: #d4d4d8; }
-    .mask { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-end; z-index: 9; }
-    .sheet { background: #fff; width: 100%; border-radius: 14px 14px 0 0; padding: 16px; max-height: 85vh; overflow: auto; }
-    .sheet h3 { margin: 0 0 12px; }
-    .row { display: flex; justify-content: space-between; padding: 6px 0; }
-    input, textarea { width: 100%; padding: 10px; border: 1px solid var(--b); border-radius: 8px; font-size: 15px; margin: 4px 0 10px; }
-    .muted { color: var(--m); font-size: 13px; }
-    .lim { color: #b45309; font-size: 12px; margin: -2px 0 4px; }
-    .tip { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); background: rgba(24,24,27,.9); color: #fff; padding: 9px 16px; border-radius: 8px; font-size: 14px; z-index: 20; max-width: 86%; text-align: center; }
-    .err { padding: 40px 20px; text-align: center; color: var(--m); }
-    .ord { background: #fff; border-radius: 10px; padding: 12px; margin: 10px 12px; }
-    .link { color: var(--p); background: none; border: 0; font-size: 14px; }
+    html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+    html, body, #app { height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--ink); overflow: hidden;
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+    button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; touch-action: manipulation; }
+    button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+    .app { height: 100%; display: flex; flex-direction: column; }
+
+    /* 顶部：门店和区域 */
+    .head { flex-shrink: 0; padding: calc(16px + env(safe-area-inset-top)) 18px 16px; background: var(--bg); display: flex; align-items: flex-start; gap: 12px; }
+    .head .tt { flex: 1; min-width: 0; }
+    .head h1 { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .head .area { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 10px; border-radius: 13px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13px; font-weight: 600; }
+    .head .area i { width: 6px; height: 6px; border-radius: 3px; background: var(--accent-2); }
+    .head .mine { flex-shrink: 0; height: 34px; padding: 0 14px; border-radius: 17px; background: var(--paper); border: 1px solid var(--line); font-size: 14px; font-weight: 500; margin-top: 2px; }
+
+    .main { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--line); background: var(--paper); border-radius: 20px 20px 0 0; overflow: hidden; }
+    /* 左侧分类：选中项白底 + 左侧浅橙竖条 */
+    .cats { width: 90px; flex-shrink: 0; overflow-y: auto; background: var(--rail); padding-bottom: calc(var(--bar-h) + 40px); scrollbar-width: none; }
+    .cats::-webkit-scrollbar { display: none; }
+    .cat { position: relative; display: block; width: 100%; text-align: left; padding: 18px 12px 18px 16px; font-size: 14px; line-height: 1.35; color: var(--ink-2); transition: color .2s ease, background-color .2s ease; }
+    .cat.on { background: var(--paper); color: var(--ink); font-weight: 600; }
+    /* 选中竖条只有一根，在分类之间滑动过去（看得出从哪到哪），用 iOS 减速曲线 */
+    .cats { position: relative; }
+    .cat-ind { position: absolute; left: 0; top: 0; width: 3px; height: 18px; border-radius: 0 3px 3px 0; background: var(--accent-2); z-index: 1;
+      transition: transform 320ms var(--ease-drawer), opacity .2s ease; }
+    .cat .n { position: absolute; top: 6px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent-2); color: #fff; font-size: 11px; line-height: 16px; text-align: center; font-weight: 600; vertical-align: 1px; }
+
+    /* 右侧：分类标题 + 搜索，商品列表 */
+    .menu { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .bar-top { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 14px 14px 6px 16px; }
+    .bar-top h2 { flex: 1; margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .search { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 17px; background: var(--rail); color: var(--ink-2); width: 108px; transition: width 260ms var(--ease-out); }
+    .search.open { width: 100%; }
+    .search svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 15px; color: var(--ink); padding: 0; }
+    .search input::placeholder { color: var(--ink-2); }
+    .search .clr { width: 18px; height: 18px; border-radius: 9px; background: var(--ink-3); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .search .clr svg { width: 8px; height: 8px; }
+    .list { flex: 1; overflow-y: auto; padding: 0 14px calc(var(--bar-h) + 40px + env(safe-area-inset-bottom)) 16px; -webkit-overflow-scrolling: touch; }
+    .sec-t { position: sticky; top: 0; z-index: 1; background: var(--paper); margin: 0; padding: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+    .sec-t { display: none; }  /* 当前分类名已显示在上方标题里 */
+    .sec + .sec { border-top: 1px solid var(--line); }
+    .sec:last-child { min-height: 100%; }  /* 最后一段也能滚到顶，点分类时对得齐 */
+    .item { display: flex; gap: 14px; padding: 14px 0 18px; }
+    .item .img { width: 96px; height: 96px; border-radius: 14px; flex-shrink: 0; background: var(--rail) center/cover no-repeat; display: flex; align-items: center; justify-content: center; color: var(--ink-3); overflow: hidden; }
+    .item .img svg { width: 34px; height: 34px; }
+    .item .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .item .n { font-size: 17px; font-weight: 700; line-height: 1.3; letter-spacing: -.01em; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .tag { font-size: 12px; line-height: 18px; padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; color: var(--accent-ink); }
+    .tag.gray { color: var(--ink-2); border-color: var(--ink-3); }
+    .item .d { color: var(--ink-2); font-size: 13px; line-height: 1.5; margin-top: 7px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .item .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 10px; }
+    .price { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    .price small { font-size: 13px; font-weight: 600; margin-right: 1px; }
+    .price em { font-style: normal; font-size: 12px; font-weight: 400; color: var(--ink-2); margin-left: 2px; }
+    .cta { position: relative; height: 32px; padding: 0 14px; border-radius: 16px; background: var(--accent); color: var(--ink); font-size: 14px; font-weight: 600; white-space: nowrap; }
+    .cta i { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--ink); color: #fff; font: 600 11px/18px -apple-system, sans-serif; font-style: normal; }
+    .empty-list { text-align: center; color: var(--ink-2); padding: 60px 0; font-size: 14px; }
+
+    /* 加减 */
+    .qty { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .qty button { width: 30px; height: 30px; border-radius: 15px; display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--ink); }
+    .qty button.minus { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-3); color: var(--ink-2); }
+    .qty button svg { width: 13px; height: 13px; display: block; }
+    .qty .num { min-width: 22px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; animation: pop-in 220ms var(--ease-out); }
+
+    /* 底部结算条 */
+    .cartbar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); height: var(--bar-h); z-index: 6; border-radius: 32px; padding: 0 8px 0 10px;
+      display: flex; align-items: center; gap: 12px; background: var(--ink); color: #fff; box-shadow: 0 10px 30px rgba(43,38,32,.22);
+      transition: translate 380ms var(--ease-drawer), opacity 200ms ease; }
+    .cartbar.off { translate: 0 calc(100% + 30px); opacity: 0; pointer-events: none; }
+    .cartbar .bag { width: 46px; height: 46px; border-radius: 23px; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
+    .cartbar .bag svg { width: 22px; height: 22px; }
+    .cartbar .bag i { position: absolute; top: -3px; right: -5px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--ink);
+      font: 700 12px/20px -apple-system, sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px var(--ink); }
+    .cartbar .t { flex: 1; min-width: 0; line-height: 1.2; }
+    .cartbar .t b { display: block; font-size: 20px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .cartbar .t small { font-size: 12px; color: rgba(255,255,255,.6); }
+    .btn { height: 48px; padding: 0 26px; border-radius: 24px; background: var(--accent); color: var(--ink); font-size: 16px; font-weight: 700; }
+    .btn:active:not(:disabled) { background: var(--accent-2); }
+    .btn.block { width: 100%; height: 52px; border-radius: 26px; }
+    .btn:disabled { opacity: .5; }
+
+    /* 底部弹层 */
+    .mask { position: fixed; inset: 0; background: rgba(43,38,32,.4); display: flex; align-items: flex-end; z-index: 9; }
+    .sheet { background: var(--bg); width: 100%; border-radius: 22px 22px 0 0; max-height: 88vh; max-height: 88dvh; display: flex; flex-direction: column; will-change: transform; }
+    .sheet .grab { flex-shrink: 0; padding: 8px 18px 4px; touch-action: none; cursor: grab; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    .sheet .grab::before { content: ""; flex-basis: 100%; height: 5px; border-radius: 3px; background: rgba(80,60,40,.2); margin: 0 calc(50% - 18px) 12px; }
+    .sheet h3 { margin: 0; font-size: 20px; font-weight: 700; }
+    .sheet .x { width: 30px; height: 30px; border-radius: 15px; background: var(--rail); color: var(--ink-2); display: flex; align-items: center; justify-content: center; }
+    .sheet .x svg { width: 12px; height: 12px; }
+    .sheet .body { overflow-y: auto; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+    .spec-top { display: flex; gap: 14px; align-items: center; }
+    .spec-top .img { width: 84px; height: 84px; border-radius: 14px; background: var(--rail) center/cover no-repeat; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-3); }
+    .spec-top .img svg { width: 30px; height: 30px; }
+    .spec-top .n { font-size: 18px; font-weight: 700; }
+    .spec-top .d { color: var(--ink-2); font-size: 13px; margin-top: 4px; }
+    .spec { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--paper); border-radius: 14px; padding: 12px 14px; margin-top: 10px; border: 1px solid transparent; transition: border-color .2s ease, background-color .2s ease; }
+    .spec.has { border-color: var(--accent); background: var(--accent-soft); }
+    .spec .sn { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .spec .simg { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+    .spec .sk { font-size: 15px; font-weight: 600; }
+    .spec .pr { font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+    .group { background: var(--paper); border-radius: 14px; margin-bottom: 20px; overflow: hidden; }
+    .group-t { color: var(--ink-2); font-size: 13px; margin: 0 4px 7px; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 14px; font-size: 15px; }
+    .group .row + .row { border-top: 1px solid var(--line); }
+    .row .q { color: var(--ink-2); margin-left: 6px; }
+    .row .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .row.total { font-weight: 700; }
+    .row.total .money { font-size: 19px; }
+    .field { display: flex; align-items: center; gap: 12px; padding: 0 14px; min-height: 50px; }
+    .field + .field { border-top: 1px solid var(--line); }
+    .field label { width: 76px; flex-shrink: 0; font-size: 15px; }
+    .field label em { color: #e0613a; font-style: normal; margin-left: 2px; }
+    .field input, .field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 16px; color: var(--ink); padding: 13px 0; resize: none; text-align: right; }
+    .field input::placeholder, .field textarea::placeholder { color: var(--ink-3); }
+    .note { color: var(--ink-2); font-size: 12px; line-height: 1.5; margin: -12px 4px 18px; }
+    .ord { background: var(--paper); border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; }
+    .ord .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+    .ord .h b { font-size: 16px; }
+    .ord .g { color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+    .ord .f { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+    .ord .f .money { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .link { color: #d4553a; font-size: 14px; height: 32px; padding: 0 14px; border-radius: 16px; background: rgba(212,85,58,.1); font-weight: 600; }
+    .muted { color: var(--ink-2); font-size: 12px; }
+    .empty-t { text-align: center; color: var(--ink-2); padding: 44px 0; }
+    .tip { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 20; max-width: 86%; text-align: center;
+      background: rgba(43,38,32,.9); color: #fff; padding: 10px 18px; border-radius: 20px; font-size: 14px; }
+    .err { padding: 32vh 24px 0; text-align: center; color: var(--ink-2); font-size: 16px; }
+    .spin { width: 28px; height: 28px; margin: 0 auto 14px; border-radius: 50%; border: 3px solid var(--rail); border-top-color: var(--accent-2); animation: spin 700ms linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* 动效 */
+    button { transition: transform 160ms var(--ease-out), background-color .2s ease, color .2s ease; }
+    .qty button:active, .cta:active, .head .mine:active, .link:active, .sheet .x:active { transform: scale(.9); }
+    .btn:active:not(:disabled) { transform: scale(.97); }
+    .cat:active { transform: none; }
+    @keyframes pop-in { from { opacity: 0; scale: .6; } }
+    @keyframes rise { from { opacity: 0; translate: 0 12px; } }
+    .main { animation: rise 480ms var(--ease-out) both; }
+    .list.intro .item { animation: rise 460ms var(--ease-out) both; }
+    .list.intro .sec:first-child .item:nth-child(3) { animation-delay: 50ms; } .list.intro .sec:first-child .item:nth-child(4) { animation-delay: 90ms; }
+    .list.intro .sec:first-child .item:nth-child(n+5), .list.intro .sec:not(:first-child) .item { animation-delay: 120ms; }
+    .cartbar .bag i.bump { animation: bump 320ms var(--ease-out); }
+    @keyframes bump { 35% { scale: 1.3; } }
+    .sheet-enter-active { transition: background-color 420ms var(--ease-drawer); }
+    .sheet-leave-active { transition: background-color 240ms var(--ease-drawer); }
+    .sheet-enter-from, .sheet-leave-to { background-color: rgba(43,38,32,0); }
+    .sheet-enter-active .sheet { transition: transform 420ms var(--ease-drawer); }
+    .sheet-leave-active .sheet { transition: transform 240ms var(--ease-drawer); }
+    .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: translateY(100%) !important; }
+    .tip-enter-active { transition: opacity 220ms var(--ease-out), translate 220ms var(--ease-out); }
+    .tip-leave-active { transition: opacity 160ms ease-out; }
+    .tip-enter-from { opacity: 0; translate: 0 10px; }
+    .tip-leave-to { opacity: 0; }
+    @media (prefers-reduced-motion: reduce) {
+      button:active { transform: none !important; }
+      .cartbar .bag i.bump, .qty .num { animation: none; }
+      @keyframes rise { from { opacity: 0; } }
+      .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: none !important; opacity: 0; }
+      .sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: opacity 200ms ease; }
+      .tip-enter-from, .cartbar.off { translate: none; }
+    }
   </style>
 </head>
 <body>
 <div id="app">
   <div v-if="error" class="err">{{error}}</div>
-  <template v-else-if="area">
-    <header><div class="mk">{{area.store_name.slice(0,1)}}</div><div class="t">{{area.store_name}}<div class="s">{{area.area_label}}：{{area.area_name}}</div></div><button class="mine" @click="showOrders">我的订单</button></header>
-    <div class="wrap">
-      <div class="cats"><div :class="{on:!cat}" @click="cat=null">全部</div><div v-for="c in topCats" :key="c.id" :class="{on:cat===c.id}" @click="cat=c.id">{{c.name}}</div></div>
-      <div class="list">
-        <div v-for="p in shown" :key="p.id" class="item">
-          <div class="img" :style="p.image ? {backgroundImage:'url(' + JSON.stringify(thumb(p.image, 160)) + ')'} : {}">{{p.image ? '' : p.name.slice(0,1)}}</div>
-          <div class="info">
-            <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div><div class="lim" v-if="p.min_qty > 1 || p.max_qty">{{limText(p)}}</div>
-            <div v-for="s in p.skus" :key="s.id" class="sku">
-              <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg">{{s.name !== '默认' ? s.name + '　' : ''}}<span class="pr">¥{{yuan(s.price)}}</span></span>
-              <span class="qty"><button v-if="qty[s.id]" @click="dec(p, s.id)">−</button><span v-if="qty[s.id]">{{qty[s.id]}}</span><button class="add" @click="inc(p, s.id)">＋</button></span>
+  <div v-else-if="area" class="app">
+    <div class="head">
+      <div class="tt"><h1>{{area.store_name}}</h1><div class="area"><i></i>{{area.area_label}} · {{area.area_name}}</div></div>
+      <button class="mine" @click="showOrders">我的订单</button>
+    </div>
+    <div class="main">
+      <div class="cats" v-show="!kw">
+        <i class="cat-ind" :style="indStyle"></i>
+        <button v-for="sec in sections" :key="sec.id" class="cat" :class="{on: active===sec.id}" :data-cat="sec.id" @click="jump(sec.id)">{{sec.name}}<span v-if="secCount(sec)" class="n">{{secCount(sec)}}</span></button>
+      </div>
+      <div class="menu">
+        <div class="bar-top">
+          <h2 v-if="!searchOpen">{{activeName}}</h2>
+          <label class="search" :class="{open: searchOpen}" @click="openSearch"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg><input ref="kwEl" v-model.trim="kw" placeholder="搜索" enterkeyhint="search" @blur="!kw && (searchOpen=false)"><button v-if="kw" class="clr" aria-label="清除" @click.prevent="kw='';kwEl && kwEl.focus()"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></label>
+        </div>
+        <div class="list" ref="listEl" :class="{intro}" @scroll.passive="spy">
+          <div v-if="kw && !found.length" class="empty-list">没有找到“{{kw}}”</div>
+          <div v-for="sec in (kw ? [{id: 'kw', name: '搜索结果', items: found}] : sections)" :key="sec.id" class="sec" :data-sec="sec.id">
+            <h4 class="sec-t">{{sec.name}}</h4>
+            <div v-for="p in sec.items" :key="p.id" class="item">
+              <div class="img" :style="pimg(p) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(p), 240)) + ')'} : {}"><template v-if="!pimg(p)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div>
+              <div class="info">
+                <div class="n">{{p.name}}</div>
+                <div class="tags" v-if="p.min_qty > 1 || p.max_qty || p.skus.length > 1"><span v-if="p.min_qty > 1" class="tag">{{p.min_qty}} 件起</span><span v-if="p.max_qty" class="tag">每单限 {{p.max_qty}} 件</span><span v-if="p.skus.length > 1" class="tag gray">{{p.skus.length}} 种规格</span></div>
+                <div class="d" v-if="p.description">{{p.description}}</div>
+                <div class="foot">
+                  <div class="price"><small>¥</small>{{yuan(minPrice(p))}}<em v-if="p.skus.length > 1">起</em></div>
+                  <button v-if="p.skus.length > 1" class="cta" @click="spec=p">选规格<i v-if="pTotal(p)">{{pTotal(p)}}</i></button>
+                  <span v-else class="qty"><template v-if="qty[p.skus[0].id]"><button class="minus" aria-label="减少" @click="dec(p, p.skus[0].id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><span :key="qty[p.skus[0].id]" class="num">{{qty[p.skus[0].id]}}</span></template><button aria-label="增加" @click="inc(p, p.skus[0].id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-    <div v-if="tip" class="tip">{{tip}}</div>
-    <div class="bar"><div class="cart">购<i v-if="count">{{count}}</i></div><div class="t">¥{{yuan(total)}}<span class="muted" style="font-weight:400"> 共 {{count}} 件</span></div><button class="btn" :disabled="!count" @click="sheet=true">去下单</button></div>
-    <div v-if="sheet" class="mask" @click.self="sheet=false"><div class="sheet">
-      <h3>确认订单</h3>
-      <div v-for="l in lines" :key="l.sku_id" class="row"><span>{{l.name}} × {{l.qty}}</span><span>¥{{yuan(l.price*l.qty)}}</span></div>
-      <div class="row"><b>合计</b><b>¥{{yuan(total)}}</b></div>
-      <label>{{area.location_label}}<span v-if="area.location_required">（必填）</span></label><input v-model="loc" :placeholder="'请输入' + area.location_label">
-      <label>联系电话（可选）</label><input v-model="phone" type="tel" inputmode="tel" maxlength="20" placeholder="手机或座机号码">
-      <label>备注（可选）</label><textarea v-model="remark" rows="2"></textarea>
-      <div class="muted" style="margin-bottom:10px">提交后由门店接单并配送，付款方式请听从门店工作人员安排。</div>
-      <button class="btn" style="width:100%" :disabled="busy" @click="submit">提交订单</button>
-    </div></div>
-    <div v-if="ordersOpen" class="mask" @click.self="ordersOpen=false"><div class="sheet" style="background:var(--bg)">
-      <h3>我的订单</h3>
-      <div v-if="!orders.length" class="muted">还没有订单</div>
-      <div v-for="o in orders" :key="o.id" class="ord">
-        <div class="row"><b>{{o.status_text}}</b><span class="muted">{{o.created_at}}</span></div>
-        <div>{{o.items.map(i => i.product_name + (i.sku_name!=='默认' ? '('+i.sku_name+')' : '') + '×' + i.qty).join('，')}}</div>
-        <div class="row"><span>¥{{yuan(o.payable_amount)}} · {{o.pay_status_text}}</span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
+    <transition name="tip"><div v-if="tip" class="tip">{{tip}}</div></transition>
+    <div class="cartbar" :class="{off: !count}">
+      <div class="bag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><i v-if="count" :key="count" class="bump">{{count}}</i></div>
+      <div class="t"><b>¥{{yuan(total)}}</b><small>共 {{count}} 件</small></div>
+      <button class="btn" :disabled="!count" @click="sheet=true">去结算</button>
+    </div>
+    <transition name="sheet"><div v-if="spec" class="mask" @click.self="spec=null"><div class="sheet" v-drag-close="() => spec = null">
+      <div class="grab"><h3>选规格</h3><button class="x" aria-label="关闭" @click="spec=null"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+      <div class="body">
+        <div class="spec-top"><div class="img" :style="pimg(spec) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(spec), 240)) + ')'} : {}"><template v-if="!pimg(spec)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div><div><div class="n">{{spec.name}}</div><div class="d" v-if="spec.description || limText(spec)">{{[limText(spec), spec.description].filter(Boolean).join(' · ')}}</div></div></div>
+        <div v-for="s in spec.skus" :key="s.id" class="spec" :class="{has: qty[s.id]}">
+          <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg"><span><div class="sk">{{s.name}}</div><div class="pr">¥{{yuan(s.price)}}</div></span></span>
+          <span class="qty"><template v-if="qty[s.id]"><button class="minus" aria-label="减少" @click="dec(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><span :key="qty[s.id]" class="num">{{qty[s.id]}}</span></template><button aria-label="增加" @click="inc(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
+        </div>
+        <button class="btn block" style="margin-top:18px" @click="spec=null">好的</button>
       </div>
-    </div></div>
-  </template>
-  <div v-else class="err">加载中…</div>
+    </div></div></transition>
+    <transition name="sheet"><div v-if="sheet" class="mask" @click.self="sheet=false"><div class="sheet" v-drag-close="() => sheet = false">
+      <div class="grab"><h3>确认订单</h3><button class="x" aria-label="关闭" @click="sheet=false"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+      <div class="body">
+        <div class="group-t">商品</div>
+        <div class="group">
+          <div v-for="l in lines" :key="l.sku_id" class="row"><span>{{l.name}}<span class="q">× {{l.qty}}</span></span><span class="money">¥{{yuan(l.price*l.qty)}}</span></div>
+          <div class="row total"><span>合计</span><span class="money">¥{{yuan(total)}}</span></div>
+        </div>
+        <div class="group-t">配送信息</div>
+        <div class="group">
+          <div class="field"><label>{{area.location_label}}<em v-if="area.location_required">*</em></label><input v-model="loc" :placeholder="area.location_required ? '必填' : '选填'"></div>
+          <div class="field"><label>联系电话</label><input v-model="phone" type="tel" inputmode="tel" maxlength="20" placeholder="选填"></div>
+          <div class="field"><label>备注</label><textarea v-model="remark" rows="1" placeholder="选填"></textarea></div>
+        </div>
+        <div class="note">提交后由门店接单并配送，付款方式请听从门店工作人员安排。</div>
+        <button class="btn block" :disabled="busy" @click="submit">{{busy ? '正在提交…' : '提交订单'}}</button>
+      </div>
+    </div></div></transition>
+    <transition name="sheet"><div v-if="ordersOpen" class="mask" @click.self="ordersOpen=false"><div class="sheet" v-drag-close="() => ordersOpen = false">
+      <div class="grab"><h3>我的订单</h3><button class="x" aria-label="关闭" @click="ordersOpen=false"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+      <div class="body">
+        <div v-if="!orders.length" class="empty-t">还没有订单</div>
+        <div v-for="o in orders" :key="o.id" class="ord">
+          <div class="h"><b>{{o.status_text}}</b><span class="muted">{{o.created_at}}</span></div>
+          <div class="g">{{o.items.map(i => i.product_name + (i.sku_name!=='默认' ? '('+i.sku_name+')' : '') + ' × ' + i.qty).join('，')}}</div>
+          <div class="f"><span><span class="money">¥{{yuan(o.payable_amount)}}</span>　<span class="muted">{{o.pay_status_text}}</span></span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
+        </div>
+      </div>
+    </div></div></transition>
+  </div>
+  <div v-else class="err"><div class="spin"></div>正在加载</div>
 </div>
 <script>window.APP_KIND = 'customer';</script>
 <script src="../vendor/vue.global.prod.js"></script>
 <script src="../common/api.js?v=19"></script>
 <script>
-const { createApp, ref, reactive, computed, onMounted } = Vue;
+const { createApp, ref, reactive, computed, onMounted, nextTick, watch } = Vue;
 const { api, yuan, rid } = Shouyin;
 const app = createApp({
   setup() {
@@ -160,14 +336,97 @@ const app = createApp({
     };
     const showOrders = async () => { try { await ensureLogin(); orders.value = await api.get('/api/customer/orders'); ordersOpen.value = true; } catch (e) { alert(e.message); } };
     const cancel = async (o) => { if (!confirm('确定取消这个订单？')) return; try { await api.post('/api/customer/orders/' + o.id + '/cancel'); showOrders(); } catch (e) { alert(e.message); } };
+    // 商品按一级分类分段（一个商品挂多个分类时每段都显示）；左侧分类跟着滚动高亮，点分类滚到对应段
+    const sections = computed(() => {
+      const out = topCats.value.map(c => ({ id: c.id, name: c.name, items: products.value.filter(p => inCat(p, c.id)) }));
+      const rest = products.value.filter(p => !topCats.value.some(c => inCat(p, c.id)));
+      if (rest.length) out.push({ id: 'other', name: out.length ? '其他' : '全部商品', items: rest });
+      return out.filter(x => x.items.length);
+    });
+    const active = ref(null), listEl = ref(null), intro = ref(true);
+    const activeName = computed(() => kw.value ? '搜索结果' : ((sections.value.find(x => x.id === active.value) || sections.value[0] || {}).name || ''));
+    const catTick = ref(0);
+    const indStyle = computed(() => {
+      catTick.value; const b = document.querySelector('.cats [data-cat="' + active.value + '"]');
+      if (!b) return { opacity: 0 };
+      return { transform: 'translateY(' + (b.offsetTop + b.offsetHeight / 2 - 9) + 'px)' };
+    });
+    watch(sections, () => nextTick(() => catTick.value++));
+    const secCount = (sec) => sec.items.reduce((a, p) => a + pTotal(p), 0);
+    let jumping = 0;
+    const jump = (id) => {
+      intro.value = false; active.value = id; const el = listEl.value && listEl.value.querySelector('[data-sec="' + id + '"]');
+      if (el) { jumping = Date.now(); listEl.value.scrollTo({ top: el.offsetTop - listEl.value.offsetTop, behavior: 'smooth' }); }
+    };
+    const spy = () => {
+      intro.value = false;
+      if (Date.now() - jumping < 600 || kw.value) return;
+      const box = listEl.value; if (!box) return;
+      const top = box.scrollTop + 8; let cur = sections.value[0] && sections.value[0].id;
+      box.querySelectorAll('[data-sec]').forEach(el => { if (el.offsetTop - box.offsetTop <= top) cur = isNaN(+el.dataset.sec) ? el.dataset.sec : +el.dataset.sec; });
+      active.value = cur;
+    };
+    // 搜索：名称、拼音首字母、编码
+    const kw = ref(''), searchOpen = ref(false), kwEl = ref(null);
+    watch(kw, () => nextTick(() => catTick.value++));  // 搜索时分类栏隐藏，回来后重新对齐竖条
+    const openSearch = () => { searchOpen.value = true; nextTick(() => kwEl.value && kwEl.value.focus()); };
+    const found = computed(() => { const k = kw.value.toLowerCase(); if (!k) return []; return products.value.filter(p => p.name.toLowerCase().includes(k) || (p.mnemonic || '').toLowerCase().includes(k) || (p.code || '').toLowerCase().includes(k)); });
+    const spec = ref(null);
+    const pimg = (p) => p.image || (p.skus.find(s => s.image) || {}).image || '';
+    const minPrice = (p) => Math.min(...p.skus.map(s => s.price));
     onMounted(async () => {
       if (!code) { error.value = '请扫描区域二维码进入'; return; }
-      try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; document.title = area.value.store_name; }
+      try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; nextTick(() => { active.value = sections.value[0] && sections.value[0].id; }); document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, intro, kw, searchOpen, kwEl, openSearch, found, spec, pimg, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 });
+// 底部弹层：按住顶部抓手往下拉，手指在哪弹层就在哪（1:1 跟手）；松手时按速度预测落点，过半或快速下滑就关闭，否则弹回
+app.directive('drag-close', {
+  mounted(el, binding) {
+    const grab = el.querySelector('.grab'); if (!grab) return;
+    const mask = el.parentElement;
+    let y0 = 0, dy = 0, hist = [], id = null, closing = false;
+    const project = (v) => (v / 1000) * 0.998 / (1 - 0.998);  // 惯性预测：按松手速度算出会滑到哪（iOS 滚动减速同款公式）
+    const rubber = (x, dim) => (x * dim * 0.55) / (dim + 0.55 * Math.abs(x));  // 往上拉越拉越沉，不会硬停
+    const live = () => { const m = getComputedStyle(el).transform; return m && m !== 'none' ? new DOMMatrixReadOnly(m).m42 : 0; };
+    const dim = (y) => { if (mask) mask.style.backgroundColor = 'rgba(43,38,32,' + (0.4 * Math.max(0, 1 - y / el.offsetHeight)).toFixed(3) + ')'; };
+    grab.addEventListener('pointerdown', (e) => {
+      if (closing || e.target.closest('button')) return;  // 关闭按钮照常点击
+      // 可中途接住：从弹层当前在屏幕上的位置开始跟手，不跳
+      const cur = live(); el.style.transition = 'none'; el.style.transform = 'translateY(' + cur + 'px)';
+      if (mask) mask.style.transition = 'none';
+      id = e.pointerId; grab.setPointerCapture(id); y0 = e.clientY - cur; dy = cur; hist = [{ y: e.clientY, t: e.timeStamp }];
+    });
+    grab.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== id) return;
+      const d = e.clientY - y0;
+      dy = d >= 0 ? d : rubber(d, el.offsetHeight);
+      el.style.transform = 'translateY(' + dy + 'px)'; dim(dy);  // 1:1 跟手，遮罩跟着变淡
+      hist.push({ y: e.clientY, t: e.timeStamp }); if (hist.length > 5) hist.shift();
+    });
+    const end = (e) => {
+      if (e.pointerId !== id) return; id = null;
+      const a = hist[0], b = hist[hist.length - 1];
+      const v = b.t > a.t ? (b.y - a.y) / (b.t - a.t) * 1000 : 0;  // 像素/秒
+      const close = dy > 0 && dy + project(v) > el.offsetHeight / 2;
+      const target = close ? el.offsetHeight : 0, dist = Math.abs(target - dy);
+      // 速度衔接：让动画起步速度等于手指松开时的速度（曲线起始斜率约 2.25）
+      const ms = Math.round(Math.min(460, Math.max(200, Math.abs(v) > 50 ? 2.25 * dist / Math.abs(v) * 1000 : 380)));
+      const ease = 'cubic-bezier(.32, .72, 0, 1)';
+      el.style.transition = 'transform ' + ms + 'ms ' + ease;
+      if (mask) mask.style.transition = 'background-color ' + ms + 'ms ' + ease;
+      if (close) {
+        closing = true; el.style.transform = 'translateY(100%)'; dim(el.offsetHeight);
+        setTimeout(binding.value, ms - 60);
+      } else { el.style.transform = ''; if (mask) mask.style.backgroundColor = ''; }
+    };
+    grab.addEventListener('pointerup', end); grab.addEventListener('pointercancel', end);
+  },
+});
+// iOS Safari 要有 touchstart 监听，按钮的按下样式（:active）才会在手指一碰到就出现
+document.addEventListener('touchstart', () => {}, { passive: true });
 app.config.globalProperties.thumb = Shouyin.thumb;
 app.mount('#app');
 </script>
