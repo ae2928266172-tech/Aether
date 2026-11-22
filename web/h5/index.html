@@ -5,153 +5,168 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>扫码点单</title>
   <style>
-    /* 苹果风格（参照 Apple Store App）：大标题导航、横向分类胶囊、白色大圆角卡片、浅色毛玻璃悬浮结算条、iOS 分组表单。
-       动效只动 transform / opacity：进入 ease-out，退出更快；系统设置“减少动态效果”时只留淡入淡出。 */
+    /* 扫码点单：米白底 + 浅橙强调。左侧分类、右侧按分类分段的商品列表（滚动时左侧跟着高亮），大图、标签、简介、价格；
+       多规格商品点“选规格”从底部弹出规格面板。动效只动 transform / opacity，进入 ease-out、退出更快。 */
     :root {
-      --bg: #f5f5f7; --card: #fff; --label: #1d1d1f; --label-2: #6e6e73; --label-3: #aeaeb2; --sep: rgba(60,60,67,.13);
-      --fill: rgba(118,118,128,.12); --blue: #0071e3; --blue-press: #0062c4; --red: #ff3b30;
+      --bg: #faf7f2; --paper: #fffdf9; --rail: #f3eee6; --line: rgba(80,60,40,.1);
+      --ink: #2b2620; --ink-2: #8c8277; --ink-3: #b9b0a5;
+      --accent: #f4b37a; --accent-2: #eea05f; --accent-soft: #fdf1e4; --accent-ink: #b8682a;
       --ease-out: cubic-bezier(.23, 1, .32, 1); --ease-drawer: cubic-bezier(.32, .72, 0, 1);
-      --nav-h: 44px; --chips-h: 56px;
+      --head-h: 108px; --bar-h: 64px;
     }
     * { box-sizing: border-box; }
-    html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; background: var(--bg); }
-    body { margin: 0; background: var(--bg); color: var(--label); font: 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif;
-      -webkit-font-smoothing: antialiased; letter-spacing: -.022em; }
-    button { font: inherit; color: inherit; letter-spacing: inherit; border: 0; background: none; padding: 0; cursor: pointer; touch-action: manipulation; }
-    button:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
-    .page { padding-bottom: calc(120px + env(safe-area-inset-bottom)); }
+    html { -webkit-tap-highlight-color: transparent; -webkit-text-size-adjust: 100%; }
+    html, body, #app { height: 100%; }
+    body { margin: 0; background: var(--bg); color: var(--ink); overflow: hidden;
+      font: 15px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei", sans-serif; -webkit-font-smoothing: antialiased; }
+    button { font: inherit; color: inherit; border: 0; background: none; padding: 0; cursor: pointer; touch-action: manipulation; }
+    button:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; }
+    .app { height: 100%; display: flex; flex-direction: column; }
 
-    /* 顶部小导航：大标题滚出去后才出现（iOS 大标题收起） */
-    .nav { position: fixed; top: 0; left: 0; right: 0; z-index: 8; height: calc(var(--nav-h) + env(safe-area-inset-top)); padding-top: env(safe-area-inset-top);
-      display: flex; align-items: center; justify-content: center; font-size: 17px; font-weight: 600; pointer-events: none; }
-    .nav::before { content: ""; position: absolute; inset: 0; z-index: -1; background: rgba(245,245,247,.82); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px);
-      border-bottom: .5px solid var(--sep); opacity: 0; transition: opacity 200ms ease; }
-    .nav span { opacity: 0; translate: 0 6px; transition: opacity 200ms ease, translate 260ms var(--ease-out); }
-    .nav.on::before, .nav.on span { opacity: 1; translate: 0 0; }
+    /* 顶部：门店和区域 */
+    .head { flex-shrink: 0; padding: calc(16px + env(safe-area-inset-top)) 18px 16px; background: var(--bg); display: flex; align-items: flex-start; gap: 12px; }
+    .head .tt { flex: 1; min-width: 0; }
+    .head h1 { margin: 0; font-size: 24px; line-height: 1.2; font-weight: 700; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .head .area { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; padding: 4px 10px; border-radius: 13px; background: var(--accent-soft); color: var(--accent-ink); font-size: 13px; font-weight: 600; }
+    .head .area i { width: 6px; height: 6px; border-radius: 3px; background: var(--accent-2); }
+    .head .mine { flex-shrink: 0; height: 34px; padding: 0 14px; border-radius: 17px; background: var(--paper); border: 1px solid var(--line); font-size: 14px; font-weight: 500; margin-top: 2px; }
 
-    /* 大标题 */
-    .hero { padding: calc(18px + env(safe-area-inset-top)) 20px 6px; display: flex; align-items: flex-end; gap: 12px; }
-    .hero .tt { flex: 1; min-width: 0; }
-    .hero .eyebrow { font-size: 14px; font-weight: 600; color: var(--label-2); letter-spacing: -.01em; }
-    .hero h1 { margin: 2px 0 0; font-size: 34px; line-height: 1.12; font-weight: 700; letter-spacing: -.03em; }
-    .hero .mine { flex-shrink: 0; height: 36px; padding: 0 16px; border-radius: 18px; background: var(--card); color: var(--blue); font-size: 15px; font-weight: 600;
-      box-shadow: 0 1px 2px rgba(0,0,0,.06); margin-bottom: 4px; }
+    .main { flex: 1; min-height: 0; display: flex; border-top: 1px solid var(--line); background: var(--paper); border-radius: 20px 20px 0 0; overflow: hidden; }
+    /* 左侧分类：选中项白底 + 左侧浅橙竖条 */
+    .cats { width: 90px; flex-shrink: 0; overflow-y: auto; background: var(--rail); padding-bottom: calc(var(--bar-h) + 40px); scrollbar-width: none; }
+    .cats::-webkit-scrollbar { display: none; }
+    .cat { position: relative; display: block; width: 100%; text-align: left; padding: 18px 12px 18px 16px; font-size: 14px; line-height: 1.35; color: var(--ink-2); transition: color .2s ease, background-color .2s ease; }
+    .cat.on { background: var(--paper); color: var(--ink); font-weight: 600; }
+    .cat::before { content: ""; position: absolute; left: 0; top: 50%; width: 3px; height: 18px; margin-top: -9px; border-radius: 0 3px 3px 0; background: var(--accent-2);
+      opacity: 0; scale: 1 .4; transition: opacity .2s ease, scale 260ms var(--ease-out); }
+    .cat.on::before { opacity: 1; scale: 1 1; }
+    .cat .n { position: absolute; top: 6px; right: 4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--accent-2); color: #fff; font-size: 11px; line-height: 16px; text-align: center; font-weight: 600; vertical-align: 1px; }
 
-    /* 分类：横向胶囊，选中为深色；吸顶在小导航下面 */
-    .chips { position: sticky; top: calc(var(--nav-h) + env(safe-area-inset-top)); z-index: 7; display: flex; gap: 8px; overflow-x: auto; padding: 10px 20px 12px;
-      scrollbar-width: none; -webkit-overflow-scrolling: touch; background: var(--bg); }
-    .chips::-webkit-scrollbar { display: none; }
-    .chips.stuck { background: rgba(245,245,247,.82); -webkit-backdrop-filter: saturate(180%) blur(20px); backdrop-filter: saturate(180%) blur(20px); }
-    .chip { flex-shrink: 0; height: 36px; padding: 0 16px; border-radius: 18px; background: var(--card); color: var(--label); font-size: 15px; font-weight: 500; white-space: nowrap;
-      box-shadow: 0 1px 2px rgba(0,0,0,.05); }
-    .chip.on { background: var(--label); color: #fff; box-shadow: none; }
+    /* 右侧：分类标题 + 搜索，商品列表 */
+    .menu { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .bar-top { flex-shrink: 0; display: flex; align-items: center; gap: 10px; padding: 14px 14px 6px 16px; }
+    .bar-top h2 { flex: 1; margin: 0; font-size: 19px; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .search { display: flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 17px; background: var(--rail); color: var(--ink-2); width: 108px; transition: width 260ms var(--ease-out); }
+    .search.open { width: 100%; }
+    .search svg { width: 15px; height: 15px; flex-shrink: 0; }
+    .search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 15px; color: var(--ink); padding: 0; }
+    .search input::placeholder { color: var(--ink-2); }
+    .search .clr { width: 18px; height: 18px; border-radius: 9px; background: var(--ink-3); color: #fff; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .search .clr svg { width: 8px; height: 8px; }
+    .list { flex: 1; overflow-y: auto; padding: 0 14px calc(var(--bar-h) + 40px + env(safe-area-inset-bottom)) 16px; -webkit-overflow-scrolling: touch; }
+    .sec-t { position: sticky; top: 0; z-index: 1; background: var(--paper); margin: 0; padding: 14px 0 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+    .sec-t { display: none; }  /* 当前分类名已显示在上方标题里 */
+    .sec + .sec { border-top: 1px solid var(--line); }
+    .sec:last-child { min-height: 100%; }  /* 最后一段也能滚到顶，点分类时对得齐 */
+    .item { display: flex; gap: 14px; padding: 14px 0 18px; }
+    .item .img { width: 96px; height: 96px; border-radius: 14px; flex-shrink: 0; background: var(--rail) center/cover no-repeat; display: flex; align-items: center; justify-content: center; color: var(--ink-3); overflow: hidden; }
+    .item .img svg { width: 34px; height: 34px; }
+    .item .info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .item .n { font-size: 17px; font-weight: 700; line-height: 1.3; letter-spacing: -.01em; }
+    .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+    .tag { font-size: 12px; line-height: 18px; padding: 0 6px; border: 1px solid currentColor; border-radius: 4px; color: var(--accent-ink); }
+    .tag.gray { color: var(--ink-2); border-color: var(--ink-3); }
+    .item .d { color: var(--ink-2); font-size: 13px; line-height: 1.5; margin-top: 7px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    .item .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: auto; padding-top: 10px; }
+    .price { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+    .price small { font-size: 13px; font-weight: 600; margin-right: 1px; }
+    .price em { font-style: normal; font-size: 12px; font-weight: 400; color: var(--ink-2); margin-left: 2px; }
+    .cta { position: relative; height: 32px; padding: 0 14px; border-radius: 16px; background: var(--accent); color: var(--ink); font-size: 14px; font-weight: 600; white-space: nowrap; }
+    .cta i { position: absolute; top: -6px; right: -6px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: var(--ink); color: #fff; font: 600 11px/18px -apple-system, sans-serif; font-style: normal; }
+    .empty-list { text-align: center; color: var(--ink-2); padding: 60px 0; font-size: 14px; }
 
-    /* 商品：白色大圆角卡片 */
-    .list { padding: 6px 16px 0; }
-    .sec { font-size: 22px; font-weight: 700; letter-spacing: -.025em; margin: 14px 4px 12px; }
-    .item { background: var(--card); border-radius: 22px; padding: 18px 16px 10px 18px; margin-bottom: 12px; display: flex; gap: 14px; align-items: flex-start; }
-    .item .img { width: 72px; height: 72px; border-radius: 16px; background: #f5f5f7 center/cover no-repeat; flex-shrink: 0; }
-    .item .info { flex: 1; min-width: 0; }
-    .item .n { font-size: 19px; font-weight: 600; letter-spacing: -.025em; line-height: 1.26; }
-    .item .d { color: var(--label-2); font-size: 14px; margin-top: 4px; line-height: 1.43; letter-spacing: -.01em; }
-    .lim { display: inline-block; color: #b25000; background: rgba(255,149,0,.12); font-size: 12px; font-weight: 600; letter-spacing: 0; border-radius: 6px; padding: 2px 8px; margin-top: 8px; }
-    .skus { margin-top: 6px; }
-    .sku { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 54px; padding: 6px 0; }
-    .sku + .sku { border-top: .5px solid var(--sep); }
-    .sku .sn { display: flex; align-items: center; gap: 10px; min-width: 0; }
-    .sku .simg { width: 36px; height: 36px; border-radius: 9px; object-fit: cover; flex-shrink: 0; background: #f5f5f7; }
-    .sku .sx { display: flex; flex-direction: column; min-width: 0; }
-    .sku .sk { font-size: 14px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.3; }
-    .sku .pr { color: var(--label); font-weight: 600; font-size: 17px; font-variant-numeric: tabular-nums; }
+    /* 加减 */
+    .qty { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+    .qty button { width: 30px; height: 30px; border-radius: 15px; display: flex; align-items: center; justify-content: center; background: var(--accent); color: var(--ink); }
+    .qty button.minus { background: transparent; box-shadow: inset 0 0 0 1.5px var(--ink-3); color: var(--ink-2); }
+    .qty button svg { width: 13px; height: 13px; display: block; }
+    .qty .num { min-width: 22px; text-align: center; font-weight: 600; font-variant-numeric: tabular-nums; animation: pop-in 220ms var(--ease-out); }
 
-    /* 加减：未选时蓝色“添加”胶囊，选了变成灰色胶囊 − 数量 + */
-    .qty { display: flex; align-items: center; flex-shrink: 0; height: 36px; border-radius: 18px; background: var(--blue); color: #fff; }
-    .qty.has { background: var(--fill); color: var(--blue); }
-    .qty button { height: 36px; min-width: 36px; border-radius: 18px; display: flex; align-items: center; justify-content: center; }
-    .qty button svg { width: 15px; height: 15px; display: block; }
-    .qty .addt { padding: 0 16px; font-size: 15px; font-weight: 600; letter-spacing: 0; }
-    .qty .num { min-width: 22px; text-align: center; font-size: 16px; font-weight: 600; font-variant-numeric: tabular-nums; color: var(--label); animation: pop-in 220ms var(--ease-out); }
-    .empty-list { text-align: center; color: var(--label-2); padding: 60px 0; font-size: 15px; }
+    /* 底部结算条 */
+    .cartbar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); height: var(--bar-h); z-index: 6; border-radius: 32px; padding: 0 8px 0 10px;
+      display: flex; align-items: center; gap: 12px; background: var(--ink); color: #fff; box-shadow: 0 10px 30px rgba(43,38,32,.22);
+      transition: translate 380ms var(--ease-drawer), opacity 200ms ease; }
+    .cartbar.off { translate: 0 calc(100% + 30px); opacity: 0; pointer-events: none; }
+    .cartbar .bag { width: 46px; height: 46px; border-radius: 23px; background: rgba(255,255,255,.12); display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
+    .cartbar .bag svg { width: 22px; height: 22px; }
+    .cartbar .bag i { position: absolute; top: -3px; right: -5px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--accent); color: var(--ink);
+      font: 700 12px/20px -apple-system, sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px var(--ink); }
+    .cartbar .t { flex: 1; min-width: 0; line-height: 1.2; }
+    .cartbar .t b { display: block; font-size: 20px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+    .cartbar .t small { font-size: 12px; color: rgba(255,255,255,.6); }
+    .btn { height: 48px; padding: 0 26px; border-radius: 24px; background: var(--accent); color: var(--ink); font-size: 16px; font-weight: 700; }
+    .btn:active:not(:disabled) { background: var(--accent-2); }
+    .btn.block { width: 100%; height: 52px; border-radius: 26px; }
+    .btn:disabled { opacity: .5; }
 
-    /* 结算条：浅色毛玻璃，悬浮在底部 */
-    .bar { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); height: 68px; z-index: 6; border-radius: 34px; padding: 0 10px 0 12px;
-      display: flex; align-items: center; gap: 12px; background: rgba(255,255,255,.78); -webkit-backdrop-filter: saturate(180%) blur(24px); backdrop-filter: saturate(180%) blur(24px);
-      box-shadow: 0 10px 40px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.06); translate: 0 0; transition: translate 360ms var(--ease-drawer), opacity 200ms ease; }
-    .bar.off { translate: 0 calc(100% + 30px); opacity: 0; pointer-events: none; }
-    .bar .cart { width: 46px; height: 46px; border-radius: 23px; background: var(--fill); display: flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0; }
-    .bar .cart svg { width: 22px; height: 22px; }
-    .bar .cart i { position: absolute; top: -3px; right: -5px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--red); color: #fff;
-      font: 600 12px/20px -apple-system, sans-serif; font-style: normal; text-align: center; box-shadow: 0 0 0 2px #fff; }
-    .bar .t { flex: 1; min-width: 0; line-height: 1.2; }
-    .bar .t b { display: block; font-size: 21px; font-weight: 700; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
-    .bar .t small { font-size: 13px; color: var(--label-2); letter-spacing: -.01em; }
-    .btn { height: 50px; padding: 0 26px; border-radius: 25px; background: var(--blue); color: #fff; font-size: 17px; font-weight: 600; }
-    .btn:active:not(:disabled) { background: var(--blue-press); }
-    .btn.block { width: 100%; height: 54px; border-radius: 16px; }
-    .btn:disabled { background: #b3d4f7; }
-
-    /* 底部弹层：iOS 表单，顶部抓手可下拉关闭 */
-    .mask { position: fixed; inset: 0; background: rgba(0,0,0,.32); display: flex; align-items: flex-end; z-index: 9; }
-    .sheet { background: #f2f2f7; width: 100%; border-radius: 24px 24px 0 0; max-height: 90vh; max-height: 90dvh; display: flex; flex-direction: column; will-change: transform; }
-    .sheet .grab { flex-shrink: 0; padding: 8px 20px 4px; touch-action: none; cursor: grab; display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; }
-    .sheet .grab::before { content: ""; flex-basis: 100%; height: 5px; border-radius: 3px; background: rgba(60,60,67,.3); margin: 0 calc(50% - 18px) 14px; }
-    .sheet h3 { margin: 0; font-size: 28px; font-weight: 700; letter-spacing: -.03em; }
-    .sheet .x { width: 30px; height: 30px; border-radius: 15px; background: var(--fill); color: var(--label-2); display: flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+    /* 底部弹层 */
+    .mask { position: fixed; inset: 0; background: rgba(43,38,32,.4); display: flex; align-items: flex-end; z-index: 9; }
+    .sheet { background: var(--bg); width: 100%; border-radius: 22px 22px 0 0; max-height: 88vh; max-height: 88dvh; display: flex; flex-direction: column; will-change: transform; }
+    .sheet .grab { flex-shrink: 0; padding: 8px 18px 4px; touch-action: none; cursor: grab; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; }
+    .sheet .grab::before { content: ""; flex-basis: 100%; height: 5px; border-radius: 3px; background: rgba(80,60,40,.2); margin: 0 calc(50% - 18px) 12px; }
+    .sheet h3 { margin: 0; font-size: 20px; font-weight: 700; }
+    .sheet .x { width: 30px; height: 30px; border-radius: 15px; background: var(--rail); color: var(--ink-2); display: flex; align-items: center; justify-content: center; }
     .sheet .x svg { width: 12px; height: 12px; }
-    .sheet .body { overflow-y: auto; padding: 14px 16px calc(20px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
-    .group { background: var(--card); border-radius: 14px; margin-bottom: 22px; overflow: hidden; }
-    .group-t { color: var(--label-2); font-size: 13px; text-transform: uppercase; margin: 0 16px 7px; letter-spacing: 0; }
-    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 16px; font-size: 17px; }
-    .group .row + .row { border-top: .5px solid var(--sep); }
-    .row .q { color: var(--label-2); margin-left: 6px; }
+    .sheet .body { overflow-y: auto; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); overscroll-behavior: contain; }
+    .spec-top { display: flex; gap: 14px; align-items: center; }
+    .spec-top .img { width: 84px; height: 84px; border-radius: 14px; background: var(--rail) center/cover no-repeat; flex-shrink: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-3); }
+    .spec-top .img svg { width: 30px; height: 30px; }
+    .spec-top .n { font-size: 18px; font-weight: 700; }
+    .spec-top .d { color: var(--ink-2); font-size: 13px; margin-top: 4px; }
+    .spec { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: var(--paper); border-radius: 14px; padding: 12px 14px; margin-top: 10px; border: 1px solid transparent; transition: border-color .2s ease, background-color .2s ease; }
+    .spec.has { border-color: var(--accent); background: var(--accent-soft); }
+    .spec .sn { display: flex; align-items: center; gap: 10px; min-width: 0; }
+    .spec .simg { width: 40px; height: 40px; border-radius: 10px; object-fit: cover; flex-shrink: 0; }
+    .spec .sk { font-size: 15px; font-weight: 600; }
+    .spec .pr { font-size: 14px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+    .group { background: var(--paper); border-radius: 14px; margin-bottom: 20px; overflow: hidden; }
+    .group-t { color: var(--ink-2); font-size: 13px; margin: 0 4px 7px; }
+    .row { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 12px 14px; font-size: 15px; }
+    .group .row + .row { border-top: 1px solid var(--line); }
+    .row .q { color: var(--ink-2); margin-left: 6px; }
     .row .money { font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .row.total { font-weight: 600; }
-    .row.total .money { font-size: 20px; letter-spacing: -.02em; }
-    .field { display: flex; align-items: center; gap: 12px; padding: 0 16px; min-height: 50px; }
-    .field + .field { border-top: .5px solid var(--sep); }
-    .field label { width: 84px; flex-shrink: 0; font-size: 17px; }
-    .field label em { color: var(--red); font-style: normal; margin-left: 2px; }
-    .field input, .field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 17px; color: var(--label); padding: 13px 0; resize: none; text-align: right; }
-    .field input::placeholder, .field textarea::placeholder { color: var(--label-3); }
-    .note { color: var(--label-2); font-size: 13px; line-height: 1.5; margin: -14px 16px 22px; letter-spacing: 0; }
-    .ord { background: var(--card); border-radius: 16px; padding: 16px; margin-bottom: 12px; }
+    .row.total { font-weight: 700; }
+    .row.total .money { font-size: 19px; }
+    .field { display: flex; align-items: center; gap: 12px; padding: 0 14px; min-height: 50px; }
+    .field + .field { border-top: 1px solid var(--line); }
+    .field label { width: 76px; flex-shrink: 0; font-size: 15px; }
+    .field label em { color: #e0613a; font-style: normal; margin-left: 2px; }
+    .field input, .field textarea { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font: inherit; font-size: 16px; color: var(--ink); padding: 13px 0; resize: none; text-align: right; }
+    .field input::placeholder, .field textarea::placeholder { color: var(--ink-3); }
+    .note { color: var(--ink-2); font-size: 12px; line-height: 1.5; margin: -12px 4px 18px; }
+    .ord { background: var(--paper); border-radius: 16px; padding: 14px 16px; margin-bottom: 10px; }
     .ord .h { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-    .ord .h b { font-size: 17px; font-weight: 600; }
-    .ord .g { color: var(--label-2); font-size: 15px; line-height: 1.45; }
-    .ord .f { display: flex; justify-content: space-between; align-items: center; margin-top: 12px; font-size: 15px; }
-    .ord .f .money { font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
-    .tag { display: inline-block; font-size: 12px; font-weight: 600; letter-spacing: 0; padding: 3px 8px; border-radius: 6px; background: var(--fill); color: var(--label-2); }
-    .tag.blue { background: #e8f2fd; color: var(--blue); }
-    .link { color: var(--red); font-size: 15px; height: 34px; padding: 0 14px; border-radius: 17px; background: rgba(255,59,48,.1); font-weight: 600; }
-    .muted { color: var(--label-2); font-size: 13px; letter-spacing: 0; }
-    .empty-t { text-align: center; color: var(--label-2); padding: 48px 0; }
+    .ord .h b { font-size: 16px; }
+    .ord .g { color: var(--ink-2); font-size: 14px; line-height: 1.5; }
+    .ord .f { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+    .ord .f .money { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .link { color: #d4553a; font-size: 14px; height: 32px; padding: 0 14px; border-radius: 16px; background: rgba(212,85,58,.1); font-weight: 600; }
+    .muted { color: var(--ink-2); font-size: 12px; }
+    .empty-t { text-align: center; color: var(--ink-2); padding: 44px 0; }
     .tip { position: fixed; left: 50%; bottom: calc(100px + env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 20; max-width: 86%; text-align: center;
-      background: rgba(29,29,31,.86); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); color: #fff; padding: 11px 18px; border-radius: 22px; font-size: 15px; }
-    .err { padding: 32vh 24px 0; text-align: center; color: var(--label-2); font-size: 17px; }
-    .spin { width: 28px; height: 28px; margin: 0 auto 14px; border-radius: 50%; border: 3px solid var(--fill); border-top-color: var(--label-2); animation: spin 700ms linear infinite; }
+      background: rgba(43,38,32,.9); color: #fff; padding: 10px 18px; border-radius: 20px; font-size: 14px; }
+    .err { padding: 32vh 24px 0; text-align: center; color: var(--ink-2); font-size: 16px; }
+    .spin { width: 28px; height: 28px; margin: 0 auto 14px; border-radius: 50%; border: 3px solid var(--rail); border-top-color: var(--accent-2); animation: spin 700ms linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* 动效 */
     button { transition: transform 160ms var(--ease-out), background-color .2s ease, color .2s ease; }
-    .qty button:active, .hero .mine:active, .link:active, .chip:active, .sheet .x:active { transform: scale(.92); }
+    .qty button:active, .cta:active, .head .mine:active, .link:active, .sheet .x:active { transform: scale(.9); }
     .btn:active:not(:disabled) { transform: scale(.97); }
+    .cat:active { transform: none; }
     @keyframes pop-in { from { opacity: 0; scale: .6; } }
-    @keyframes rise { from { opacity: 0; translate: 0 14px; } }
-    /* 首次打开：商品卡片依次浮现（只在打开页面时一次） */
+    @keyframes rise { from { opacity: 0; translate: 0 12px; } }
+    .main { animation: rise 480ms var(--ease-out) both; }
     .list.intro .item { animation: rise 460ms var(--ease-out) both; }
-    .list.intro .item:nth-child(2) { animation-delay: 40ms; } .list.intro .item:nth-child(3) { animation-delay: 75ms; }
-    .list.intro .item:nth-child(4) { animation-delay: 105ms; } .list.intro .item:nth-child(5) { animation-delay: 130ms; } .list.intro .item:nth-child(n+6) { animation-delay: 150ms; }
-    .hero { animation: rise 460ms var(--ease-out) both; }
-    /* 切换分类：列表快速淡入 */
-    .fade-enter-active { transition: opacity 180ms ease-out; }
-    .fade-enter-from { opacity: 0; }
-    .bar .cart i.bump { animation: bump 320ms var(--ease-out); }
+    .list.intro .sec:first-child .item:nth-child(3) { animation-delay: 50ms; } .list.intro .sec:first-child .item:nth-child(4) { animation-delay: 90ms; }
+    .list.intro .sec:first-child .item:nth-child(n+5), .list.intro .sec:not(:first-child) .item { animation-delay: 120ms; }
+    .cartbar .bag i.bump { animation: bump 320ms var(--ease-out); }
     @keyframes bump { 35% { scale: 1.3; } }
-    .sheet-enter-active { transition: background-color 440ms var(--ease-drawer); }
-    .sheet-leave-active { transition: background-color 260ms var(--ease-drawer); }
-    .sheet-enter-from, .sheet-leave-to { background-color: rgba(0,0,0,0); }
-    .sheet-enter-active .sheet { transition: transform 440ms var(--ease-drawer); }
-    .sheet-leave-active .sheet { transition: transform 260ms var(--ease-drawer); }
+    .sheet-enter-active { transition: background-color 420ms var(--ease-drawer); }
+    .sheet-leave-active { transition: background-color 240ms var(--ease-drawer); }
+    .sheet-enter-from, .sheet-leave-to { background-color: rgba(43,38,32,0); }
+    .sheet-enter-active .sheet { transition: transform 420ms var(--ease-drawer); }
+    .sheet-leave-active .sheet { transition: transform 240ms var(--ease-drawer); }
     .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: translateY(100%) !important; }
     .tip-enter-active { transition: opacity 220ms var(--ease-out), translate 220ms var(--ease-out); }
     .tip-leave-active { transition: opacity 160ms ease-out; }
@@ -159,58 +174,69 @@
     .tip-leave-to { opacity: 0; }
     @media (prefers-reduced-motion: reduce) {
       button:active { transform: none !important; }
-      .bar .cart i.bump, .qty .num { animation: none; }
+      .cartbar .bag i.bump, .qty .num { animation: none; }
       @keyframes rise { from { opacity: 0; } }
       .sheet-enter-from .sheet, .sheet-leave-to .sheet { transform: none !important; opacity: 0; }
       .sheet-enter-active .sheet, .sheet-leave-active .sheet { transition: opacity 200ms ease; }
-      .tip-enter-from, .nav span { translate: none; }
-      .bar.off { translate: none; }
-    }
-    @media (prefers-reduced-transparency: reduce) {
-      .nav::before, .chips.stuck { background: #f5f5f7; -webkit-backdrop-filter: none; backdrop-filter: none; }
-      .bar { background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; }
+      .tip-enter-from, .cartbar.off { translate: none; }
     }
   </style>
 </head>
 <body>
 <div id="app">
   <div v-if="error" class="err">{{error}}</div>
-  <div v-else-if="area" class="page">
-    <div class="nav" :class="{on: scrolled}"><span>{{area.store_name}}</span></div>
-    <div class="hero" ref="hero">
-      <div class="tt"><div class="eyebrow">{{area.area_label}} · {{area.area_name}}</div><h1>{{area.store_name}}</h1></div>
+  <div v-else-if="area" class="app">
+    <div class="head">
+      <div class="tt"><h1>{{area.store_name}}</h1><div class="area"><i></i>{{area.area_label}} · {{area.area_name}}</div></div>
       <button class="mine" @click="showOrders">我的订单</button>
     </div>
-    <div class="chips" :class="{stuck: scrolled}" v-if="topCats.length">
-      <button class="chip" :class="{on:!cat}" @click="pickCat(null)">全部</button>
-      <button v-for="c in topCats" :key="c.id" class="chip" :class="{on:cat===c.id}" @click="pickCat(c.id)">{{c.name}}</button>
-    </div>
-    <transition name="fade" mode="out-in">
-      <div class="list" :class="{intro}" :key="cat || 0">
-        <div v-if="!shown.length" class="empty-list">这个分类暂时没有商品</div>
-        <div v-for="p in shown" :key="p.id" class="item">
-          <div class="img" v-if="p.image" :style="{backgroundImage:'url(' + JSON.stringify(thumb(p.image, 240)) + ')'}"></div>
-          <div class="info">
-            <div class="n">{{p.name}}</div><div class="d" v-if="p.description">{{p.description}}</div><div class="lim" v-if="p.min_qty > 1 || p.max_qty">{{limText(p)}}</div>
-            <div class="skus">
-              <div v-for="s in p.skus" :key="s.id" class="sku">
-                <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg"><span class="sx"><span v-if="s.name !== '默认'" class="sk">{{s.name}}</span><span class="pr">¥{{yuan(s.price)}}</span></span></span>
-                <span class="qty" :class="{has: qty[s.id]}">
-                  <template v-if="qty[s.id]"><button aria-label="减少" @click="dec(p, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button><span :key="qty[s.id]" class="num">{{qty[s.id]}}</span><button aria-label="增加" @click="inc(p, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></template>
-                  <button v-else class="addt" @click="inc(p, s.id)">添加</button>
-                </span>
+    <div class="main">
+      <div class="cats" v-show="!kw">
+        <button v-for="sec in sections" :key="sec.id" class="cat" :class="{on: active===sec.id}" @click="jump(sec.id)">{{sec.name}}<span v-if="secCount(sec)" class="n">{{secCount(sec)}}</span></button>
+      </div>
+      <div class="menu">
+        <div class="bar-top">
+          <h2 v-if="!searchOpen">{{activeName}}</h2>
+          <label class="search" :class="{open: searchOpen}" @click="openSearch"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="7" cy="7" r="5"/><path d="m11 11 3.5 3.5"/></svg><input ref="kwEl" v-model.trim="kw" placeholder="搜索" enterkeyhint="search" @blur="!kw && (searchOpen=false)"><button v-if="kw" class="clr" aria-label="清除" @click.prevent="kw='';kwEl && kwEl.focus()"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></label>
+        </div>
+        <div class="list" ref="listEl" :class="{intro}" @scroll.passive="spy">
+          <div v-if="kw && !found.length" class="empty-list">没有找到“{{kw}}”</div>
+          <div v-for="sec in (kw ? [{id: 'kw', name: '搜索结果', items: found}] : sections)" :key="sec.id" class="sec" :data-sec="sec.id">
+            <h4 class="sec-t">{{sec.name}}</h4>
+            <div v-for="p in sec.items" :key="p.id" class="item">
+              <div class="img" :style="pimg(p) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(p), 240)) + ')'} : {}"><template v-if="!pimg(p)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div>
+              <div class="info">
+                <div class="n">{{p.name}}</div>
+                <div class="tags" v-if="p.min_qty > 1 || p.max_qty || p.skus.length > 1"><span v-if="p.min_qty > 1" class="tag">{{p.min_qty}} 件起</span><span v-if="p.max_qty" class="tag">每单限 {{p.max_qty}} 件</span><span v-if="p.skus.length > 1" class="tag gray">{{p.skus.length}} 种规格</span></div>
+                <div class="d" v-if="p.description">{{p.description}}</div>
+                <div class="foot">
+                  <div class="price"><small>¥</small>{{yuan(minPrice(p))}}<em v-if="p.skus.length > 1">起</em></div>
+                  <button v-if="p.skus.length > 1" class="cta" @click="spec=p">选规格<i v-if="pTotal(p)">{{pTotal(p)}}</i></button>
+                  <span v-else class="qty"><template v-if="qty[p.skus[0].id]"><button class="minus" aria-label="减少" @click="dec(p, p.skus[0].id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><span :key="qty[p.skus[0].id]" class="num">{{qty[p.skus[0].id]}}</span></template><button aria-label="增加" @click="inc(p, p.skus[0].id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
+                </div>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </transition>
+    </div>
     <transition name="tip"><div v-if="tip" class="tip">{{tip}}</div></transition>
-    <div class="bar" :class="{off: !count}">
-      <div class="cart"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><i v-if="count" :key="count" class="bump">{{count}}</i></div>
+    <div class="cartbar" :class="{off: !count}">
+      <div class="bag"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg><i v-if="count" :key="count" class="bump">{{count}}</i></div>
       <div class="t"><b>¥{{yuan(total)}}</b><small>共 {{count}} 件</small></div>
       <button class="btn" :disabled="!count" @click="sheet=true">去结算</button>
     </div>
+    <transition name="sheet"><div v-if="spec" class="mask" @click.self="spec=null"><div class="sheet" v-drag-close="() => spec = null">
+      <div class="grab"><h3>选规格</h3><button class="x" aria-label="关闭" @click="spec=null"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+      <div class="body">
+        <div class="spec-top"><div class="img" :style="pimg(spec) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(spec), 240)) + ')'} : {}"><template v-if="!pimg(spec)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div><div><div class="n">{{spec.name}}</div><div class="d" v-if="spec.description || limText(spec)">{{[limText(spec), spec.description].filter(Boolean).join(' · ')}}</div></div></div>
+        <div v-for="s in spec.skus" :key="s.id" class="spec" :class="{has: qty[s.id]}">
+          <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg"><span><div class="sk">{{s.name}}</div><div class="pr">¥{{yuan(s.price)}}</div></span></span>
+          <span class="qty"><template v-if="qty[s.id]"><button class="minus" aria-label="减少" @click="dec(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><span :key="qty[s.id]" class="num">{{qty[s.id]}}</span></template><button aria-label="增加" @click="inc(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
+        </div>
+        <button class="btn block" style="margin-top:18px" @click="spec=null">好的</button>
+      </div>
+    </div></div></transition>
     <transition name="sheet"><div v-if="sheet" class="mask" @click.self="sheet=false"><div class="sheet" v-drag-close="() => sheet = false">
       <div class="grab"><h3>确认订单</h3><button class="x" aria-label="关闭" @click="sheet=false"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
       <div class="body">
@@ -236,7 +262,7 @@
         <div v-for="o in orders" :key="o.id" class="ord">
           <div class="h"><b>{{o.status_text}}</b><span class="muted">{{o.created_at}}</span></div>
           <div class="g">{{o.items.map(i => i.product_name + (i.sku_name!=='默认' ? '('+i.sku_name+')' : '') + ' × ' + i.qty).join('，')}}</div>
-          <div class="f"><span><span class="money">¥{{yuan(o.payable_amount)}}</span>　<span class="tag" :class="{blue: o.pay_status==='paid'}">{{o.pay_status_text}}</span></span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
+          <div class="f"><span><span class="money">¥{{yuan(o.payable_amount)}}</span>　<span class="muted">{{o.pay_status_text}}</span></span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
         </div>
       </div>
     </div></div></transition>
@@ -308,17 +334,42 @@ const app = createApp({
     };
     const showOrders = async () => { try { await ensureLogin(); orders.value = await api.get('/api/customer/orders'); ordersOpen.value = true; } catch (e) { alert(e.message); } };
     const cancel = async (o) => { if (!confirm('确定取消这个订单？')) return; try { await api.post('/api/customer/orders/' + o.id + '/cancel'); showOrders(); } catch (e) { alert(e.message); } };
-    // 大标题滚出去后显示顶部小导航；首次进入时卡片依次浮现，之后切分类只淡入
-    const scrolled = ref(false), hero = ref(null), intro = ref(true);
-    const onScroll = () => { const h = hero.value; scrolled.value = !!h && h.getBoundingClientRect().bottom < 50; };
-    window.addEventListener('scroll', onScroll, { passive: true });
-    const pickCat = (id) => { intro.value = false; if (cat.value === id) return; cat.value = id; const c = document.querySelector('.chips'); if (c && scrolled.value) window.scrollTo({ top: hero.value.offsetHeight, behavior: 'smooth' }); };
+    // 商品按一级分类分段（一个商品挂多个分类时每段都显示）；左侧分类跟着滚动高亮，点分类滚到对应段
+    const sections = computed(() => {
+      const out = topCats.value.map(c => ({ id: c.id, name: c.name, items: products.value.filter(p => inCat(p, c.id)) }));
+      const rest = products.value.filter(p => !topCats.value.some(c => inCat(p, c.id)));
+      if (rest.length) out.push({ id: 'other', name: out.length ? '其他' : '全部商品', items: rest });
+      return out.filter(x => x.items.length);
+    });
+    const active = ref(null), listEl = ref(null), intro = ref(true);
+    const activeName = computed(() => kw.value ? '搜索结果' : ((sections.value.find(x => x.id === active.value) || sections.value[0] || {}).name || ''));
+    const secCount = (sec) => sec.items.reduce((a, p) => a + pTotal(p), 0);
+    let jumping = 0;
+    const jump = (id) => {
+      intro.value = false; active.value = id; const el = listEl.value && listEl.value.querySelector('[data-sec="' + id + '"]');
+      if (el) { jumping = Date.now(); listEl.value.scrollTo({ top: el.offsetTop - listEl.value.offsetTop, behavior: 'smooth' }); }
+    };
+    const spy = () => {
+      intro.value = false;
+      if (Date.now() - jumping < 600 || kw.value) return;
+      const box = listEl.value; if (!box) return;
+      const top = box.scrollTop + 8; let cur = sections.value[0] && sections.value[0].id;
+      box.querySelectorAll('[data-sec]').forEach(el => { if (el.offsetTop - box.offsetTop <= top) cur = isNaN(+el.dataset.sec) ? el.dataset.sec : +el.dataset.sec; });
+      active.value = cur;
+    };
+    // 搜索：名称、拼音首字母、编码
+    const kw = ref(''), searchOpen = ref(false), kwEl = ref(null);
+    const openSearch = () => { searchOpen.value = true; nextTick(() => kwEl.value && kwEl.value.focus()); };
+    const found = computed(() => { const k = kw.value.toLowerCase(); if (!k) return []; return products.value.filter(p => p.name.toLowerCase().includes(k) || (p.mnemonic || '').toLowerCase().includes(k) || (p.code || '').toLowerCase().includes(k)); });
+    const spec = ref(null);
+    const pimg = (p) => p.image || (p.skus.find(s => s.image) || {}).image || '';
+    const minPrice = (p) => Math.min(...p.skus.map(s => s.price));
     onMounted(async () => {
       if (!code) { error.value = '请扫描区域二维码进入'; return; }
-      try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; document.title = area.value.store_name; }
+      try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; nextTick(() => { active.value = sections.value[0] && sections.value[0].id; }); document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { scrolled, hero, intro, pickCat, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { sections, active, activeName, secCount, jump, spy, listEl, intro, kw, searchOpen, kwEl, openSearch, found, spec, pimg, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 });
 // 底部弹层：按住顶部抓手往下拉，手指在哪弹层就在哪（1:1 跟手）；松手时按速度预测落点，过半或快速下滑就关闭，否则弹回
