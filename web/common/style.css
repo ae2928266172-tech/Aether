@@ -196,3 +196,58 @@ a:hover { text-decoration: underline; }
 .img-drop .rm { position: absolute; top: 3px; right: 3px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgba(24,24,27,.7); color: #fff;
   font-size: 14px; line-height: 20px; padding: 0; cursor: pointer; display: none; }
 .img-drop:hover .rm { display: block; }
+
+/* ===== 动效 =====
+   原则：只动 transform / opacity；进入用 ease-out，退出比进入快；一天点上百次的东西（翻页、切分类、键盘输入、金额数字）不加动画。
+   兼容 Electron 22（Chromium 108）：不用 @starting-style、CSS 嵌套；位移缩放用 translate / scale 单独属性，不和元素原有的 transform 打架。 */
+:root {
+  --ease-out: cubic-bezier(.23, 1, .32, 1);
+  --ease-in-out: cubic-bezier(.77, 0, .175, 1);
+  --ease-drawer: cubic-bezier(.32, .72, 0, 1);
+  --dur-press: 140ms;
+  --dur-enter: 200ms;
+  --dur-exit: 140ms;
+}
+@keyframes ui-fade-in { from { opacity: 0; } }
+@keyframes ui-fade-out { to { opacity: 0; } }
+@keyframes ui-pop-in { from { opacity: 0; scale: .97; } }
+@keyframes ui-pop-out { to { opacity: 0; scale: .98; } }
+@keyframes ui-rise-in { from { opacity: 0; translate: 0 8px; } }
+
+/* 按下：轻微缩小，松手弹回，确认“点到了” */
+.el-button { transition: background-color .12s ease, border-color .12s ease, color .12s ease, transform var(--dur-press) var(--ease-out); }
+.el-button:active:not(.is-disabled):not(.is-link):not(.is-text) { transform: scale(.97); }
+.seg, .quick .q, .topbar .pill { transition: background-color .12s ease, color .12s ease, transform var(--dur-press) var(--ease-out); }
+.seg:active, .quick .q:active, .topbar .pill:active { transform: scale(.97); }
+.aside .item { transition: background-color .12s ease, color .12s ease; }
+
+/* 对话框、确认框：从 97% 放大淡入（居中弹出，不再从上方滑下） */
+.dialog-fade-enter-active { animation: ui-fade-in var(--dur-enter) var(--ease-out); }
+.dialog-fade-enter-active .el-overlay-dialog { animation: ui-pop-in var(--dur-enter) var(--ease-out); }
+.dialog-fade-leave-active { animation: ui-fade-out var(--dur-exit) var(--ease-out) forwards; }
+.dialog-fade-leave-active .el-overlay-dialog { animation: ui-pop-out var(--dur-exit) var(--ease-out) forwards; }
+.fade-in-linear-enter-active .el-overlay-message-box { animation: ui-pop-in var(--dur-enter) var(--ease-out); }
+.fade-in-linear-leave-active .el-overlay-message-box { animation: ui-pop-out var(--dur-exit) var(--ease-out) forwards; }
+
+/* 侧边抽屉：iOS 式减速曲线，收起更快 */
+.el-drawer-fade-enter-active { transition: background-color 320ms var(--ease-drawer); }
+.el-drawer-fade-leave-active { transition: background-color 200ms var(--ease-drawer); }
+.el-drawer-fade-enter-active .el-drawer { transition: transform 320ms var(--ease-drawer); }
+.el-drawer-fade-leave-active .el-drawer { transition: transform 200ms var(--ease-drawer); }
+
+/* 顶部提示：从上方滑入，曲线更利落 */
+.el-message { transition: opacity 220ms var(--ease-out), transform 300ms var(--ease-out), top 300ms var(--ease-out); }
+
+/* 登录卡片：打开时轻轻上浮（一天只见几次，可以有一点仪式感） */
+.login-card { animation: ui-rise-in 360ms var(--ease-out) both; }
+
+/* 键盘操作时显示焦点框，手点时不显示 */
+button:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* 系统设置了“减少动态效果”：去掉位移和缩放，只留淡入淡出 */
+@media (prefers-reduced-motion: reduce) {
+  @keyframes ui-pop-in { from { opacity: 0; } }
+  @keyframes ui-pop-out { to { opacity: 0; } }
+  @keyframes ui-rise-in { from { opacity: 0; } }
+  .el-button:active, .seg:active, .quick .q:active, .topbar .pill:active { transform: none !important; }
+}
