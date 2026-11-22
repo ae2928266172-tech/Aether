@@ -85,7 +85,7 @@ const PickDialog = {
 
 // 优惠（打折 / 调低应收）+ 收款，收银和订单收款共用
 const PayDialog = {
-  props: ['modelValue', 'user', 'lines', 'title', 'onPay'],
+  props: ['modelValue', 'user', 'lines', 'title', 'onPay', 'onState'],
   emits: ['update:modelValue'],
   template: `
   <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="900px" class="paybox" @open="reset" @opened="focusReceived">
@@ -227,6 +227,13 @@ const PayDialog = {
     };
     onMounted(() => window.addEventListener('keydown', onKey, true));
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
+    // 顾客副屏：收款框开着时把应付、优惠、实收报给收银页
+    watch(() => [props.modelValue, q.payable_amount, q.discount_amount, method.value, received.value], () => {
+      if (!props.onState) return;
+      if (!props.modelValue) return props.onState(null);
+      const r = method.value === 'cash' ? Shouyin.parseMoney(received.value) : null;
+      props.onState({ payable: q.payable_amount, discount: q.discount_amount, method: method.value, received: r });
+    });
     return { q, qErr, rate, rateInput, payableInput, method, received, busy, canDiscount, canAdjust, limitText, quote, reset, roundDown, change, quick, submit, yuan, methods: METHODS,
       receivedRef, rateRef, payableRef, focusReceived, quoting, field, pickField, applyRate, PAD, padPress };
   },
@@ -295,7 +302,7 @@ const Pos = {
       <div class="chips"><button v-for="t in ['送到病房', '自取', '加急', '已电话确认']" :key="t" type="button" class="chip" @click="remark = remark ? remark + '，' + t : t">{{t}}</button></div>
       <template #footer><el-button size="large" @click="remark = ''; remarkDlg = false">清除备注</el-button><el-button size="large" type="primary" @click="remarkDlg = false">完成</el-button></template>
     </el-dialog>
-    <pay-dialog v-model="payDlg" :user="user" :lines="lines" @pay="pay" />
+    <pay-dialog v-model="payDlg" :user="user" :lines="lines" :on-state="payState" @pay="pay" />
     <pick-dialog v-model="scanDlg" :matches="scanMatches" shortcuts @pick="add" />
     <el-dialog v-model="heldDlg" width="min(960px, 94vw)" class="held-dlg">
       <template #header><span class="pick-title">挂单</span><span class="muted pick-tip">共 {{held.length}} 单</span></template>
@@ -439,6 +446,13 @@ const Pos = {
     const count = computed(() => cart.value.reduce((a, l) => a + l.qty, 0));
     const total = computed(() => cart.value.reduce((a, l) => a + l.qty * l.price, 0));
     const lines = computed(() => cart.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
+    // 顾客副屏：购物车、收款框里的金额、收款成功，有变化就发给副屏
+    const payInfo = ref(null), doneInfo = ref(null);
+    const payState = (v) => { payInfo.value = v; };
+    const toDisplay = () => ShouyinDisplay.sender.send(ShouyinDisplay.compose({ cart: cart.value, pay: payDlg.value ? payInfo.value : null, done: doneInfo.value }));
+    watch(cart, (c) => { if (c.length) doneInfo.value = null; }, { deep: true });
+    watch([cart, payInfo, payDlg, doneInfo], toDisplay, { deep: true, immediate: true });
+    onUnmounted(() => ShouyinDisplay.sender.send({ mode: 'idle' }));
     let paying = false;
     const pay = async (p) => {
       if (paying) return;  // 连按回车不会重复收款
@@ -452,7 +466,9 @@ const Pos = {
           payable: p.payable, remark: remark.value, request_id: reqId });
       } catch (e) { return err(e); }
       // 到这里收款已经成功。后面的提示音、打印出错都不能让店员误以为没收到钱
-      reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount; payDlg.value = false; clear();
+      reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount;
+      doneInfo.value = { payable: o.payable_amount, received: lastReceived.value, change: p.change, method: p.payments[0] && p.payments[0].method };
+      payDlg.value = false; clear();
       // 收款成功只在顶部提示，不弹框、不用点；现金有找零时提示停留久一点（要补打小票点右侧“补打小票”或按 F8）
       ElMessage({ type: 'success', duration: p.change ? 6000 : 2500, showClose: !!p.change,
         message: '收款成功　应收 ¥' + yuan(o.payable_amount) + (lastReceived.value !== o.payable_amount ? '　实收 ¥' + yuan(lastReceived.value) : '') + (p.change ? '　找零 ¥' + yuan(p.change) : '') });
@@ -554,7 +570,7 @@ const Pos = {
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); window.addEventListener('keydown', onKey, true); });
     watch(() => props.sync, load);  // 顶部“同步”：重新拉商品、价格、分类，购物车里已加的不动
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
-    return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
+    return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, payState, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, askDropHeld, dropDlg, dropTarget, heldPg, heldPages, heldPage, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
       visible, more, thumb: Shouyin.thumb, sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, kbPress,
       noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };
@@ -1277,6 +1293,7 @@ const App = {
             <div class="muted" style="font-size:12px;margin-top:6px">桌面版 {{desk.version}} · <kbd>F11</kbd> 全屏 · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 设置 · <kbd>Ctrl</kbd>+<kbd>+</kbd>/<kbd>−</kbd> 缩放</div>
           </div>
         </template>
+        <div v-else class="desk-box"><el-button size="small" @click="openDisplay">打开顾客副屏</el-button><div class="muted" style="font-size:12px;margin-top:6px">在新窗口打开，拖到顾客那块屏上按 F11 全屏</div></div>
         <div v-else class="muted" style="font-size:12px;margin-top:6px">本设置只对这台电脑生效。建议安装“收银系统”桌面软件，小票直接出、不弹打印框。</div>
         <div class="muted" style="font-size:12px;margin-top:6px">切换页面：<span v-for="k in tabKeys" :key="k[0]" style="margin-right:6px"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
       </el-popover>
@@ -1312,6 +1329,8 @@ const App = {
     const can = (p) => user.value && user.value.permissions.includes(p);
     const cur = computed(() => stores.value.find(s => s.id === storeId.value) || {});
     const storeName = computed(() => cur.value.name || '门店工作台');
+    // 顾客副屏显示门店名；退出登录后副屏回到欢迎画面
+    watch(() => user.value ? cur.value.name || '' : '', (n) => { ShouyinDisplay.sender.setStore(n); if (!n) ShouyinDisplay.sender.send({ mode: 'idle' }); }, { immediate: true });
     const stockVisible = computed(() => can('inventory') || (can('stock_view') && cur.value.staff_can_view_stock));
     const stockEditable = computed(() => can('inventory') || (can('stock_edit') && cur.value.staff_can_edit_stock));
     let lastId = 0, timer = null, printing = Promise.resolve(), polling = false, primed = false, pollStore = null;
@@ -1405,12 +1424,13 @@ const App = {
     };
     window.addEventListener('keydown', onKey);
     const openDeskSettings = () => desk && desk.openSettings();
+    const openDisplay = () => window.open('/web/display/', 'shouyin-display', 'popup,width=1024,height=768');
     const deskTest = async () => { try { await desk.testPrint(); ElMessage.success('测试页已发送'); } catch (e) { err(e); } };
     const deskDrawer = () => openDrawer(false);
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
     return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing,
-      desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
+      desk: deskInfo, openDeskSettings, openDisplay, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };
 
