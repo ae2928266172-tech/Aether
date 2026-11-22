@@ -350,7 +350,7 @@ const Pos = {
     const flashLine = (i) => Vue.nextTick(() => {
       const el = document.querySelectorAll('.pos-right .line')[i];
       if (el && el.animate && !matchMedia('(prefers-reduced-motion: reduce)').matches)
-        el.animate([{ backgroundColor: '#dbe6fd' }, { backgroundColor: '#eff4ff' }], { duration: 600, easing: 'cubic-bezier(.23, 1, .32, 1)' });
+        el.animate([{ backgroundColor: '#cce3f9' }, { backgroundColor: '#e8f2fd' }], { duration: 600, easing: 'cubic-bezier(.23, 1, .32, 1)' });
     });
     const add = (p, s) => {
       const i = cart.value.findIndex(x => x.sku_id === s.id);

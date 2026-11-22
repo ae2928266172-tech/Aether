@@ -1,40 +1,43 @@
-/* 视觉规范：扁平、黑白灰 + 一个强调色。不用渐变，不用彩色阴影，靠细边框和留白分层 */
+/* 视觉规范：苹果风格。浅灰底 + 白色圆角面板，系统字体，一个蓝色强调色；不用渐变，靠留白、圆角和很淡的阴影分层 */
 :root {
-  --bg: #fafafa;
+  --bg: #f5f5f7;
   --panel: #ffffff;
-  --text: #18181b;
-  --text-2: #52525b;
-  --muted: #a1a1aa;
-  --primary: #2563eb;
-  --primary-soft: #eff4ff;
-  --border: #e4e4e7;
-  --border-soft: #f0f0f2;
-  --hover: #f4f4f5;
-  --danger: #dc2626;
-  --success: #16a34a;
-  --warn: #d97706;
-  --radius: 10px;
+  --text: #1d1d1f;
+  --text-2: #6e6e73;
+  --muted: #8e8e93;
+  --primary: #0071e3;
+  --primary-soft: #e8f2fd;
+  --border: #e5e5ea;
+  --border-soft: #f2f2f4;
+  --hover: #f2f2f4;
+  --danger: #ff3b30;
+  --success: #34c759;
+  --warn: #ff9500;
+  --radius: 14px;
+  --fill: rgba(118, 118, 128, .12);
+  --primary-press: #0062c4;
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, .04), 0 1px 1px rgba(0, 0, 0, .02);
 
-  --el-color-primary: #2563eb;
-  --el-color-primary-light-3: #6692f1;
-  --el-color-primary-light-5: #92b1f5;
-  --el-color-primary-light-7: #bed0f9;
-  --el-color-primary-light-8: #d3e0fb;
-  --el-color-primary-light-9: #eff4ff;
-  --el-color-primary-dark-2: #1e4fbc;
-  --el-color-success: #16a34a;
-  --el-color-danger: #dc2626;
-  --el-color-warning: #d97706;
-  --el-border-radius-base: 8px;
-  --el-border-radius-small: 6px;
-  --el-border-color: #e4e4e7;
-  --el-border-color-light: #e4e4e7;
+  --el-color-primary: #0071e3;
+  --el-color-primary-light-3: #4d9cee;
+  --el-color-primary-light-5: #80b8f1;
+  --el-color-primary-light-7: #b3d4f7;
+  --el-color-primary-light-8: #cce3f9;
+  --el-color-primary-light-9: #e8f2fd;
+  --el-color-primary-dark-2: #0062c4;
+  --el-color-success: #34c759;
+  --el-color-danger: #ff3b30;
+  --el-color-warning: #ff9500;
+  --el-border-radius-base: 10px;
+  --el-border-radius-small: 8px;
+  --el-border-color: #e5e5ea;
+  --el-border-color-light: #e5e5ea;
   --el-border-color-lighter: #f0f0f2;
-  --el-text-color-primary: #18181b;
-  --el-text-color-regular: #3f3f46;
-  --el-text-color-placeholder: #a1a1aa;
+  --el-text-color-primary: #1d1d1f;
+  --el-text-color-regular: #3a3a3c;
+  --el-text-color-placeholder: #aeaeb2;
   --el-box-shadow-light: 0 4px 16px rgba(0, 0, 0, .08);
-  --el-font-family: "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  --el-font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); font-family: var(--el-font-family);
@@ -130,10 +133,10 @@ a:hover { text-decoration: underline; }
 /* 控件：扁平、无阴影 */
 .el-button { font-weight: 500; }
 .el-button--primary, .el-button--primary:hover, .el-button--primary:focus { box-shadow: none; }
-.el-dialog { border-radius: 12px; padding: 22px 24px; box-shadow: 0 16px 48px rgba(0, 0, 0, .12); }
-.el-dialog__title { font-weight: 650; font-size: 16px; }
+.el-dialog { border-radius: 20px; padding: 22px 24px; box-shadow: 0 16px 48px rgba(0, 0, 0, .12); }
+.el-dialog__title { font-weight: 700; font-size: 19px; letter-spacing: -.02em; }
 /* 确认框、输入框与对话框统一：同样的圆角、留白、标题，不显示彩色图标 */
-.el-message-box { border-radius: 12px; padding: 22px 24px; box-shadow: 0 16px 48px rgba(0, 0, 0, .12); border: 0; width: 420px; max-width: calc(100vw - 32px); }
+.el-message-box { border-radius: 20px; padding: 22px 24px; box-shadow: 0 16px 48px rgba(0, 0, 0, .12); border: 0; width: 420px; max-width: calc(100vw - 32px); }
 .el-message-box__header { padding: 0 0 12px; }
 .el-message-box__title { font-weight: 650; font-size: 16px; color: var(--text); }
 .el-message-box__status { display: none; }
