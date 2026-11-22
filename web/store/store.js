@@ -253,7 +253,7 @@ const Pos = {
       </div>
     </el-dialog>
     <el-dialog v-model="heldDlg" width="min(960px, 94vw)" class="held-dlg">
-      <template #header><span class="pick-title">挂单</span><span class="muted pick-tip">共 {{held.length}} 单　挂单仅保存在本机，未收款、未扣减库存；取回时按当前售价计价。</span></template>
+      <template #header><span class="pick-title">挂单</span><span class="muted pick-tip">共 {{held.length}} 单</span></template>
       <div class="held-grid">
         <div v-for="(h, j) in heldPage" :key="h.at" class="held-card">
           <div class="hc-head"><kbd>{{j + 1}}</kbd><b>{{h.time}}</b><span class="muted">{{h.cart.reduce((a, l) => a + l.qty, 0)}} 件</span><span class="hc-amt">¥{{yuan(h.cart.reduce((a, l) => a + l.qty * l.price, 0))}}</span></div>
