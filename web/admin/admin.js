@@ -1455,9 +1455,10 @@ const App = {
             <template #dropdown><el-dropdown-menu><el-dropdown-item disabled>{{user.role_name}}</el-dropdown-item><el-dropdown-item command="pw">修改密码</el-dropdown-item><el-dropdown-item command="out" divided>退出登录</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown></div>
       </div>
-      <div class="content">
+      <div class="content" ref="contentEl" @scroll.passive="onScroll">
         <component v-if="ready" :is="tab" :meta="meta" v-bind="tab === 'dashboard' ? {go: k => tab = k} : {}" :key="tab" />
       </div>
+      <transition name="totop"><button v-if="showTop" class="totop" aria-label="回到顶部" title="回到顶部" @click="toTop"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></transition>
     </div>
   </div>`,
   setup() {
@@ -1467,6 +1468,10 @@ const App = {
     const groups = computed(() => [...new Set(menu.value.map(m => m[4]))]);
     const cur = computed(() => menu.value.find(m => m[0] === tab.value) || []);
     const toStore = () => { location.href = '/web/store/'; };
+    // 滚过一屏出现“回到顶部”，平滑回顶，到顶后自动隐藏
+    const contentEl = ref(null), showTop = ref(false);
+    const onScroll = () => { const el = contentEl.value; showTop.value = !!el && el.scrollTop > el.clientHeight; };
+    const toTop = () => contentEl.value && contentEl.value.scrollTo({ top: 0, behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
     const loadMeta = async () => {
       const p = user.value.permissions, safe = (f) => f.catch(() => []);
       [meta.categories, meta.suppliers, meta.stockItems, meta.stores, meta.areas] = await Promise.all([
@@ -1492,7 +1497,7 @@ const App = {
     };
     window.onUnauthorized = () => { user.value = null; ready.value = false; };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await loadMeta(); } catch (e) {} } });
-    return { user, lf, busy, tab, menu, groups, cur, meta, ready, login, logout, changePw, toStore, icon: Shouyin.icon };
+    return { user, lf, busy, tab, menu, groups, cur, meta, ready, login, logout, changePw, toStore, contentEl, showTop, onScroll, toTop, icon: Shouyin.icon };
   },
 };
 
