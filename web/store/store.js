@@ -252,13 +252,26 @@ const Pos = {
         </div>
       </div>
     </el-dialog>
-    <el-dialog v-model="heldDlg" title="已挂起的单" width="520px">
-      <div class="muted" style="margin-bottom:8px">挂单只存在这台电脑上，没有收款、不扣库存。取回后价格按现在的售价。</div>
-      <div v-for="(h, i) in held" :key="h.at" class="held">
-        <div style="flex:1;min-width:0"><kbd>{{i + 1}}</kbd> <b>{{h.time}}</b><span class="muted">　{{h.cart.reduce((a, l) => a + l.qty, 0)}} 件 · ¥{{yuan(h.cart.reduce((a, l) => a + l.qty * l.price, 0))}}</span>
-          <div class="muted" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{h.cart.map(l => l.name + (l.sku !== '默认' ? '（' + l.sku + '）' : '') + '×' + l.qty).join('、')}}<span v-if="h.remark">　备注：{{h.remark}}</span></div></div>
-        <el-button size="large" @click="dropHeld(i)">删除</el-button><el-button size="large" type="primary" @click="takeHeld(i)">取回</el-button>
+    <el-dialog v-model="heldDlg" width="min(960px, 94vw)" class="held-dlg">
+      <template #header><span class="pick-title">挂单</span><span class="muted pick-tip">共 {{held.length}} 单　挂单仅保存在本机，未收款、未扣减库存；取回时按当前售价计价。</span></template>
+      <div class="held-grid">
+        <div v-for="(h, j) in heldPage" :key="h.at" class="held-card">
+          <div class="hc-head"><kbd>{{j + 1}}</kbd><b>{{h.time}}</b><span class="muted">{{h.cart.reduce((a, l) => a + l.qty, 0)}} 件</span><span class="hc-amt">¥{{yuan(h.cart.reduce((a, l) => a + l.qty * l.price, 0))}}</span></div>
+          <ul class="hc-lines">
+            <li v-for="l in h.cart.slice(0, 4)" :key="l.sku_id"><span>{{l.name}}<em v-if="l.sku !== '默认'">（{{l.sku}}）</em></span><b>×{{l.qty}}</b></li>
+            <li v-if="h.cart.length > 4" class="muted">另有 {{h.cart.length - 4}} 种商品</li>
+          </ul>
+          <div v-if="h.remark" class="hc-remark">备注：{{h.remark}}</div>
+          <div class="hc-btns"><el-button size="large" @click="askDropHeld(h)">删除</el-button><el-button size="large" type="primary" @click="takeHeld(held.indexOf(h))">取回</el-button></div>
+        </div>
       </div>
+      <template #footer v-if="heldPages > 1">
+        <div class="held-pager"><el-button size="large" :disabled="heldPg === 0" @click="heldPg--">上一页</el-button><span>第 {{heldPg + 1}} / {{heldPages}} 页</span><el-button size="large" :disabled="heldPg >= heldPages - 1" @click="heldPg++">下一页</el-button></div>
+      </template>
+    </el-dialog>
+    <el-dialog v-model="dropDlg" title="删除挂单" width="400px" append-to-body>
+      <div>确定删除 {{dropTarget && dropTarget.time}} 的挂单吗？删除后无法恢复。</div>
+      <template #footer><el-button size="large" @click="dropDlg = false">取消</el-button><el-button size="large" type="danger" @click="dropHeld">删除</el-button></template>
     </el-dialog>
     <el-dialog v-model="skuDlg" :width="pickWidth(skuProduct ? skuProduct.skus.length : 1)" class="pick-dlg">
       <template #header><span class="pick-title">{{skuProduct && skuProduct.name}}</span><span class="muted pick-tip">点选规格</span></template>
@@ -355,20 +368,31 @@ const Pos = {
       if (!cart.value.length) return;
       const d = new Date();
       held.value.push({ at: Date.now(), time: d.toTimeString().slice(0, 5), cart: JSON.parse(JSON.stringify(cart.value)), remark: remark.value });
-      saveHeld(); clear(); ElMessage.success('已挂单，点“取单”可以取回');
+      saveHeld(); clear(); ElMessage.success('已挂单，可通过“取单”取回');
     };
+    const HELD_PER_PAGE = 6, heldPg = ref(0);
+    const heldPages = computed(() => Math.max(1, Math.ceil(held.value.length / HELD_PER_PAGE)));
+    const heldPage = computed(() => held.value.slice(heldPg.value * HELD_PER_PAGE, (heldPg.value + 1) * HELD_PER_PAGE));
+    watch(heldPages, (n) => { if (heldPg.value > n - 1) heldPg.value = n - 1; });
+    watch(heldDlg, (v) => { if (v) heldPg.value = 0; });
     const takeHeld = (i) => {
       const h = held.value[i];
+      if (!h) return;
       if (cart.value.length) hold();  // 当前也有商品：先把当前的挂起来
       const skus = new Map(products.value.flatMap(p => p.skus.map(s => [s.id, s])));
       const lines = h.cart.filter(l => skus.has(l.sku_id)).map(l => ({ ...l, price: skus.get(l.sku_id).price }));
-      if (lines.length < h.cart.length) ElMessage.warning('有 ' + (h.cart.length - lines.length) + ' 个商品已下架，没有取回');
+      if (lines.length < h.cart.length) ElMessage.warning((h.cart.length - lines.length) + ' 种商品已下架，未能取回');
       cart.value = lines; remark.value = h.remark || '';
       held.value.splice(held.value.indexOf(h), 1); saveHeld(); heldDlg.value = false;
     };
-    const dropHeld = async (i) => {
-      try { await ElMessageBox.confirm('删除这张挂单？', '删除', { type: 'warning' }); } catch (e) { return; }
-      held.value.splice(i, 1); saveHeld(); if (!held.value.length) heldDlg.value = false;
+    const dropDlg = ref(false), dropTarget = ref(null);
+    const askDropHeld = (h) => { dropTarget.value = h; dropDlg.value = true; };
+    const dropHeld = () => {
+      const i = held.value.indexOf(dropTarget.value);
+      dropDlg.value = false;
+      if (i < 0) return;
+      held.value.splice(i, 1); saveHeld(); ElMessage.success('挂单已删除');
+      if (!held.value.length) heldDlg.value = false;
     };
     const count = computed(() => cart.value.reduce((a, l) => a + l.qty, 0));
     const total = computed(() => cart.value.reduce((a, l) => a + l.qty * l.price, 0));
@@ -429,7 +453,7 @@ const Pos = {
     const scanCode = (code) => { scanText.value = code; onScan(); focusScan(); };
     const keyMap = {
       F1: () => { focusScan(); scan.value && scan.value.select(); }, F2: payNow, F3: hold,
-      F4: () => (held.value.length ? (heldDlg.value = true) : ElMessage.info('没有挂起的单')),
+      F4: () => (held.value.length ? (heldDlg.value = true) : ElMessage.info('暂无挂单')),
       F6: editQty, F7: openRemark, F8: reprint, F9: () => openDrawer(false),
       'Ctrl+Delete': clear, ArrowUp: () => move(-1), ArrowDown: () => move(1),
     };
@@ -443,10 +467,14 @@ const Pos = {
         if (!K.printable(e)) return;
         doneDlg.value = false;
       }
-      // 选规格 / 选条码 / 取挂单：数字键选第几个
+      if (dropDlg.value) return;  // 删除挂单确认框：只用按钮
+      if (heldDlg.value && (c === 'PageDown' || c === 'PageUp')) {  // 挂单翻页
+        e.preventDefault(); heldPg.value = Math.min(heldPages.value - 1, Math.max(0, heldPg.value + (c === 'PageDown' ? 1 : -1))); return;
+      }
+      // 选规格 / 选条码 / 取挂单：数字键选第几个（挂单按当前页）
       const pickList = skuDlg.value ? skuProduct.value.skus.map(s => () => { add(skuProduct.value, s); skuDlg.value = false; })
         : scanDlg.value ? scanMatches.value.map(m => () => { add(m.product, m.sku); scanDlg.value = false; })
-        : heldDlg.value ? held.value.map((h, i) => () => takeHeld(i)) : null;
+        : heldDlg.value ? heldPage.value.map(h => () => takeHeld(held.value.indexOf(h))) : null;
       if (pickList) {
         if (/^[1-9]$/.test(c) && pickList[+c - 1]) { e.preventDefault(); pickList[+c - 1](); focusScan(); }
         return;
@@ -488,12 +516,12 @@ const Pos = {
       if (fn) { e.preventDefault(); det.reset(); fn(); }
     };
     // 弹框关掉后回到搜索框，接着扫
-    watch([payDlg, skuDlg, scanDlg, heldDlg, doneDlg, remarkDlg], (now, before) => { if (now.every(v => !v) && before.some(v => v)) focusScan(); });
+    watch([payDlg, skuDlg, scanDlg, heldDlg, doneDlg, remarkDlg, dropDlg], (now, before) => { if (now.every(v => !v) && before.some(v => v)) focusScan(); });
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); window.addEventListener('keydown', onKey, true); });
     watch(() => props.sync, load);  // 顶部“同步”：重新拉商品、价格、分类，购物车里已加的不动
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
-      scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
+      scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, askDropHeld, dropDlg, dropTarget, heldPg, heldPages, heldPage, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
       visible, more, thumb: Shouyin.thumb, sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, KB, kbPress,
       // 选规格框：每格 200px 左右，一行最多 4 个
       pickWidth: (n) => Math.min(4, Math.max(2, n)) * 196 + 72 + 'px',
