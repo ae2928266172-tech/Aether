@@ -1,0 +1,75 @@
+/* 顾客副屏：和收银页同一套苹果风格（浅灰底、白卡片、苹果蓝），字号随屏幕大小缩放，1024×768 到 1920×1080 都看得清。
+   副屏只给顾客看，不能点、不显示光标；不用 backdrop-filter（门店电脑性能有限）。 */
+:root {
+  --bg: #f5f5f7; --panel: #fff; --text: #1d1d1f; --text-2: #6e6e73; --muted: #8e8e93;
+  --primary: #0071e3; --success: #34c759; --line: rgba(60, 60, 67, .12);
+  --ease-out: cubic-bezier(.23, 1, .32, 1);
+}
+html { font-size: calc(8px + 1.2vmin); }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); cursor: none; user-select: none; -webkit-user-select: none;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", "HarmonyOS Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased; }
+b { font-weight: 600; }
+#screen { height: 100%; display: flex; flex-direction: column; padding: 1.6rem 2rem 2rem; box-sizing: border-box; }
+.top { display: flex; align-items: center; justify-content: space-between; height: 2.4rem; flex-shrink: 0; color: var(--text-2); font-size: 1.1rem; font-weight: 500; }
+.top .clock { font-variant-numeric: tabular-nums; }
+section { display: none; flex: 1; min-height: 0; }
+.mode-idle .idle, .mode-done .done { display: flex; }
+.mode-cart .order, .mode-pay .order { display: flex; }
+.mode-idle .top .store { visibility: hidden; }  /* 欢迎画面门店名已经大字显示 */
+
+/* 欢迎画面 */
+.idle { flex-direction: column; align-items: center; justify-content: center; gap: 1.2rem; padding-bottom: 3rem; }
+.idle .welcome { font-size: 1.6rem; color: var(--text-2); letter-spacing: .4em; text-indent: .4em; }
+.idle .store-big { font-size: 4rem; font-weight: 650; letter-spacing: .04em; text-align: center; line-height: 1.2; }
+
+/* 购物明细 + 合计 */
+.order { gap: 1.4rem; padding-top: .8rem; }
+.list { flex: 2; min-width: 0; background: var(--panel); border-radius: 1.2rem; display: flex; flex-direction: column; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 1px 1px rgba(0, 0, 0, .02); }
+.list-head, .row { display: grid; grid-template-columns: 1fr 3.2em 5.6em; gap: .8rem; align-items: center; padding: 0 1.4rem; }
+.list-head { height: 3rem; flex-shrink: 0; color: var(--muted); font-size: 1rem; border-bottom: .5px solid var(--line); }
+.list-head span:nth-child(n+2), .row > :nth-child(n+2) { text-align: right; }
+.rows { flex: 1; overflow: hidden; padding: .3rem 0; position: relative; }
+.row { min-height: 4rem; padding-top: .55rem; padding-bottom: .55rem; box-sizing: border-box; border-bottom: .5px solid var(--line); font-size: 1.35rem; }
+.row:last-child { border-bottom: 0; }
+.row .n { min-width: 0; line-height: 1.3; }
+.row .n .sku { display: block; color: var(--text-2); font-size: 1rem; margin-top: .15rem; }
+.row .n .unit { color: var(--muted); font-size: 1rem; margin-left: .5em; }
+.row .q, .row .a { font-variant-numeric: tabular-nums; }
+.row .a { font-weight: 600; }
+.row.new { animation: rowIn .5s var(--ease-out); }
+@keyframes rowIn { from { background: #e8f2fd; } to { background: transparent; } }
+.more { color: var(--muted); font-size: 1rem; text-align: center; padding: .6rem; }
+
+.sum { flex: 1.15; min-width: 0; background: var(--panel); border-radius: 1.2rem; padding: 1.5rem 1.6rem; display: flex; flex-direction: column; gap: .9rem;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 1px 1px rgba(0, 0, 0, .02); }
+.kv { display: flex; justify-content: space-between; align-items: baseline; font-size: 1.3rem; color: var(--text-2); }
+.kv b { color: var(--text); font-variant-numeric: tabular-nums; }
+.kv.disc b { color: #e0402e; }
+.due { margin-top: auto; padding-top: 1.2rem; border-top: .5px solid var(--line); }
+.due .k { font-size: 1.3rem; color: var(--text-2); }
+.due .v { font-size: 3.8rem; font-weight: 650; color: var(--primary); font-variant-numeric: tabular-nums; line-height: 1.15; letter-spacing: -.01em; word-break: break-all; }
+.cash { display: none; flex-direction: column; gap: .7rem; padding-top: 1rem; border-top: .5px solid var(--line); }
+.cash.on { display: flex; }
+.kv.chg b { font-size: 2.2rem; color: var(--text); }
+
+/* 收款成功 */
+.done { flex-direction: column; align-items: center; justify-content: center; gap: 1rem; padding-bottom: 3rem; }
+.done .ok { width: 6rem; height: 6rem; border-radius: 50%; background: var(--success); display: flex; align-items: center; justify-content: center; }
+.done .ok svg { width: 3.4rem; height: 3.4rem; fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+.mode-done .ok { animation: pop .45s var(--ease-out); }
+@keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+.done .t { font-size: 2.6rem; font-weight: 650; margin-top: .6rem; }
+.done .d { font-size: 1.5rem; color: var(--text-2); font-variant-numeric: tabular-nums; }
+.done .chg-big { font-size: 2.6rem; font-weight: 650; font-variant-numeric: tabular-nums; }
+.done .chg-big:empty { display: none; }
+.done .thanks { font-size: 1.3rem; color: var(--muted); margin-top: 1rem; }
+
+/* 竖屏（少见）：明细在上、合计在下 */
+@media (orientation: portrait) {
+  .order { flex-direction: column; }
+  .sum { flex: none; }
+  .due { margin-top: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .row.new, .mode-done .ok { animation: none; } }
