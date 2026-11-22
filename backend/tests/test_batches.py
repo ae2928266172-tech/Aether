@@ -1,11 +1,13 @@
 """批次与有效期：入库录批号、生产日期、有效期至；先到期先出；调拨批次跟着走；临期提醒。"""
-from datetime import date, timedelta
+from datetime import timedelta
+
+from app.db import now
 
 from conftest import stock_of
 
 
 def d(n):
-    return (date.today() + timedelta(days=n)).isoformat()
+    return (now().date() + timedelta(days=n)).isoformat()
 
 
 def batch_qty(admin, location_id, item_id):

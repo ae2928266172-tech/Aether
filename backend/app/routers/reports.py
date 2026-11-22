@@ -4,16 +4,18 @@
 - 收款按收款时间、退款按退款时间计入当期；实收 = 收款 − 退款。
 - 销售件数按收款时间计入，退货件数按退款时间扣减；打折、调低应收体现在“优惠”和实收里，件数不变。
 - 未收款、已取消的订单不计入营收。
+- 一次最多查一年（MAX_DAYS），营收按“天 × 门店”在数据库里汇总，不把订单明细读进内存。
 """
 import io
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
+from typing import NamedTuple
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from openpyxl import Workbook
 from openpyxl.styles import Font
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db, now
@@ -23,20 +25,29 @@ from ..services.orders import PAY_METHODS
 
 router = APIRouter(prefix="/api/reports", tags=["报表"])
 
+MAX_DAYS = 366  # 一次最多查一年（含闰年）；更长的请分段查询、分段导出
+
 
 def _range(begin: date | None, end: date | None):
     today = now().date()
     b, e = begin or today, end or today
     if e < b:
         raise HTTPException(400, "结束日期不能早于开始日期")
-    if (e - b).days > 3660:
-        raise HTTPException(400, "时间范围过大")
+    if (e - b).days + 1 > MAX_DAYS:
+        raise HTTPException(400, "一次最多查询一年，请缩短时间范围")
     return b, e, datetime.combine(b, time.min), datetime.combine(e + timedelta(days=1), time.min)
 
 
-def _bucket(d: datetime, group: str) -> str:
+def _day(v) -> date:
+    """数据库 date() 的结果：PostgreSQL 给 date，SQLite 给 'YYYY-MM-DD' 字符串。"""
+    if isinstance(v, datetime):
+        return v.date()
+    return v if isinstance(v, date) else date.fromisoformat(str(v)[:10])
+
+
+def _bucket(d: date, group: str) -> str:
     if group == "week":
-        monday = d.date() - timedelta(days=d.weekday())
+        monday = d - timedelta(days=d.weekday())
         return f"{monday:%Y-%m-%d}~{monday + timedelta(days=6):%m-%d}"
     if group == "month":
         return f"{d:%Y-%m}"
@@ -81,53 +92,66 @@ def revenue(begin: date | None = None, end: date | None = None, store_id: int | 
                 "methods": {m: 0 for m in PAY_METHODS}}
     data = defaultdict(blank)
 
-    oq = select(Order).where(Order.paid_at >= start, Order.paid_at < stop)
-    if store_id:
-        oq = oq.where(Order.store_id == store_id)
-    for o in db.scalars(oq):
-        k = (_bucket(o.paid_at, group), o.store_id)
-        r = data[k]
-        r["orders"] += 1
-        r["pos_orders" if o.source == "pos" else "online_orders"] += 1
-        r["original"] += o.original_amount
-        r["discount"] += o.original_amount - o.payable_amount
-        r["qty"] += sum(i.qty for i in o.items if i.added_at is None)
-        r["cost"] += sum(i.unit_cost * i.qty for i in o.items if i.added_at is None)
+    def by_day(col, q):
+        """按（天, 门店）分组；store_id 不为空时只看这家门店。"""
+        q = q.add_columns(func.date(col).label("d"), Order.store_id).where(col >= start, col < stop)
+        if store_id:
+            q = q.where(Order.store_id == store_id)
+        return db.execute(q.group_by(func.date(col), Order.store_id))
+
+    def row(d, sid):
+        return data[(_bucket(_day(d), group), sid)]
+
+    n = lambda v: v or 0  # noqa: E731  SUM 在没有行时是 NULL
+
+    # 订单（按收款时间）
+    for cnt, pos, original, payable, d, sid in by_day(Order.paid_at, select(
+            func.count(Order.id), func.sum(case((Order.source == "pos", 1), else_=0)),
+            func.sum(Order.original_amount), func.sum(Order.payable_amount))):
+        r = row(d, sid)
+        r["orders"] += cnt
+        r["pos_orders"] += n(pos)
+        r["online_orders"] += cnt - n(pos)
+        r["original"] += n(original)
+        r["discount"] += n(original) - n(payable)
+    # 收银时就有的商品行：件数和成本按订单收款时间
+    for qty, cost, d, sid in by_day(Order.paid_at, select(
+            func.sum(OrderItem.qty), func.sum(OrderItem.unit_cost * OrderItem.qty))
+            .select_from(OrderItem).join(Order, Order.id == OrderItem.order_id)
+            .where(OrderItem.added_at.is_(None))):
+        r = row(d, sid)
+        r["qty"] += n(qty)
+        r["cost"] += n(cost)
     # 收款后换规格换进来的行：按换货时间统计
-    xq = select(OrderItem, Order.store_id).join(Order, Order.id == OrderItem.order_id) \
-        .where(OrderItem.added_at >= start, OrderItem.added_at < stop)
-    if store_id:
-        xq = xq.where(Order.store_id == store_id)
-    for it, sid in db.execute(xq):
-        r = data[(_bucket(it.added_at, group), sid)]
-        r["original"] += it.amount
-        r["discount"] += it.amount - it.paid_share
-        r["qty"] += it.qty
-        r["cost"] += it.unit_cost * it.qty
+    for amount, paid, qty, cost, d, sid in by_day(OrderItem.added_at, select(
+            func.sum(OrderItem.amount), func.sum(OrderItem.paid_share), func.sum(OrderItem.qty),
+            func.sum(OrderItem.unit_cost * OrderItem.qty))
+            .select_from(OrderItem).join(Order, Order.id == OrderItem.order_id)):
+        r = row(d, sid)
+        r["original"] += n(amount)
+        r["discount"] += n(amount) - n(paid)
+        r["qty"] += n(qty)
+        r["cost"] += n(cost)
 
-    pq = select(Payment, Order.store_id).join(Order, Order.id == Payment.order_id) \
-        .where(Payment.created_at >= start, Payment.created_at < stop)
-    if store_id:
-        pq = pq.where(Order.store_id == store_id)
-    for p, sid in db.execute(pq):
-        r = data[(_bucket(p.created_at, group), sid)]
-        if p.kind == "pay":
-            r["received"] += p.amount
-            r["methods"][p.method] += p.amount
+    for kind, method, amount, d, sid in by_day(Payment.created_at, select(
+            Payment.kind, Payment.method, func.sum(Payment.amount))
+            .select_from(Payment).join(Order, Order.id == Payment.order_id)
+            .group_by(Payment.kind, Payment.method)):
+        r = row(d, sid)
+        if kind == "pay":
+            r["received"] += n(amount)
+            r["methods"][method] += n(amount)
         else:
-            r["refunded"] += p.amount
-            r["methods"][p.method] -= p.amount
+            r["refunded"] += n(amount)
+            r["methods"][method] -= n(amount)
 
-    rq = select(RefundLine, Refund.created_at, Order.store_id, OrderItem.unit_cost) \
-        .join(Refund, Refund.id == RefundLine.refund_id).join(Order, Order.id == Refund.order_id) \
-        .join(OrderItem, OrderItem.id == RefundLine.order_item_id) \
-        .where(Refund.created_at >= start, Refund.created_at < stop)
-    if store_id:
-        rq = rq.where(Order.store_id == store_id)
-    for ln, at, sid, unit_cost in db.execute(rq):
-        r = data[(_bucket(at, group), sid)]
-        r["refund_qty"] += ln.qty
-        r["cost"] -= unit_cost * ln.qty
+    for qty, cost, d, sid in by_day(Refund.created_at, select(
+            func.sum(RefundLine.qty), func.sum(OrderItem.unit_cost * RefundLine.qty))
+            .select_from(RefundLine).join(Refund, Refund.id == RefundLine.refund_id)
+            .join(Order, Order.id == Refund.order_id).join(OrderItem, OrderItem.id == RefundLine.order_item_id)):
+        r = row(d, sid)
+        r["refund_qty"] += n(qty)
+        r["cost"] -= n(cost)
 
     rows = []
     total = blank()
@@ -167,11 +191,25 @@ def category_product_ids(db: Session, category_id: int) -> set[int]:
     return ids
 
 
+class _Row(NamedTuple):
+    id: int
+    no: str
+    store_id: int
+    source: str
+    area_name: str
+    location_note: str
+    paid_at: datetime
+    store_name: str
+
+
 def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids: set[int] | None = None):
     """商品销售明细：收款的销售行 + 退货行。product_ids 不为空时只看这些商品（按分类筛选用）。"""
     lines = []
     at = func.coalesce(OrderItem.added_at, Order.paid_at)  # 换规格换进来的行按换货时间
-    q = select(OrderItem, Order).join(Order, Order.id == OrderItem.order_id) \
+    # 只取需要的列：整行取 Order / Refund 会顺带把每单的商品行、收款记录全读出来
+    oc = (Order.id, Order.no, Order.store_id, Order.source, Order.area_name, Order.location_note, Order.paid_at,
+          Store.name.label("store_name"))
+    q = select(OrderItem, *oc).join(Order, Order.id == OrderItem.order_id).join(Store, Store.id == Order.store_id) \
         .where(Order.paid_at.is_not(None), at >= start, at < stop)
     if store_id:
         q = q.where(Order.store_id == store_id)
@@ -181,16 +219,18 @@ def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids
         q = q.where(OrderItem.product_id.in_(product_ids or [-1]))
     if keyword:
         q = q.where(OrderItem.product_name.contains(keyword) | OrderItem.sku_name.contains(keyword))
-    for it, o in db.execute(q):
+    for it, *o in db.execute(q):
+        o = _Row(*o)
         lines.append({"type": "sale", "type_text": "换货换出" if it.added_at else "销售", "time": it.added_at or o.paid_at, "order_id": o.id, "order_no": o.no,
-                      "store_id": o.store_id, "store_name": o.store.name, "source": o.source,
+                      "store_id": o.store_id, "store_name": o.store_name, "source": o.source,
                       "area": (o.area_name + " " + o.location_note).strip(), "sku_id": it.sku_id,
                       "product_name": it.product_name, "sku_name": it.sku_name, "qty": it.qty,
                       "unit_price": it.unit_price, "amount": it.amount, "paid": it.paid_share,
                       "discount": it.amount - it.paid_share, "cost": it.unit_cost * it.qty})
-    q = select(RefundLine, Refund, OrderItem, Order).join(Refund, Refund.id == RefundLine.refund_id) \
+    q = select(RefundLine, Refund.no, Refund.kind, Refund.created_at, OrderItem, *oc) \
+        .join(Refund, Refund.id == RefundLine.refund_id) \
         .join(OrderItem, OrderItem.id == RefundLine.order_item_id).join(Order, Order.id == Refund.order_id) \
-        .where(Refund.created_at >= start, Refund.created_at < stop)
+        .join(Store, Store.id == Order.store_id).where(Refund.created_at >= start, Refund.created_at < stop)
     if store_id:
         q = q.where(Order.store_id == store_id)
     if sku_id:
@@ -199,9 +239,10 @@ def _sales(db: Session, start, stop, store_id, keyword, sku_id=None, product_ids
         q = q.where(OrderItem.product_id.in_(product_ids or [-1]))
     if keyword:
         q = q.where(OrderItem.product_name.contains(keyword) | OrderItem.sku_name.contains(keyword))
-    for ln, rf, it, o in db.execute(q):
-        lines.append({"type": "refund", "type_text": "换货退回" if rf.kind == "exchange" else "退货", "time": rf.created_at, "order_id": o.id, "order_no": o.no,
-                      "refund_no": rf.no, "store_id": o.store_id, "store_name": o.store.name, "source": o.source,
+    for ln, rf_no, rf_kind, rf_at, it, *o in db.execute(q):
+        o = _Row(*o)
+        lines.append({"type": "refund", "type_text": "换货退回" if rf_kind == "exchange" else "退货", "time": rf_at, "order_id": o.id, "order_no": o.no,
+                      "refund_no": rf_no, "store_id": o.store_id, "store_name": o.store_name, "source": o.source,
                       "area": (o.area_name + " " + o.location_note).strip(), "sku_id": it.sku_id,
                       "product_name": it.product_name, "sku_name": it.sku_name, "qty": -ln.qty,
                       "unit_price": it.unit_price, "amount": -it.unit_price * ln.qty, "paid": -ln.amount,

@@ -108,7 +108,7 @@ def test_exchange_keeps_history_and_prints_voucher(client, admin, world):
     from app.models import Order
     w = world
     o = checkout(admin, w, [(w["small"]["id"], 2)], 2000)
-    past = dt.datetime.now() - dt.timedelta(days=3)
+    past = dbmod.now() - dt.timedelta(days=3)
     with dbmod.SessionLocal() as s:
         s.get(Order, o["id"]).paid_at = past
         s.commit()
@@ -118,7 +118,7 @@ def test_exchange_keeps_history_and_prints_voucher(client, admin, world):
     after = admin.get(f"/api/reports/revenue?begin={day}&end={day}")["total"]
     assert (after["qty"], after["cost"], after["original"], after["received"]) == \
            (before["qty"], before["cost"], before["original"], before["received"])
-    today = dt.date.today().isoformat()
+    today = dbmod.now().date().isoformat()
     rows = admin.get(f"/api/reports/product-sales/detail?begin={today}&end={today}")["rows"]
     assert {x["type_text"] for x in rows} >= {"换货换出", "换货退回"}
     # 换货凭证：原单号、退回、换出、差价

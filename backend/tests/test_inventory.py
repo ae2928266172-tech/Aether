@@ -18,8 +18,9 @@ def test_transfer_and_ledger(admin, world):
 
 
 def test_ledger_opening_uses_earlier_days(admin, world):
-    from datetime import date, timedelta
-    tomorrow = date.today() + timedelta(days=1)
+    from datetime import timedelta
+    from app.db import now
+    tomorrow = now().date() + timedelta(days=1)
     rows = admin.get("/api/stock-ledger", location_id=world["wh"]["id"], begin=str(tomorrow), end=str(tomorrow))
     r = next(x for x in rows if x["stock_item_id"] == world["cup"]["id"])
     assert r["opening"] == 850 and r["in"] == 0 and r["closing"] == 850
