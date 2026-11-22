@@ -28,5 +28,25 @@ admin 还是默认密码的换成随机密码（存在 `/root/shouyin-admin-初�
 | 手动备份 | `shouyin-backup`（备份在 `/var/backups/shouyin`，保留 30 份） |
 | 恢复备份 | `systemctl stop shouyin && su postgres -c "pg_restore --clean --if-exists -d shouyin 备份.dump" && systemctl start shouyin` |
 | 看日志 | `journalctl -u shouyin -n 100` |
+| 看自动更新记录 | `journalctl -u shouyin-autodeploy -n 50` |
+| 暂停 / 恢复自动更新 | `touch /etc/shouyin/autodeploy.pause` / `rm /etc/shouyin/autodeploy.pause` |
+
+## 自动更新（推 deploy 分支即上线）
+
+服务器每 3 分钟查一次 GitHub 上的 `deploy` 分支，有新提交就自动下载、先备份数据库、换新版本；新版本起不来自动退回旧版本，
+并给 `/etc/shouyin/autodeploy.env` 里 `ALERT_TO=` 的邮箱发信（用服务器上已配好的 msmtp）。同一个提交失败后不重试，修好后推新提交。
+
+上线：把已合并到 main、测试通过的提交推到 deploy，例如 `git push origin main:deploy`。回退：把旧提交推到 deploy（`git push -f origin <旧提交>:deploy`）。
+
+第一次安装（root，在服务器上运行一次，`<提交>` 换成含本功能的提交、`<当前线上提交>` 换成服务器正在用的完整提交号）：
+
+```bash
+cd /root && curl -fsSL -o a.tgz https://codeload.github.com/ae2928266172-tech/Aether/tar.gz/<提交> \
+  && rm -rf src && mkdir src && tar -xzf a.tgz -C src --strip-components=1 \
+  && install -m 755 src/deploy/autodeploy.sh /usr/local/bin/shouyin-autodeploy \
+  && install -m 644 src/deploy/shouyin-autodeploy.service src/deploy/shouyin-autodeploy.timer /etc/systemd/system/ \
+  && mkdir -p /var/lib/shouyin/autodeploy && echo <当前线上提交> > /var/lib/shouyin/autodeploy/deployed \
+  && systemctl daemon-reload && systemctl enable --now shouyin-autodeploy.timer
+```
 
 有域名和 ICP 备案后，再在 `nginx-shouyin.conf` 里加 443（HTTPS）。

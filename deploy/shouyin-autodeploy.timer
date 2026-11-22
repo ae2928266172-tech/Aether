@@ -1,0 +1,10 @@
+[Unit]
+Description=每 3 分钟检查一次收银系统新版本
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=3min
+RandomizedDelaySec=20
+
+[Install]
+WantedBy=timers.target
