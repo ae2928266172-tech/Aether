@@ -59,8 +59,8 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .pos-right { width: 420px; flex-shrink: 0; background: #fff; border-left: 1px solid var(--border); display: flex; flex-direction: column; }
 .cart-head { padding: 16px 18px 12px; display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--border); }
 .cart-head b { font-size: 17px; }
-.cart { flex: 1; overflow: auto; padding: 0 14px; }
-.line { display: flex; align-items: center; gap: 10px; padding: 12px 4px; border-bottom: 1px solid #f0f0f2; }
+.cart { flex: 1; overflow: auto; padding: 0; }
+.line { display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 18px; border-bottom: 1px solid #f0f0f2; }
 .line .info { flex: 1; min-width: 0; }
 .line .ln { font-weight: 600; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .line .info .muted { font-size: 12px; margin-top: 2px; }
@@ -210,7 +210,7 @@ kbd { display: inline-block; font: 600 11px/1 Consolas, "SF Mono", monospace; co
 .kb-gap:last-child { margin-right: 0; margin-left: -6px; }
 @media (max-width: 1100px) { .kb { width: 380px; } .kb-k { height: 36px; } }
 .keys span { white-space: nowrap; }
-.line.sel { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); border-radius: 4px; }
+.line.sel { background: var(--primary-soft); box-shadow: inset 3px 0 0 var(--primary); }
 .paybox .methods .m kbd { margin: 0 0 0 6px; }
 .paybox .keyhint { float: left; line-height: 40px; font-size: 12px; }
 .el-button kbd { margin-right: 2px; }
