@@ -149,8 +149,11 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .ocard { background: #fff; border-radius: 16px; padding: 14px 16px; border: 0; box-shadow: var(--shadow-card); cursor: pointer; }
 .ocard.pending { box-shadow: 0 0 0 2px var(--danger); }
 .ocard .h { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
-.ocard .where { font-size: 16px; font-weight: 700; }
-.ocard .where .loc { font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 8px; }
+.ocard .where { display: flex; align-items: center; min-width: 0; font-size: 16px; font-weight: 700; }
+.ocard .src { flex: none; display: inline-block; font-size: 13px; font-weight: 600; line-height: 18px; padding: 2px 10px; border-radius: 999px; }
+.ocard .src.pos { background: #eef2f7; color: #475569; }
+.ocard .src.online { background: #fef3c7; color: #b45309; }
+.ocard .where .loc { font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocard .meta { color: var(--muted); font-size: 12px; margin: 6px 0 8px; }
 .ocard .goods { color: var(--text-2); line-height: 1.6; }
 .ocard .f { display: flex; justify-content: space-between; margin-top: 10px; align-items: center; }

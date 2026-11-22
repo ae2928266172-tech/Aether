@@ -583,7 +583,7 @@ const Orders = {
     <div class="orders">
       <el-empty v-if="!rows.length" description="没有订单" style="grid-column:1/-1" />
       <div v-for="o in rows" :key="o.id" class="ocard" :class="[o.source, {pending: o.status==='pending'}]" @click="open(o)">
-        <div class="h"><span class="where">{{o.source === 'online' ? '扫码点单' : '门店收银'}}<span v-if="o.source === 'online'" class="loc">{{ ((o.area_name || '') + ' ' + (o.location_note || '')).trim() }}</span></span>
+        <div class="h"><span class="where"><span class="src" :class="o.source">{{o.source === 'online' ? '扫码点单' : '门店收银'}}</span><span v-if="o.source === 'online'" class="loc">{{ ((o.area_name || '') + ' ' + (o.location_note || '')).trim() }}</span></span>
           <el-tag :type="tagType(o)" effect="light" round>{{o.status_text}} · {{o.pay_status_text}}</el-tag></div>
         <div class="meta">{{o.created_at.slice(5, 16)}} · {{o.no}}</div>
         <div class="goods">{{o.items.map(i => i.product_name + (i.sku_name !== '默认' ? '(' + i.sku_name + ')' : '') + ' × ' + i.qty).join('，')}}</div>
