@@ -51,7 +51,7 @@ def preview(body: dict, db: Session = Depends(get_db), user: User = Depends(requ
     _check_style(body)
     set_setting(db, "receipt", body)
     store = Store(name="示例门店")
-    o = Order(no="S202611140001", source="online", store=store, area_name="一病区", location_note="12 床",
+    o = Order(no="WECHAT202611140001", source="online", store=store, area_name="一病区", location_note="12 床",
               status="completed", pay_status="paid", original_amount=3000, payable_amount=2850, discount_rate=95,
               paid_amount=2850, refunded_amount=0, remark="", print_count=0)
     from ..db import now
