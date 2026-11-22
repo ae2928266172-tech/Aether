@@ -292,6 +292,10 @@ const Pos = {
   </div>`,
   setup(props) {
     const products = ref([]), cats = ref([]), cat = ref(null), scanText = ref(''), cart = ref([]), remark = ref('');
+    // 当前购物车存在本标签页（sessionStorage）：点“同步”刷新到新版本、或误按 F5 刷新后，购物车还在
+    const cartKey = 'shouyin_cart_' + props.storeId;
+    try { const s = JSON.parse(sessionStorage.getItem(cartKey) || 'null'); if (s) { cart.value = s.cart || []; remark.value = s.remark || ''; } } catch (e) {}
+    watch([cart, remark], () => { try { sessionStorage.setItem(cartKey, JSON.stringify({ cart: cart.value, remark: remark.value })); } catch (e) {} }, { deep: true });
     const scanDlg = ref(false), scanMatches = ref([]);
     const payDlg = ref(false), skuDlg = ref(false), skuProduct = ref(null), doneDlg = ref(false), last = ref({}), lastChange = ref(0), lastReceived = ref(0), scan = ref(null);
     let reqId = rid();
@@ -1043,15 +1047,27 @@ const App = {
     const switchStore = () => { setPref('store', storeId.value); startPoll(); };
     // 手动同步：重新拿门店设置、账号权限，并让当前页面重新拉商品 / 订单 / 库存（不清购物车、不退出登录）
     const syncN = ref(0), syncing = ref(false);
+    // 页面引用的 js/css 版本号（如 store.js?v=32）；服务器上的版本号变了，说明收银页有更新
+    const assetVers = (html) => (html.match(/[\w.-]+\.(?:js|css)\?v=\d+/g) || []).sort().join(',');
     const sync = async () => {
       syncing.value = true;
       try {
+        // 收银页本身有新版本：直接刷新页面（购物车、登录都会保留），不用重开软件或按 Ctrl+R
+        try {
+          const html = await (await fetch('/web/store/?_=' + Date.now(), { cache: 'no-store' })).text();
+          if (assetVers(html) && assetVers(html) !== assetVers(document.documentElement.innerHTML)) {
+            try { sessionStorage.setItem('shouyin_synced', '1'); } catch (e) {}
+            location.reload();
+            return;
+          }
+        } catch (e) {}  // 拿不到页面就只同步数据
         const [st, me] = await Promise.all([api.get('/api/stores'), api.get('/api/auth/me')]);
         stores.value = st; user.value = me;
         syncN.value++; tick.value++; poll();
         ElMessage.success('已同步');
       } catch (e) { err(e); } finally { syncing.value = false; }
     };
+    try { if (sessionStorage.getItem('shouyin_synced')) { sessionStorage.removeItem('shouyin_synced'); setTimeout(() => ElMessage.success('已同步，收银页已更新到最新版本'), 600); } } catch (e) {}
     const login = async () => {
       busy.value = true;
       try {

@@ -1,2 +1,7 @@
 *.sh text eol=lf
 deploy/* text eol=lf
+# 打给服务器的代码包（git archive）里不带测试和文档，只放收银系统运行需要的文件
+backend/tests export-ignore
+desktop/test export-ignore
+desktop/e2e export-ignore
+docs export-ignore
