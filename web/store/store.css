@@ -260,6 +260,9 @@ body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyh
 @media (max-width: 1440px) { .ws-top .clock, .ws-top .clock + .tb-sep { display: none; } }
 @media (max-width: 1280px) { .ws-top .tb .ico { display: none; } .ws-top .tb { padding: 0 10px; } .ws-top .store { min-width: 0; } }
 @media (max-width: 1120px) { .ws-top .who span:last-child { display: none; } }
-.x-skus { display: flex; flex-wrap: wrap; gap: 6px; }
-.x-skus .el-radio-button__inner { border-left: var(--el-border) !important; border-radius: 6px !important; }
+.x-sec { margin: 14px 0 6px; font-weight: 600; }
+.x-sec:first-child { margin-top: 0; }
+.x-sec .muted { font-weight: 400; font-size: 12px; margin-left: 6px; }
+.x-foot { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+.x-rec { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .el-message-box__btns .el-button { height: 40px; padding: 0 20px; font-size: 15px; }

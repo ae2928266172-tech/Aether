@@ -1,14 +1,15 @@
 """打印队列：门店选择“打印小助手”出票时，新订单、收银、补打都放进队列，由接小票机的电脑取走打印。"""
 from sqlalchemy.orm import Session
 
-from ..models import Order, PrintJob, Store, User
+from ..models import Exchange, Order, PrintJob, Store, User
 
 
-def enqueue(db: Session, store: Store, order: Order | None, kind: str, user: User | None = None) -> PrintJob | None:
+def enqueue(db: Session, store: Store, order: Order | None, kind: str, user: User | None = None,
+            exchange: Exchange | None = None) -> PrintJob | None:
     if store.print_mode != "agent":
         return None
     job = PrintJob(store_id=store.id, order_id=order.id if order else None, kind=kind,
-                   created_by=user.id if user else None)
+                   exchange_id=exchange.id if exchange else None, created_by=user.id if user else None)
     db.add(job)
     db.flush()
     return job

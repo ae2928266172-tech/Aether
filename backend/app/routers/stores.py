@@ -193,7 +193,7 @@ class WarehouseIn(BaseModel):
 @router.get("/locations")
 def list_locations(db: Session = Depends(get_db), _: User = Depends(require("inventory"))):
     stores = {s.location_id: s.id for s in db.scalars(select(Store))}
-    return [{"id": l.id, "name": l.name, "kind": l.kind, "kind_text": "仓库" if l.kind == "warehouse" else "门店",
+    return [{"id": l.id, "name": l.name, "kind": l.kind, "kind_text": {"warehouse": "仓库", "defective": "残次品库"}.get(l.kind, "门店"),
              "store_id": stores.get(l.id), "active": l.active}
             for l in db.scalars(select(Location).order_by(Location.kind.desc(), Location.id))]
 

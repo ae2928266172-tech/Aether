@@ -7,7 +7,7 @@ import unicodedata
 
 from sqlalchemy.orm import Session
 
-from ..models import Order, User
+from ..models import Exchange, Order, RefundLine, User
 from ..settings_store import get_setting
 from .orders import PAY_METHODS
 
@@ -143,3 +143,57 @@ def build_receipt(db: Session, o: Order, user: User | None, reprint: bool = Fals
             "info": [list(x) for x in info], "items": items, "totals": [list(x) for x in totals],
             "remark": remark, "footer": footer, "footer_image": cfg.get("footer_image") or "",
             "text": "\n".join(t)}
+
+
+def build_exchange_receipt(db: Session, ex: Exchange, user: User | None, reprint: bool = False) -> dict:
+    """《售后换货凭证》：原单号、退回商品、换出商品、补收 / 退还差价及方式。格式与收银小票相同，打印方式也相同。"""
+    from sqlalchemy import select
+    cfg = get_setting(db, "receipt")
+    o = db.get(Order, ex.order_id)
+    width = 32 if int(cfg.get("paper_width", 58)) == 58 else 48
+    title = "售后换货凭证"
+    store_line = o.store.name
+    head = [title, store_line]
+    info = [("", "【补打】")] if reprint else []
+    info += [("换货单号", ex.no), ("原单号", o.no), ("时间", ex.created_at.strftime("%Y-%m-%d %H:%M:%S"))]
+    if user:
+        info.append(("操作员", user.display_name or user.username))
+    by_id = {i.id: i for i in o.items}
+    items = []
+    for ln in db.scalars(select(RefundLine).where(RefundLine.refund_id == ex.refund_id).order_by(RefundLine.id)):
+        it = by_id.get(ln.order_item_id)
+        if it:
+            name = "【退回】" + it.product_name + (f"（{it.sku_name}）" if it.sku_name and it.sku_name != "默认" else "")
+            items.append({"name": name, "qty": ln.qty, "unit": it.unit, "unit_price": None,
+                          "amount": "-" + yuan(ln.amount), "medical": []})
+    for it in o.items:
+        if it.exchange_id == ex.id:
+            name = "【换出】" + it.product_name + (f"（{it.sku_name}）" if it.sku_name and it.sku_name != "默认" else "")
+            items.append({"name": name, "qty": it.qty, "unit": it.unit, "unit_price": yuan(it.unit_price),
+                          "amount": yuan(it.paid_share), "medical": []})
+    totals = [("退回商品实收", yuan(ex.old_amount)), ("换出商品金额", yuan(ex.new_amount))]
+    if ex.new_amount != ex.new_original:
+        totals.append(("（现价）", yuan(ex.new_original)))
+    if ex.diff > 0:
+        totals.append(("补收（" + PAY_METHODS.get(ex.method, ex.method or "") + "）", yuan(ex.diff)))
+    elif ex.diff < 0:
+        totals.append(("退还（" + PAY_METHODS.get(ex.method, ex.method or "") + "）", yuan(-ex.diff)))
+    else:
+        totals.append(("差价", "0.00"))
+    totals.append(("退回状态", "完好，回可售库存" if ex.condition == "good" else "拆封 / 破损，进残次品库"))
+    remark = ("原因：" + ex.reason) if ex.reason else ""
+    footer = ["请保留本凭证，作为售后换货依据"]
+    sep = (cfg.get("separator") or "-")[:1] * width
+    t = [_center(h, width) for h in head] + [sep] + [(f"{k}：{v}" if k else v) for k, v in info] + [sep]
+    for it in items:
+        t.append(it["name"])
+        t.append(_lr(f"  {it['qty']}{it['unit']}" + (f" × {it['unit_price']}" if it["unit_price"] else ""), it["amount"], width))
+    t += [sep] + [_lr(k, v, width) for k, v in totals]
+    if remark:
+        t.append(remark)
+    t += [sep] + [_center(f, width) for f in footer]
+    style = {k: cfg.get(k, DEFAULT_STYLE[k]) for k in DEFAULT_STYLE}
+    return {"order_id": o.id, "order_no": o.no, "exchange_id": ex.id, "paper_width": int(cfg.get("paper_width", 58)),
+            "copies": 1, "reprint": reprint, "head": head, "title": title, "store_line": store_line, "header_lines": [],
+            "style": style, "info": [list(x) for x in info], "items": items, "totals": [list(x) for x in totals],
+            "remark": remark, "footer": footer, "footer_image": "", "text": "\n".join(t)}
