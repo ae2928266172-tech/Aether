@@ -161,6 +161,10 @@ a:hover { text-decoration: underline; }
 .skus { display: flex; flex-wrap: wrap; gap: 6px; }
 .sku-chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; color: var(--text-2); line-height: 20px; }
 .sku-chip b { color: var(--text); font-weight: 600; font-variant-numeric: tabular-nums; }
+.sku-chip.nostock { border-style: dashed; }
+.prod-table .el-table__cell { padding: 7px 0; }
+.prod-table .skus { gap: 4px; }
+.prod-table .sku-chip { padding: 1px 7px; font-size: 12.5px; }
 .el-table .clickable { cursor: pointer; }
 .zero { color: #d4d4d8; }
 .el-table .strong { font-weight: 650; color: var(--text); }
