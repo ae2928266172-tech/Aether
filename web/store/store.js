@@ -238,11 +238,11 @@ const Pos = {
   components: { PayDialog, PosKeyboard, PickDialog },
   template: `
   <div class="ws-body pos">
-    <div class="rail">
-      <button type="button" class="rc" :class="{on: !cat}" @click="cat=null">全部</button>
-      <button v-for="c in topCats" :key="c.id" type="button" class="rc" :class="{on: cat===c.id}" @click="cat=c.id">{{c.name}}</button>
-    </div>
     <div class="pos-left">
+      <div class="cats">
+        <button type="button" class="rc" :class="{on: !cat}" @click="cat=null">全部</button>
+        <button v-for="c in topCats" :key="c.id" type="button" class="rc" :class="{on: cat===c.id}" @click="cat=c.id">{{c.name}}</button>
+      </div>
       <div class="grid">
         <el-empty v-if="scanText.trim() && !shown.length" :image-size="70" :description="'没有找到“' + scanText.trim() + '”'" style="grid-column:1/-1" />
         <div v-for="p in visible" :key="p.id" class="card" :class="{in: inCart(p)}" @click="tap(p)">
@@ -1245,8 +1245,8 @@ const App = {
   </div>
   <div v-else class="ws">
     <div class="ws-top">
-      <div class="store"><span class="mark">收</span>
-        <span v-if="stores.length <= 1">{{storeName}}</span>
+      <div class="store"><span class="mark">AW</span>
+        <span v-if="stores.length <= 1" class="sn">{{storeName}}<small>收银系统 · 门店工作台</small></span>
         <el-select v-else v-model="storeId" @change="switchStore"><el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id" /></el-select></div>
       <div class="tabs">
         <div v-if="can('pos')" class="tab" :class="{on: tab==='pos'}" @click="tab='pos'"><span class="ico" v-html="icon('cart')"></span>收银</div>
