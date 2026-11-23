@@ -481,35 +481,52 @@ const Stores = {
 };
 
 // ---------------- 仓库与库存 ----------------
-const Inventory = {
-  props: ['meta'],
+// 同一块内容：独立菜单页里直接铺在页面上，其他地方弹窗打开
+const DlgPage = {
+  props: { modelValue: Boolean, inline: Boolean, title: String, width: String, top: String },
+  emits: ['update:modelValue'],
   template: `
-  <div class="panel">
-    <div class="segs">
+  <div v-if="inline" class="panel">
+    <div v-if="title" class="panel-title" style="margin-bottom:14px">{{title}}</div>
+    <slot />
+    <div v-if="$slots.footer" class="page-foot"><slot name="footer" /></div>
+  </div>
+  <el-dialog v-else :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title" :width="width" :top="top">
+    <slot /><template v-if="$slots.footer" #footer><slot name="footer" /></template>
+  </el-dialog>`,
+};
+// 库存相关的几个菜单页共用一个组件，view 决定显示哪一块
+const Inventory = {
+  props: { meta: Object, go: Function, view: { type: String, default: 'inventory' } },
+  components: { DlgPage },
+  template: `
+  <div>
+  <div v-if="view === 'inventory'" class="panel" style="padding-bottom:0">
+    <div class="toolbar" style="margin-bottom:6px"><span class="muted">地点</span><span class="grow"></span>
+      <el-button type="primary" @click="go('stockIn')">入库</el-button><el-button @click="go('stockIn', 'out')">出库</el-button>
+      <el-button @click="go('stockCount')">盘点</el-button><el-button @click="go('requests')">调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button></div>
+    <div class="segs" style="margin-bottom:0;border-bottom:0">
       <div v-for="l in locations" :key="l.id" class="seg" :class="{on: loc === l.id}" @click="loc = l.id; load()">
         {{l.name}}<span class="n">{{l.kind_text}}</span></div>
-      <span class="seg" style="color:var(--primary)" @click="newWarehouse">+ 新增仓库</span>
+      <span class="seg" style="color:var(--primary)" @click="newWarehouse">＋ 新增仓库</span>
     </div>
-    <div class="toolbar">
-      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
-      <el-input v-model="kw" placeholder="搜索名称或编码" clearable style="width:180px" />
-      <el-button @click="load">查询</el-button>
-      <el-button @click="expLedger">导出</el-button>
-      <span class="grow"></span>
-      <el-button @click="openReqs">要货申请<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button>
-      <el-button @click="openBatches">批次 / 有效期</el-button>
-      <el-button @click="openDocs">单据记录</el-button>
-      <el-button @click="openDoc('in')">入库</el-button>
-      <el-button @click="openDoc('out')">出库</el-button>
-      <el-button @click="openDoc('adjust')">盘点</el-button>
-      <el-button type="primary" @click="openDoc('transfer')">调拨到门店</el-button>
-    </div>
-    <div class="stats" style="margin-bottom:14px">
+  </div>
+  <template v-if="view === 'inventory'">
+    <div class="stats">
       <div class="stat"><div class="k">库存品</div><div class="v">{{rows.length}}</div><div class="s">本地点有记录的</div></div>
       <div class="stat"><div class="k">期间入库 + 调入</div><div class="v">{{fmtN(sumOf('in') + sumOf('transfer_in'))}}</div></div>
       <div class="stat"><div class="k">期间销售</div><div class="v">{{fmtN(sumOf('sale') - sumOf('sale_return'))}}</div><div class="s">已扣除退货回补</div></div>
       <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div><div class="s">需要补货或核对</div></div>
-      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--danger)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
+      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--warn)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
+    </div>
+    <div class="panel">
+    <div class="toolbar">
+      <el-input v-model="kw" placeholder="搜索名称或编码" clearable style="width:200px" />
+      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
+      <el-button type="primary" @click="load">查询</el-button>
+      <el-button @click="expLedger">导出</el-button>
+      <span class="grow"></span>
+      <span class="link-more" @click="go('docs')">单据与台账 ›</span>
     </div>
     <el-table :data="shownRows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 || row.low ? 'row-low' : ''">
       <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag><el-tag v-if="nearExp(row.earliest_expiry)" type="warning" size="small" style="margin-left:6px">{{ expText(row.earliest_expiry) }}</el-tag></div><div class="c-sub">{{row.unit}}<span v-if="row.earliest_expiry"> · 最早到期 {{row.earliest_expiry}}</span></div></template></el-table-column>
@@ -519,9 +536,13 @@ const Inventory = {
       <el-table-column label="当前库存" min-width="96" align="right" fixed="right"><template #default="{row}">
         <b class="money" :style="row.current <= 0 ? 'color:var(--danger)' : ''">{{fmtN(row.current)}}</b></template></el-table-column>
     </el-table>
-    <div class="muted" style="margin-top:6px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
+    <div class="muted" style="margin-top:10px;font-size:12px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
+    </div>
+  </template>
 
-    <el-dialog v-model="dDlg" :title="docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
+    <dlg-page v-model="dDlg" :inline="docInline" :title="docInline ? '' : docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
+      <div v-if="view === 'stockIn'" class="toolbar"><div class="segs mini"><div class="seg" :class="{on: doc.kind === 'in'}" @click="openDoc('in')">入库</div><div class="seg" :class="{on: doc.kind === 'out'}" @click="openDoc('out')">出库</div></div>
+        <span class="muted" style="font-size:12px">{{ doc.kind === 'in' ? '采购到货登记入库' : '报损、领用、退供应商等' }}</span></div>
       <el-form label-width="80px" inline>
         <el-form-item v-if="doc.kind==='out' || doc.kind==='transfer'" label="调出"><el-select v-model="doc.from" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind!=='out'" :label="doc.kind==='transfer' ? '调入' : (doc.kind==='adjust' ? '盘点地点' : '入库到')"><el-select v-model="doc.to" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
@@ -551,13 +572,15 @@ const Inventory = {
       </el-table>
       <el-pagination v-if="docMatched.length > dSize" v-model:current-page="dPage" :page-size="dSize" :total="docMatched.length" layout="prev, pager, next" background small style="margin-top:8px;justify-content:center" />
       <div v-if="doc.kind==='in' && docAmt" style="text-align:right;margin-top:8px">进货金额合计 <b class="money">¥{{yuan(docAmt)}}</b></div>
-      <template #footer><el-button @click="dDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
-    </el-dialog>
-    <el-dialog v-model="rqDlg" title="门店要货申请" width="960px" top="5vh">
+      <template #footer><el-button @click="docInline ? openDoc(doc.kind) : (dDlg = false)">{{ docInline ? '清空' : '取消' }}</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
+    </dlg-page>
+    <div v-if="docInline" class="note">提交后库存立即变化；填错的单据到“单据与台账”里点“作废”，库存按原单反向冲回，单据保留可查。</div>
+    <dlg-page v-model="rqDlg" :inline="view === 'requests'" title="门店要货申请" width="960px" top="5vh">
       <div class="toolbar">
         <el-radio-group v-model="rq.status" @change="loadReqs"><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button><el-radio-button value="">全部</el-radio-button></el-radio-group>
-        <span class="muted">门店在门店工作台“要货”里提交；点“处理”从仓库调拨，数量可以改。</span></div>
-      <el-table :data="reqs" size="small" max-height="540">
+        <span class="muted" style="font-size:12px">门店在门店工作台“要货”里提交；点“处理”从仓库调拨，数量可以改。</span>
+        <span class="grow"></span><el-button v-if="view === 'requests'" type="primary" @click="openDoc('transfer')">新建调拨单</el-button></div>
+      <el-table :data="reqs" :max-height="view === 'requests' ? undefined : 540">
         <el-table-column label="要货单" min-width="180"><template #default="{row}"><div class="c-main">{{row.store_name}}</div><div class="c-sub">{{row.no}} · {{row.created_at}} · {{row.created_by_name}}</div></template></el-table-column>
         <el-table-column label="要什么" min-width="260"><template #default="{row}">{{ row.lines.filter(l => +l.qty > 0).map(l => l.name + '×' + l.qty).join('、') }}<div v-if="row.remark" class="muted">备注：{{row.remark}}</div></template></el-table-column>
         <el-table-column label="状态" width="200"><template #default="{row}">
@@ -566,7 +589,7 @@ const Inventory = {
         <el-table-column width="130" align="right"><template #default="{row}"><template v-if="row.status === 'pending'">
           <el-button link type="primary" @click="openFulfill(row)">处理</el-button><el-button link type="danger" @click="rejectReq(row)">驳回</el-button></template></template></el-table-column>
       </el-table>
-    </el-dialog>
+    </dlg-page>
     <el-dialog v-model="ffDlg" :title="'处理要货单：' + (ff.req ? ff.req.store_name : '')" width="680px" top="6vh">
       <el-form inline><el-form-item label="从"><el-select v-model="ff.from" style="width:160px" @change="fetchBal(ff.from)"><el-option v-for="l in locations.filter(l => l.kind === 'warehouse')" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item label="备注"><el-input v-model="ff.note" placeholder="选填，门店能看到" style="width:260px" /></el-form-item></el-form>
@@ -579,13 +602,13 @@ const Inventory = {
       <div class="muted" style="margin-top:6px">实发填 0 表示这项不发。提交后生成调拨单，库存立即变化，先出最早到期的批次。</div>
       <template #footer><el-button @click="ffDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitFulfill">确认调拨</el-button></template>
     </el-dialog>
-    <el-dialog v-model="bDlg" title="批次 / 有效期" width="900px" top="6vh">
+    <dlg-page v-model="bDlg" :inline="view === 'batches'" title="批次 / 有效期" width="900px" top="6vh">
       <div class="toolbar">
         <el-select v-model="bq.location_id" placeholder="全部地点" clearable style="width:160px" @change="loadBatches"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
         <el-checkbox v-model="bq.onlyNear">只看 {{expiryDays}} 天内到期</el-checkbox>
         <span class="muted">有剩余的批次，最早到期的在前。临期天数在“业务规则”里改。</span>
       </div>
-      <el-table :data="bq.onlyNear ? batches.filter(b => nearExp(b.expiry_date)) : batches" size="small" max-height="520">
+      <el-table :data="bq.onlyNear ? batches.filter(b => nearExp(b.expiry_date)) : batches" :max-height="view === 'batches' ? undefined : 520">
         <el-table-column prop="location_name" label="仓库 / 门店" width="140" />
         <el-table-column prop="name" label="库存品" min-width="150" />
         <el-table-column prop="batch_no" label="批号" width="110" />
@@ -594,8 +617,8 @@ const Inventory = {
           <el-tag v-if="nearExp(row.expiry_date)" :type="row.expired ? 'danger' : 'warning'" size="small" style="margin-left:4px">{{ expText(row.expiry_date) }}</el-tag></template></el-table-column>
         <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
       </el-table>
-    </el-dialog>
-    <el-dialog v-model="lDlg" title="出入库单据" width="980px" top="4vh">
+    </dlg-page>
+    <dlg-page v-model="lDlg" :inline="view === 'docs'" title="出入库单据" width="980px" top="4vh">
       <div class="toolbar">
         <el-select v-model="lq.kind" placeholder="全部类型" clearable style="width:110px" @change="loadDocs"><el-option v-for="(t, k) in kindText" :key="k" :label="t" :value="k" /></el-select>
         <el-select v-model="lq.location_id" placeholder="全部地点" clearable style="width:140px" @change="loadDocs"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
@@ -603,7 +626,7 @@ const Inventory = {
         <el-input v-model="lq.keyword" placeholder="单号 / 备注" clearable style="width:150px" @keyup.enter="loadDocs" @clear="loadDocs" />
         <el-button @click="loadDocs">查询</el-button><el-button @click="expDocs">导出</el-button>
       </div>
-      <el-table :data="docs" size="small" max-height="560" :row-class-name="({row}) => row.voided ? 'row-void' : ''">
+      <el-table :data="docs" :max-height="view === 'docs' ? undefined : 560" :row-class-name="({row}) => row.voided ? 'row-void' : ''">
         <el-table-column type="expand"><template #default="{row}">
           <div style="padding:4px 12px 10px 48px">
             <div class="muted" style="margin-bottom:6px">
@@ -629,7 +652,7 @@ const Inventory = {
           <el-button v-else link type="danger" @click="voidDoc(row)">作废</el-button></template></el-table-column>
       </el-table>
       <div class="muted" style="margin-top:6px">填错的单据点“作废”：库存按原单反向冲回，单据保留可查。盘点单作废只冲回当时的盈亏数量。</div>
-    </el-dialog>
+    </dlg-page>
     <el-dialog v-model="mDlg" :title="mTitle" width="640px">
       <el-table :data="moves" border size="small" max-height="460">
         <el-table-column prop="created_at" label="时间" width="160" />
@@ -639,6 +662,7 @@ const Inventory = {
         <el-table-column prop="ref" label="单据 / 订单" />
       </el-table>
     </el-dialog>
+  </div>
   </div>`,
   setup(props) {
     const locations = ref([]), loc = ref(null), range = ref([today(), today()]), kw = ref(''), rows = ref([]);
@@ -781,7 +805,8 @@ const Inventory = {
         await api.post('/api/stock-docs', { kind: doc.kind, from_location_id: doc.kind === 'out' || doc.kind === 'transfer' ? doc.from : null,
           to_location_id: doc.kind === 'out' ? null : doc.to, supplier_id: doc.kind === 'in' || doc.reason === '退供应商' ? doc.supplier_id : null,
           reason: doc.kind === 'out' ? (doc.reason || '') : '', remark: doc.remark, request_id: doc.rid, lines });
-        ok('已提交'); dDlg.value = false; load();
+        ok('已提交');
+        if (docInline.value) openDoc(doc.kind); else { dDlg.value = false; load(); }
       } catch (e) { err(e); } finally { saving.value = false; }
     };
     const showMoves = async (row) => {
@@ -792,9 +817,20 @@ const Inventory = {
       let name; try { ({ value: name } = await ElMessageBox.prompt('仓库名称', '新增仓库')); } catch (e) { return; }
       try { await api.post('/api/warehouses', { name }); ok(); loadLocs(); } catch (e) { err(e); }
     };
-    onMounted(async () => { try { await loadLocs(); load(); countReqs(); } catch (e) { err(e); } });
+    const docInline = computed(() => props.view === 'stockIn' || props.view === 'stockCount');
+    onMounted(async () => {
+      try { await loadLocs(); } catch (e) { err(e); }
+      countReqs();
+      if (props.view === 'inventory') load();
+      else if (props.view === 'stockIn') { let k = 'in'; try { if (sessionStorage.getItem('stockKind') === 'out') k = 'out'; } catch (e) {} openDoc(k); }
+      else if (props.view === 'stockCount') openDoc('adjust');
+      else if (props.view === 'requests') openReqs();
+      else if (props.view === 'batches') openBatches();
+      else if (props.view === 'docs') openDocs();
+      try { sessionStorage.removeItem('stockKind'); } catch (e) {}
+    });
     return { reqPending, rqDlg, reqs, rq, ffDlg, ff, loadReqs, openReqs, openFulfill, submitFulfill, rejectReq, fetchBal, expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
-      locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, dq, dFilled, dPage, dSize, dLoading, dTable, dqInput, filledCount, docMatched, docShown, dqEnter, mDlg, moves, mTitle, showMoves, newWarehouse };
+      docInline, locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, dq, dFilled, dPage, dSize, dLoading, dTable, dqInput, filledCount, docMatched, docShown, dqEnter, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
 
@@ -1592,7 +1628,7 @@ const Dashboard = {
         <div class="panel-title" style="margin-bottom:12px">常用</div>
         <div class="quick">
           <div class="q" @click="go('products')"><b>新增商品</b><span>规格、库存品、扣减量</span></div>
-          <div class="q" @click="go('inventory')"><b>调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></b><span>{{ reqPending ? reqPending + ' 张要货申请待处理' : '处理门店要货' }}</span></div>
+          <div class="q" @click="go('requests')"><b>调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></b><span>{{ reqPending ? reqPending + ' 张要货申请待处理' : '处理门店要货' }}</span></div>
           <div class="q" @click="go('revenue')"><b>营收报表</b><span>日报 / 周报 / 月报</span></div>
           <div class="q" @click="go('stores')"><b>区域二维码</b><span>打印贴到区域</span></div>
         </div>
@@ -1613,7 +1649,7 @@ const Dashboard = {
       </div>
       <div v-if="expiring !== null" class="panel">
         <div class="panel-head"><div><div class="panel-title">临期提醒 <span v-if="expiring.length" style="color:var(--danger)">{{expiring.length}}</span></div>
-          <div class="panel-desc">快到期或已过期、还有剩余的批次；天数在“业务规则”里设置</div></div><span class="link-more" @click="go('inventory')">批次 / 有效期 ›</span></div>
+          <div class="panel-desc">快到期或已过期、还有剩余的批次；天数在“业务规则”里设置</div></div><span class="link-more" @click="go('batches')">批次 / 有效期 ›</span></div>
         <el-table v-if="expiring.length" :data="expiring.slice(0, 8)">
           <el-table-column prop="name" label="库存品" min-width="150" />
           <el-table-column prop="batch_no" label="批号" width="100" />
@@ -1681,6 +1717,11 @@ const MENU = [
   ['shifts', '交班记录', 'reports', Shifts, '经营', 'clock', '每个收银员每一班的收款、备用金、现金差额'],
   ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '按商品或按分类查卖了多少，展开看逐单明细'],
   ['inventory', '库存总览', 'inventory', Inventory, '库存', 'warehouse', '仓库和各门店的库存、期间进出与预警'],
+  ['stockIn', '入库 / 出库', 'inventory', Inventory, '库存', 'box', '采购到货登记入库；出库用于报损、领用等'],
+  ['stockCount', '盘点', 'inventory', Inventory, '库存', 'scan', '按实点数量调整库存，差额记入台账'],
+  ['requests', '要货与调拨', 'inventory', Inventory, '库存', 'refresh', '处理门店要货申请，仓库调拨到门店'],
+  ['batches', '批次 / 有效期', 'inventory', Inventory, '库存', 'clock', '按批次查看生产日期、有效期和剩余数量'],
+  ['docs', '单据与台账', 'inventory', Inventory, '库存', 'inbox', '入库、出库、盘点、调拨单据和库存流水'],
   ['stores', '门店与区域', 'stores', Stores, '门店', 'store', '门店设置、区域二维码、出票方式'],
   ['receipt', '小票设置', 'receipt_config', ReceiptSettings, '门店', 'printer', '小票文字、字段、排版、底部图片'],
   ['rules', '业务规则', 'stores', Rules, '门店', 'sliders', '扣库存时机、库存不够能否卖'],
@@ -1734,7 +1775,7 @@ const App = {
           </el-dropdown></div>
       </div>
       <div class="content" ref="contentEl" @scroll.passive="onScroll">
-        <component v-if="ready" :is="tab" :meta="meta" v-bind="tab === 'dashboard' ? {go: k => tab = k} : {}" :key="tab" />
+        <component v-if="ready" :is="tab" :meta="meta" v-bind="viewProps" :key="tab" />
       </div>
       <transition name="totop"><button v-if="showTop" class="totop" aria-label="回到顶部" title="回到顶部" @click="toTop"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></transition>
     </div>
@@ -1745,6 +1786,9 @@ const App = {
     const menu = computed(() => user.value ? MENU.filter(m => user.value.is_admin && user.value.permissions.includes(m[2])) : []);
     const groups = computed(() => [...new Set(menu.value.map(m => m[4]))]);
     const cur = computed(() => menu.value.find(m => m[0] === tab.value) || []);
+    // 页面间跳转；kind 给入库/出库页指定打开哪种单据
+    const go = (k, kind) => { try { kind ? sessionStorage.setItem('stockKind', kind) : sessionStorage.removeItem('stockKind'); } catch (e) {} tab.value = k; };
+    const viewProps = computed(() => cur.value[3] === Inventory ? { go, view: tab.value } : (tab.value === 'dashboard' ? { go } : {}));
     // 侧栏品牌块和底部信息：只有一家门店时显示它的名称、地址
     const shop = computed(() => meta.stores.length === 1 ? meta.stores[0] : {});
     // 侧栏搜索：按名称和说明筛菜单，回车进第一个；Ctrl+K 聚焦
@@ -1785,7 +1829,7 @@ const App = {
     };
     window.onUnauthorized = () => { user.value = null; ready.value = false; };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await loadMeta(); } catch (e) {} } });
-    return { user, lf, busy, tab, menu, groups, cur, shop, navKw, navQ, navMenu, navGroups, navGo, greet, dateText, meta, ready, login, logout, changePw, toStore, contentEl, showTop, onScroll, toTop, icon: Shouyin.icon };
+    return { user, lf, busy, tab, menu, groups, cur, shop, navKw, navQ, navMenu, navGroups, navGo, greet, dateText, meta, ready, login, logout, changePw, toStore, contentEl, showTop, onScroll, toTop, viewProps, icon: Shouyin.icon };
   },
 };
 
