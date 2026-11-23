@@ -163,9 +163,35 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .paybox .pay-ok { height: 56px; min-width: 300px; font-size: 18px; font-weight: 600; border-radius: 12px; margin-left: 0 !important; }
 .paybox .keyhint { margin-right: auto; }
 
-.orders { flex: 1; overflow: auto; padding: 12px 16px; display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 12px; align-content: start; }
+/* 门店订单：左边订单列表，右边详情和操作按钮 */
+.ws-body.opage { padding: 12px; gap: 12px; }
+.olist-pane { width: 440px; flex-shrink: 0; background: #fff; border-radius: 14px; padding: 16px; display: flex; flex-direction: column; gap: 12px; min-height: 0; }
+.olist-pane .chip .cn { font-style: normal; margin-left: 6px; background: var(--danger); color: #fff; border-radius: 9px; padding: 0 6px; font-size: 12px; line-height: 18px; }
+.olist-pane .chip.on .cn { background: #fff; color: var(--primary); }
+.orders { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.odetail { flex: 1; min-width: 0; background: #fff; border-radius: 14px; padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; overflow: auto; }
+.od-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.od-head h2 { margin: 0 0 4px; font-size: 19px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.od-info { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.od-info > div { background: #F7F8FA; border-radius: 10px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.od-info span { color: var(--muted); font-size: 13px; }
+.od-info b { font-size: 15px; overflow-wrap: anywhere; }
+.od-info b.rmk { color: #CB2634; }
+.od-items { font-size: 14px; }
+.od-sum { display: flex; justify-content: flex-end; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+.od-sum b { font-size: 28px; }
+.od-log { margin-top: 4px; }
+.od-btns { margin-top: auto; display: flex; flex-wrap: wrap; gap: 10px; border-top: 1px solid var(--border); padding-top: 14px; position: sticky; bottom: -18px; background: #fff; padding-bottom: 2px; }
+.od-btns .bigbtn { flex: 1 1 140px; }
+.od-btns .bigbtn.wide { flex: 2 1 200px; }
+.bigbtn { height: 56px; padding: 0 22px; border-radius: 12px; font: inherit; font-size: 17px; font-weight: 600; cursor: pointer; border: 1px solid var(--border); background: #fff; color: var(--text); touch-action: manipulation; }
+.bigbtn.pri { background: var(--primary); border-color: var(--primary); color: #fff; }
+.bigbtn.ok { background: #00A870; border-color: #00A870; color: #fff; }
+.bigbtn.dng { color: #CB2634; border-color: #FDCDC5; }
 .ocard { background: #fff; border-radius: 12px; padding: 12px 14px; border: 1px solid var(--border); cursor: pointer; }
 .ocard.pending { border-color: var(--danger); background: #FFF5F3; }
+.ocard.on { border-color: var(--primary); background: #F2F7FF; box-shadow: 0 0 0 1px var(--primary) inset; }
+.ocard .h b { font-size: 17px; }
 .ocard .h { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .ocard .where { display: flex; align-items: center; min-width: 0; font-size: 16px; font-weight: 700; }
 .ocard .src { flex: none; display: inline-block; font-size: 13px; font-weight: 600; line-height: 18px; padding: 2px 10px; border-radius: 999px; }
@@ -173,15 +199,18 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .ocard .src.online { background: #E8F3FF; color: #165DFF; }
 .ocard .where .loc { font-size: 14px; font-weight: 400; color: var(--muted); margin-left: 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ocard .meta { color: var(--muted); font-size: 12px; margin: 6px 0 8px; }
-.ocard .goods { color: var(--text-2); line-height: 1.6; }
-.ocard .f { display: flex; justify-content: space-between; margin-top: 10px; align-items: center; }
+.ocard .goods { color: var(--text-2); line-height: 1.6; margin: 4px 0 2px; }
+.ocard .f { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; align-items: center; }
 .ocard .f b { font-size: 18px; color: var(--text); }
-.otool { padding: 14px 18px 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-.page-pad { padding: 18px; overflow: auto; flex: 1; }
+.otool { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.olist-pane .chips { flex-shrink: 0; flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.olist-pane .chips::-webkit-scrollbar { display: none; }
+.olist-pane .chip { flex-shrink: 0; padding: 0 14px; white-space: nowrap; }
+.olist-pane .otool .el-date-editor { width: auto; }
 
 @media (max-width: 900px) {
   .ws-body { flex-direction: column; overflow: auto; }
-  .pos-right { width: 100%; }
+  .pos-right, .olist-pane, .spane.side { width: 100%; }
   .ws-top .clock, .ws-top .clock + .tb-sep, .ws-top .who span:last-child { display: none; }
 }
 .held-dlg .el-dialog__body { padding-top: 4px; }
@@ -197,11 +226,40 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .hc-btns { display: flex; gap: 8px; }
 .hc-btns .el-button { flex: 1; margin: 0; }
 .held-pager { display: flex; align-items: center; justify-content: center; gap: 16px; color: var(--text-2); }
-.shift-sum { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 12px; }
-.shift-sum > div { flex: 1; min-width: 140px; border: 0; background: #F2F7FF; border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
-.shift-sum span { color: var(--muted); font-size: 13px; }
-.shift-sum b { font-size: 20px; }
-.shift-sum em { font-style: normal; color: var(--muted); font-size: 12px; }
+/* 交班：左边本班汇总和记录，右边点钱、数字键盘交班 */
+.shiftpage { padding: 12px; gap: 12px; }
+.spane { background: #fff; border-radius: 14px; padding: 16px 18px; display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow: auto; }
+.spane.grow { flex: 1; }
+.spane.side { width: 400px; flex-shrink: 0; }
+.spane.side .pad { margin-top: 0; }
+.spane.side .pk { height: 50px; }
+.spane h2 { margin: 0; font-size: 18px; }
+.sp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.sp-head .muted { margin-top: 4px; }
+.sp-sec { font-weight: 600; margin-top: 6px; }
+.sp-head h2 .muted { font-size: 13px; font-weight: 400; margin-left: 6px; }
+.sp-btns, .sp-foot { display: flex; gap: 8px; }
+.sp-btns .el-button + .el-button { margin-left: 0; }
+.sp-foot { justify-content: flex-end; }
+.sp-foot .bigbtn { min-width: 140px; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.kpis > div { background: #F2F7FF; border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+.kpis span { color: var(--muted); font-size: 13px; }
+.kpis b { font-size: 24px; font-variant-numeric: tabular-nums; }
+.kpis b.sm { font-size: 18px; }
+.calc { background: #F7F8FA; border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.calc > div { display: flex; justify-content: space-between; align-items: baseline; }
+.calc .t { border-top: 1px solid var(--border); padding-top: 6px; }
+.calc .t b:last-child { font-size: 24px; }
+.bigfield { display: flex; align-items: center; gap: 10px; height: 60px; padding: 0 16px; border: 2px solid var(--primary); border-radius: 12px; }
+.bigfield > span { color: var(--muted); font-size: 14px; white-space: nowrap; }
+.bigfield i { font-style: normal; }
+.bigfield .el-input__wrapper { box-shadow: none !important; padding: 0; }
+.bigfield .el-input__inner { font-size: 28px; font-weight: 700; text-align: right; height: 56px; }
+.diffbox { display: flex; justify-content: space-between; align-items: baseline; background: #E8FFEA; color: #00754A; border-radius: 12px; padding: 12px 16px; }
+.diffbox b { font-size: 22px; }
+.diffbox.bad { background: #FFECE8; color: #CB2634; }
+.spane .note { font-size: 13px; color: var(--text-2); background: #F7F8FA; border-radius: 10px; padding: 10px 12px; line-height: 1.6; }
 
 /* 键盘收银 */
 kbd { display: inline-block; font: 600 11px/1 Consolas, "SF Mono", monospace; color: var(--text-2); background: #fff; border: 1px solid var(--border);
@@ -355,9 +413,9 @@ body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyh
 .el-dialog .el-button--large, .done-btns .el-button { border-radius: 14px; }
 :root { --dur-enter: 180ms; --dur-exit: 120ms; }
 /* 按下反馈：大按钮轻微缩小；松手 140ms 弹回 */
-.rc, .card, .fb, .chip, .qty button, .paybtn, .paybox .methods .m, .pick, .ocard, .ws-top .tb, .xd .x-card, .xd .x-opts .m, .line .del {
+.rc, .card, .fb, .chip, .bigbtn, .qty button, .paybtn, .paybox .methods .m, .pick, .ocard, .ws-top .tb, .xd .x-card, .xd .x-opts .m, .line .del {
   transition: transform var(--dur-press) var(--ease-out), background-color .12s ease, border-color .12s ease, color .12s ease; }
-.rc:active, .fb:active:not(:disabled), .chip:active, .qty button:active, .paybox .methods .m:active, .ocard:active, .ws-top .tb:active:not(:disabled),
+.rc:active, .fb:active:not(:disabled), .chip:active, .bigbtn:active, .qty button:active, .paybox .methods .m:active, .ocard:active, .ws-top .tb:active:not(:disabled),
 .xd .x-card:active, .xd .x-opts .m:active, .ws-top .tab:active { transform: scale(.97); }
 .card:active { transform: scale(.97); }
 .paybtn:active:not(:disabled) { transform: scale(.985); }

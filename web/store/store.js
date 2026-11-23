@@ -21,6 +21,14 @@ const msgBoxOpen = () => !!document.querySelector('.el-message-box');
 
 const METHODS = { cash: '现金', wechat: '微信', alipay: '支付宝', other: '其他' };
 const PAD = ['7', '8', '9', 'back', '4', '5', '6', 'clear', '1', '2', '3', 'ok', '00', '0', '.'];
+// 数字键盘输入金额：返回按下 k 之后的值，最多两位小数（ok 由各处自己处理）
+const padNext = (v, k) => {
+  v = String(v == null ? '' : v);
+  if (k === 'back') return v.slice(0, -1);
+  if (k === 'clear') return '';
+  const n = (v === '0' && k !== '.' ? '' : v || (k === '.' ? '0' : '')) + k;
+  return /^\d+(\.\d{0,2})?$/.test(n) ? n : v;
+};
 
 // 收银和换货使用同一套字母数字键盘、商品搜索和规格选择。
 const keys = (str) => str.split('').map(k => ({ k }));
@@ -184,12 +192,7 @@ const PayDialog = {
         else return submit();
         return focusReceived();
       }
-      const v = String(m.value == null ? '' : m.value);
-      if (k === 'back') m.value = v.slice(0, -1);
-      else if (k === 'clear') m.value = '';
-      else if (k === '.' && v.includes('.')) return;
-      else if (/^\d+\.\d\d$/.test(v)) return;  // 最多两位小数
-      else m.value = (v === '0' && k !== '.' ? '' : v) + k;
+      m.value = padNext(m.value, k);
     };
     const reset = () => { field.value = 'received'; rate.value = null; rateInput.value = ''; payableInput.value = ''; method.value = 'cash'; received.value = ''; quote(); };
     const roundDown = async (unit) => { payableInput.value = yuan(Math.floor(q.payable_amount / unit) * unit + (payableInput.value === '' ? 0 : 0)); await quote(); };
@@ -566,65 +569,65 @@ const Orders = {
   props: ['user', 'store', 'storeId', 'settings', 'pendingCount', 'tick', 'agent'],
   components: { PayDialog, PosKeyboard, PickDialog },
   template: `
-  <div class="ws-body" style="flex-direction:column">
-    <div class="otool">
-      <el-radio-group v-model="status" @change="load">
-        <el-radio-button value="">全部</el-radio-button>
-        <el-radio-button value="completed">已完成</el-radio-button>
-        <el-radio-button value="cancelled">已取消</el-radio-button>
-        <el-radio-button v-if="showPending" value="pending">待接单{{counts.pending ? ' ' + counts.pending : ''}}</el-radio-button>
-        <el-radio-button v-if="showUnpaid" value="accepted">已接单待收款{{counts.unpaid ? ' ' + counts.unpaid : ''}}</el-radio-button>
-        <el-radio-button value="refund">退款退货</el-radio-button>
-      </el-radio-group>
-      <el-select v-model="source" placeholder="全部来源" clearable style="width:120px" @change="load"><el-option label="扫码点单" value="online" /><el-option label="门店收银" value="pos" /></el-select>
-      <el-date-picker v-model="day" type="date" value-format="YYYY-MM-DD" placeholder="日期" style="width:150px" @change="load" />
-      <el-input v-model="kw" placeholder="单号 / 床号 / 电话" clearable style="width:170px" @keyup.enter="load" />
-      <el-button @click="load">刷新</el-button>
-    </div>
-    <div class="orders">
-      <el-empty v-if="!rows.length" description="没有订单" style="grid-column:1/-1" />
-      <div v-for="o in rows" :key="o.id" class="ocard" :class="[o.source, {pending: o.status==='pending'}]" @click="open(o)">
-        <div class="h"><span class="where"><span class="src" :class="o.source">{{o.source === 'online' ? '扫码点单' : '门店收银'}}</span><span v-if="o.source === 'online'" class="loc">{{ ((o.area_name || '') + ' ' + (o.location_note || '')).trim() }}</span></span>
-          <el-tag :type="tagType(o)" effect="light" round>{{o.status_text}} · {{o.pay_status_text}}</el-tag></div>
-        <div class="meta">{{o.created_at.slice(5, 16)}} · {{o.no}}</div>
-        <div class="goods">{{o.items.map(i => i.product_name + (i.sku_name !== '默认' ? '(' + i.sku_name + ')' : '') + ' × ' + i.qty).join('，')}}</div>
-        <div class="f"><span class="muted">{{o.remark ? '备注：' + o.remark : '共 ' + o.item_count + ' 件'}}</span><b class="money">¥{{yuan(o.payable_amount)}}</b></div>
+  <div class="ws-body opage">
+    <div class="olist-pane">
+      <div class="chips">
+        <button v-for="t in statusTabs" :key="t[0]" type="button" class="chip" :class="{on: status === t[0]}" @click="status = t[0]; cur = null; load()">{{t[1]}}<em v-if="t[2]" class="cn">{{t[2]}}</em></button>
+      </div>
+      <div class="otool">
+        <el-select v-model="source" placeholder="全部来源" clearable size="large" style="flex:1 1 140px" @change="load"><el-option label="扫码点单" value="online" /><el-option label="门店收银" value="pos" /></el-select>
+        <el-date-picker v-model="day" type="date" value-format="YYYY-MM-DD" placeholder="日期" size="large" style="flex:1 1 170px" @change="load" />
+        <el-input v-model="kw" placeholder="单号 / 床号 / 电话" clearable size="large" style="flex:1 1 250px" @keyup.enter="load" @clear="load" />
+        <el-button size="large" @click="load">刷新</el-button>
+      </div>
+      <div class="orders">
+        <el-empty v-if="!rows.length" description="没有订单" />
+        <div v-for="o in rows" :key="o.id" class="ocard" :class="[o.source, {pending: o.status==='pending', on: cur && cur.id === o.id}]" @click="open(o)">
+          <div class="h"><span class="where"><span class="src" :class="o.source">{{o.source === 'online' ? '扫码点单' : '门店收银'}}</span><span v-if="o.source === 'online'" class="loc">{{ ((o.area_name || '') + ' ' + (o.location_note || '')).trim() }}</span></span>
+            <b class="money">¥{{yuan(o.payable_amount)}}</b></div>
+          <div class="goods">{{o.items.map(i => i.product_name + (i.sku_name !== '默认' ? '(' + i.sku_name + ')' : '') + ' × ' + i.qty).join('，')}}</div>
+          <div class="f"><span class="muted">{{o.created_at.slice(5, 16)}} · {{o.no}}</span><el-tag :type="tagType(o)" effect="light" round>{{o.status_text}} · {{o.pay_status_text}}</el-tag></div>
+        </div>
       </div>
     </div>
-    <el-drawer v-model="drawer" :title="cur ? '订单 ' + cur.no : ''" size="560px">
-      <div v-if="cur">
-        <el-descriptions :column="2" border size="small">
-          <el-descriptions-item label="状态">{{cur.status_text}} / {{cur.pay_status_text}}</el-descriptions-item>
-          <el-descriptions-item label="来源">{{cur.source_text}}</el-descriptions-item>
-          <el-descriptions-item label="区域">{{cur.area_name}} {{cur.location_note}}</el-descriptions-item>
-          <el-descriptions-item label="电话">{{cur.contact_phone}}</el-descriptions-item>
-          <el-descriptions-item label="下单时间" :span="2">{{cur.created_at}}</el-descriptions-item>
-          <el-descriptions-item v-if="cur.remark" label="备注" :span="2">{{cur.remark}}</el-descriptions-item>
-        </el-descriptions>
-        <el-table :data="cur.items" border size="small" style="margin-top:10px">
-          <el-table-column label="商品"><template #default="{row}">{{row.product_name}}<span v-if="row.sku_name!=='默认'">（{{row.sku_name}}）</span><el-tag v-if="row.added_at" size="small" type="info" style="margin-left:4px">换货</el-tag></template></el-table-column>
-          <el-table-column prop="qty" label="数量" width="60" />
-          <el-table-column label="金额" width="80"><template #default="{row}">{{yuan(row.amount)}}</template></el-table-column>
-          <el-table-column prop="refunded_qty" label="已退换" width="70" />
-        </el-table>
-        <div style="margin:10px 0;text-align:right">商品 ¥{{yuan(cur.original_amount)}}<span v-if="cur.discount_amount">　优惠 −¥{{yuan(cur.discount_amount)}}</span>　应收 <b>¥{{yuan(cur.payable_amount)}}</b><template v-if="cur.exchanges && cur.exchanges.length">　换货差价 {{ xSum >= 0 ? '+' : '−' }}¥{{yuan(Math.abs(xSum))}}</template><span v-if="cur.refunded_amount - xRefund">　已退 ¥{{yuan(cur.refunded_amount - xRefund)}}</span></div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px">
-          <el-button v-if="cur.status==='pending' && can('orders')" type="primary" @click="act('accept')">接单</el-button>
-          <el-button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" type="success" @click="payDlg=true">收款</el-button>
-          <el-button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" @click="openModify">修改订单</el-button>
-          <el-button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" type="danger" plain @click="cancel">取消订单</el-button>
-          <el-button v-if="['paid','partial_refunded'].includes(cur.pay_status) && can('orders') && cur.items.some(i => i.qty > i.refunded_qty)" type="primary" plain @click="openExchange">售后换货</el-button>
-          <el-button v-if="['paid','partial_refunded'].includes(cur.pay_status) && can('refund')" type="warning" @click="openRefund">退货退款</el-button>
-          <el-button @click="print">{{cur.print_count ? '补打小票' : '打印小票'}}</el-button>
+    <div class="odetail">
+      <el-empty v-if="!cur" description="点左边的订单查看详情" />
+      <template v-else>
+        <div class="od-head">
+          <div><h2>{{ cur.source === 'online' ? (((cur.area_name || '') + ' ' + (cur.location_note || '')).trim() || '扫码点单') : '门店收银' }}
+            <el-tag :type="tagType(cur)" effect="light" round>{{cur.status_text}} · {{cur.pay_status_text}}</el-tag></h2>
+            <div class="muted">订单 {{cur.no}} · {{cur.source_text}} · {{cur.created_at.slice(5, 16)}} 下单</div></div>
+          <el-button size="large" @click="print">{{cur.print_count ? '补打小票' : '打印小票'}}</el-button>
         </div>
-        <div v-if="cur.exchanges && cur.exchanges.length" style="margin-top:14px">
+        <div class="od-info">
+          <div><span>区域 / 位置</span><b>{{ ((cur.area_name || '') + ' ' + (cur.location_note || '')).trim() || '—' }}</b></div>
+          <div><span>电话</span><b>{{cur.contact_phone || '—'}}</b></div>
+          <div><span>备注</span><b :class="{rmk: cur.remark}">{{cur.remark || '—'}}</b></div>
+        </div>
+        <el-table :data="cur.items" class="od-items">
+          <el-table-column label="商品" min-width="180"><template #default="{row}"><b>{{row.product_name}}</b><el-tag v-if="row.added_at" size="small" type="info" style="margin-left:4px">换货</el-tag><div v-if="row.sku_name!=='默认'" class="muted">{{row.sku_name}}</div></template></el-table-column>
+          <el-table-column prop="qty" label="数量" width="70" align="right" />
+          <el-table-column label="金额" width="100" align="right"><template #default="{row}">¥{{yuan(row.amount)}}</template></el-table-column>
+          <el-table-column label="已退换" width="80" align="right"><template #default="{row}"><span v-if="row.refunded_qty">{{row.refunded_qty}}</span><span v-else class="muted">—</span></template></el-table-column>
+        </el-table>
+        <div class="od-sum"><span class="muted">商品 ¥{{yuan(cur.original_amount)}}<template v-if="cur.discount_amount"> · 优惠 −¥{{yuan(cur.discount_amount)}}</template><template v-if="cur.exchanges && cur.exchanges.length"> · 换货差价 {{ xSum >= 0 ? '+' : '−' }}¥{{yuan(Math.abs(xSum))}}</template><template v-if="cur.refunded_amount - xRefund"> · 已退 ¥{{yuan(cur.refunded_amount - xRefund)}}</template></span>
+          <span>应收 <b>¥{{yuan(cur.payable_amount)}}</b></span></div>
+        <div v-if="cur.exchanges && cur.exchanges.length" class="od-x">
           <div class="muted" style="margin-bottom:6px">换货单</div>
           <div v-for="e in cur.exchanges" :key="e.id" class="x-rec"><span>{{e.no}}　{{e.created_at.slice(5, 16)}}　<template v-if="e.diff > 0">补收 ¥{{yuan(e.diff)}}</template><template v-else-if="e.diff < 0">退还 ¥{{yuan(-e.diff)}}</template><template v-else>差价 0</template>　{{e.condition === 'good' ? '完好回库' : '进残次品库'}}</span>
             <el-button size="small" @click="printExchange(e)">补打凭证</el-button></div>
         </div>
-        <el-timeline style="margin-top:16px"><el-timeline-item v-for="(l,i) in cur.logs" :key="i" :timestamp="l.created_at">{{l.action}} {{l.detail}}</el-timeline-item></el-timeline>
-      </div>
-    </el-drawer>
+        <el-timeline class="od-log"><el-timeline-item v-for="(l,i) in cur.logs" :key="i" :timestamp="l.created_at">{{l.action}} {{l.detail}}</el-timeline-item></el-timeline>
+        <div class="od-btns">
+          <button v-if="cur.status==='pending' && can('orders')" type="button" class="bigbtn ok wide" @click="act('accept')">接单</button>
+          <button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" type="button" class="bigbtn pri" @click="payDlg=true">收款</button>
+          <button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" type="button" class="bigbtn" @click="openModify">修改订单</button>
+          <button v-if="cur.pay_status==='unpaid' && cur.status!=='cancelled' && can('orders')" type="button" class="bigbtn dng" @click="cancel">取消订单</button>
+          <button v-if="['paid','partial_refunded'].includes(cur.pay_status) && can('orders') && cur.items.some(i => i.qty > i.refunded_qty)" type="button" class="bigbtn pri" @click="openExchange">售后换货</button>
+          <button v-if="['paid','partial_refunded'].includes(cur.pay_status) && can('refund')" type="button" class="bigbtn dng" @click="openRefund">退货退款</button>
+        </div>
+      </template>
+    </div>
     <pay-dialog v-model="payDlg" :user="user" :lines="curLines" title="订单收款" @pay="collect" />
     <el-dialog v-model="mDlg" title="修改订单" width="640px" top="6vh">
       <div class="muted" style="margin-bottom:10px">可以改规格、改数量、去掉或添加商品，保存后库存和应收自动调整，不用取消重下。数量改成 0 即去掉该商品。</div>
@@ -738,7 +741,7 @@ const Orders = {
     </el-dialog>
   </div>`,
   setup(props) {
-    const status = ref(''), source = ref(null), day = ref(''), kw = ref(''), rows = ref([]), drawer = ref(false), cur = ref(null), payDlg = ref(false);
+    const status = ref(''), source = ref(null), day = ref(''), kw = ref(''), rows = ref([]), cur = ref(null), payDlg = ref(false);
     const counts = ref({});
     const rBusy = ref(false);
     const rDlg = ref(false), rLines = ref([]), rf = reactive({ method: 'cash', restock: true, reason: '', rid: '' });
@@ -753,12 +756,16 @@ const Orders = {
       const q = { store_id: props.storeId, source: source.value, begin: day.value, end: day.value, keyword: kw.value };
       if (status.value === 'refund') q.pay_status = 'partial_refunded,refunded';
       else if (status.value) q.status = status.value;
-      try { const r = await api.get('/api/orders', q); rows.value = r.items; counts.value = r.counts || {}; } catch (e) { err(e); }
+      try { const r = await api.get('/api/orders', q); rows.value = r.items; counts.value = r.counts || {}; } catch (e) { return err(e); }
+      // 右边详情：没选中时默认打开第一单（优先待接单）
+      if (!cur.value && rows.value.length) open(rows.value.find(o => o.status === 'pending') || rows.value[0]);
     };
+    const statusTabs = computed(() => [['', '全部'], ...(showPending.value ? [['pending', '待接单', counts.value.pending]] : []),
+      ...(showUnpaid.value ? [['accepted', '已接单待收款', counts.value.unpaid]] : []), ['completed', '已完成'], ['cancelled', '已取消'], ['refund', '退款退货']]);
     watch(() => props.tick, load);
     watch(showPending, (v) => { if (!v && status.value === 'pending') { status.value = ''; load(); } });
     watch(showUnpaid, (v) => { if (!v && status.value === 'accepted') { status.value = ''; load(); } });
-    const open = async (o) => { try { cur.value = await api.get('/api/orders/' + o.id); drawer.value = true; } catch (e) { err(e); } };
+    const open = async (o) => { try { cur.value = await api.get('/api/orders/' + o.id); } catch (e) { err(e); } };
     const refresh = async () => { cur.value = await api.get('/api/orders/' + cur.value.id); load(); };
     const act = async (a) => { try { await api.post('/api/orders/' + cur.value.id + '/' + a); await refresh(); ElMessage.success('已接单'); } catch (e) { err(e); } };
     const curLines = computed(() => cur.value ? cur.value.items.map(i => ({ sku_id: i.sku_id, qty: i.qty })) : []);
@@ -874,12 +881,7 @@ const Orders = {
         if (amount && !Number.isSafeInteger(Shouyin.parseMoney(amount))) return ElMessage.warning('请输入有效金额，最多两位小数');
         x.amount = amount;
         xAmountOpen.value = false;
-      } else if (k === 'back') xAmountDraft.value = value.slice(0, -1);
-      else if (k === 'clear') xAmountDraft.value = '';
-      else {
-        const next = (value === '0' && k !== '.' ? '' : value || (k === '.' ? '0' : '')) + k;
-        if (/^\d+(\.\d{0,2})?$/.test(next)) xAmountDraft.value = next;
-      }
+      } else xAmountDraft.value = padNext(value, k);
     };
     const xPickReason = async (reason) => {
       x.reason = reason === x.reason && reason !== '其他' ? '' : reason;
@@ -1032,7 +1034,7 @@ const Orders = {
     const refundAll = () => rLines.value.forEach(l => { l.qty = l.max; });
     const print = async () => { try { await printOrder(cur.value.id, cur.value.print_count > 0); } catch (e) { err(e); } try { await refresh(); } catch (e) {} };
     onMounted(load);
-    return { status, source, day, kw, rows, counts, drawer, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy, showPending, showUnpaid,
+    return { status, source, day, kw, rows, counts, statusTabs, cur, payDlg, rDlg, rLines, rf, can, tagType, load, open, act, curLines, collect, cancel, openRefund, doRefund, refundAll, rBusy, showPending, showUnpaid,
       xDlg, xBack, xNew, xAlternatives, xSearch, xKw, xOptions, xSearchPanel, xPickDlg, xProduct, xMatches, xBusy, xScanning, xQ, xErr, x, xBody, xOriginal,
       xAmountOpen, xAmountDraft, xPad, PAD, xToggleAmount, xAmountKey, xReasons, xReasonInput, xReasonPanel, xReasonText, xReasonKeys, xPickReason, xReasonKey,
       priceText, xToggleSearch, xConfirmSearch, xSearchKey, xPickProduct, openExchange, xAddLine, xSetNewQty, doExchange, printExchange, xSum, xRefund,
@@ -1044,58 +1046,67 @@ const Orders = {
 const Shift = {
   props: ['storeId', 'user', 'sync'],
   template: `
-  <div class="ws-body"><div class="page-pad" style="display:flex;flex-direction:column;gap:16px;max-width:820px">
-    <div v-if="loaded && !cur" class="panel">
-      <div class="toolbar"><b>开班</b><span class="muted">点清钱箱里的备用金（找零用的钱）后开班，交班时按这一班的收款核对现金。</span></div>
-      <el-form inline @submit.prevent><el-form-item label="备用金"><el-input v-model="opening" inputmode="decimal" style="width:160px"><template #append>元</template></el-input></el-form-item>
-        <el-form-item><el-button type="primary" :loading="busy" @click="openShift">开班</el-button></el-form-item></el-form>
-      <div class="muted">不开班也能收银；开班后才能按收银员交班、算现金差额。</div>
-    </div>
-    <div v-if="cur" class="panel">
-      <div class="toolbar"><b>当班中 · {{cur.cashier}}</b><span class="muted">{{cur.started_at}} 开班 · 备用金 ¥{{yuan(cur.opening_cash)}}</span><span class="grow"></span><el-button @click="loadCur">刷新</el-button></div>
-      <el-table :data="Object.values(cur.methods)" border size="small">
-        <el-table-column prop="method_text" label="方式" />
-        <el-table-column prop="pay_count" label="收款笔数" width="90" />
-        <el-table-column label="收款"><template #default="{row}">{{yuan(row.pay)}}</template></el-table-column>
-        <el-table-column label="退款"><template #default="{row}">{{yuan(row.refund)}}</template></el-table-column>
-        <el-table-column v-if="cur.exchange_pay || cur.exchange_refund" label="其中换货补差 / 退差" width="150"><template #default="{row}">{{yuan(row.exchange_pay)}} / {{yuan(row.exchange_refund)}}</template></el-table-column>
-        <el-table-column label="净额"><template #default="{row}"><b>{{yuan(row.pay - row.refund)}}</b></template></el-table-column>
-      </el-table>
-      <div class="shift-sum">
-        <div><span>本班单数</span><b>{{cur.orders}}</b></div>
-        <div><span>本班净收</span><b>¥{{yuan(cur.net)}}</b></div>
-        <div><span>换货补差</span><b>¥{{yuan(cur.exchange_pay || 0)}}</b></div>
-        <div><span>换货退差</span><b>¥{{yuan(cur.exchange_refund || 0)}}</b></div>
-        <div><span>钱箱应有现金</span><b>¥{{yuan(cur.expected_cash)}}</b><em>备用金 + 现金收款 − 现金退款</em></div>
-      </div>
-      <el-form inline style="margin-top:12px" @submit.prevent>
-        <el-form-item label="实点现金"><el-input v-model="counted" inputmode="decimal" style="width:150px"><template #append>元</template></el-input></el-form-item>
-        <el-form-item v-if="diff !== null"><span :style="{fontWeight: 650, color: diff === 0 ? 'var(--success)' : 'var(--danger)'}">{{ diff === 0 ? '对上了' : (diff > 0 ? '长款 ¥' + yuan(diff) : '短款 ¥' + yuan(-diff)) }}</span></el-form-item>
-        <el-form-item label="备注"><el-input v-model="remark" placeholder="差额原因等，选填" style="width:220px" /></el-form-item>
-        <el-form-item><el-button type="primary" :loading="busy" @click="closeShift">交班</el-button></el-form-item>
-      </el-form>
-    </div>
-    <div v-if="last" class="panel">
-      <div class="toolbar"><b>交班完成</b><span class="muted">{{last.started_at}} — {{last.ended_at}}</span></div>
-      <div class="shift-sum">
-        <div><span>单数</span><b>{{last.orders}}</b></div><div><span>净收</span><b>¥{{yuan(last.net)}}</b></div>
-        <div v-if="last.exchange_pay || last.exchange_refund"><span>换货补差 / 退差</span><b>¥{{yuan(last.exchange_pay)}} / ¥{{yuan(last.exchange_refund)}}</b></div>
-        <div><span>应有现金</span><b>¥{{yuan(last.expected_cash)}}</b></div><div><span>实点现金</span><b>¥{{yuan(last.counted_cash)}}</b></div>
-        <div><span>差额</span><b :style="{color: last.cash_diff ? 'var(--danger)' : 'var(--success)'}">{{ last.cash_diff === 0 ? '0' : (last.cash_diff > 0 ? '长 ' : '短 ') + yuan(Math.abs(last.cash_diff)) }}</b></div>
-      </div>
-    </div>
-    <div class="panel">
-      <div class="toolbar"><b>我的交班记录</b></div>
-      <el-table :data="history" size="small" border>
+  <div class="ws-body shiftpage">
+    <section class="spane grow">
+      <template v-if="cur">
+        <div class="sp-head"><div><h2>当班中 · {{cur.cashier}}</h2><div class="muted">{{cur.started_at}} 开班 · 备用金 ¥{{yuan(cur.opening_cash)}}</div></div><el-button size="large" @click="loadCur">刷新</el-button></div>
+        <div class="kpis">
+          <div><span>本班单数</span><b>{{cur.orders}}</b></div>
+          <div><span>本班净收</span><b>¥{{yuan(cur.net)}}</b></div>
+          <div><span>换货补差 / 退差</span><b class="sm">+¥{{yuan(cur.exchange_pay || 0)}} / −¥{{yuan(cur.exchange_refund || 0)}}</b></div>
+        </div>
+        <el-table :data="Object.values(cur.methods)">
+          <el-table-column prop="method_text" label="方式" />
+          <el-table-column prop="pay_count" label="收款笔数" align="right" />
+          <el-table-column label="收款" align="right"><template #default="{row}">¥{{yuan(row.pay)}}</template></el-table-column>
+          <el-table-column label="退款" align="right"><template #default="{row}">¥{{yuan(row.refund)}}</template></el-table-column>
+          <el-table-column v-if="cur.exchange_pay || cur.exchange_refund" label="其中换货补差 / 退差" width="170" align="right"><template #default="{row}">{{yuan(row.exchange_pay)}} / {{yuan(row.exchange_refund)}}</template></el-table-column>
+          <el-table-column label="净额" align="right"><template #default="{row}"><b>¥{{yuan(row.pay - row.refund)}}</b></template></el-table-column>
+        </el-table>
+      </template>
+      <template v-else-if="last">
+        <div class="sp-head"><div><h2>交班完成</h2><div class="muted">{{last.started_at}} — {{last.ended_at}}</div></div></div>
+        <div class="kpis">
+          <div><span>单数</span><b>{{last.orders}}</b></div><div><span>净收</span><b>¥{{yuan(last.net)}}</b></div>
+          <div v-if="last.exchange_pay || last.exchange_refund"><span>换货补差 / 退差</span><b class="sm">¥{{yuan(last.exchange_pay)}} / ¥{{yuan(last.exchange_refund)}}</b></div>
+          <div><span>应有 / 实点现金</span><b class="sm">¥{{yuan(last.expected_cash)}} / ¥{{yuan(last.counted_cash)}}</b></div>
+          <div><span>差额</span><b :style="{color: last.cash_diff ? 'var(--danger)' : 'var(--success)'}">{{ last.cash_diff === 0 ? '0' : (last.cash_diff > 0 ? '长 ' : '短 ') + yuan(Math.abs(last.cash_diff)) }}</b></div>
+        </div>
+      </template>
+      <div class="sp-sec">我的交班记录</div>
+      <el-table :data="history">
         <el-table-column label="时间" min-width="200"><template #default="{row}">{{row.started_at}}<br><span class="muted">{{row.ended_at || '当班中'}}</span></template></el-table-column>
-        <el-table-column prop="orders" label="单数" width="70" />
-        <el-table-column label="净收" width="100"><template #default="{row}">{{yuan(row.net)}}</template></el-table-column>
-        <el-table-column label="备用金" width="90"><template #default="{row}">{{yuan(row.opening_cash)}}</template></el-table-column>
-        <el-table-column label="应有 / 实点" width="150"><template #default="{row}">{{yuan(row.expected_cash)}} / {{row.counted_cash == null ? '—' : yuan(row.counted_cash)}}</template></el-table-column>
-        <el-table-column label="差额" width="90"><template #default="{row}"><span v-if="row.cash_diff != null" :style="{color: row.cash_diff ? 'var(--danger)' : ''}">{{ row.cash_diff > 0 ? '+' : '' }}{{yuan(row.cash_diff)}}</span></template></el-table-column>
+        <el-table-column prop="orders" label="单数" width="70" align="right" />
+        <el-table-column label="净收" width="110" align="right"><template #default="{row}">¥{{yuan(row.net)}}</template></el-table-column>
+        <el-table-column label="备用金" width="100" align="right"><template #default="{row}">¥{{yuan(row.opening_cash)}}</template></el-table-column>
+        <el-table-column label="应有 / 实点" width="170" align="right"><template #default="{row}">{{yuan(row.expected_cash)}} / {{row.counted_cash == null ? '—' : yuan(row.counted_cash)}}</template></el-table-column>
+        <el-table-column label="差额" width="90" align="right"><template #default="{row}"><span v-if="row.cash_diff != null" :style="{color: row.cash_diff ? 'var(--danger)' : ''}">{{ row.cash_diff > 0 ? '+' : '' }}{{yuan(row.cash_diff)}}</span></template></el-table-column>
       </el-table>
-    </div>
-  </div></div>`,
+    </section>
+    <section v-if="loaded" class="spane side">
+      <template v-if="cur">
+        <h2>交班</h2>
+        <div class="calc">
+          <div><span>备用金</span><span>¥{{yuan(cur.opening_cash)}}</span></div>
+          <div><span>＋ 现金收款</span><span>¥{{yuan(cashOf('pay'))}}</span></div>
+          <div><span>− 现金退款</span><span>¥{{yuan(cashOf('refund'))}}</span></div>
+          <div class="t"><b>钱箱应有现金</b><b>¥{{yuan(cur.expected_cash)}}</b></div>
+        </div>
+        <label class="bigfield"><span>实点现金</span><el-input v-model="counted" data-no-osk inputmode="decimal" placeholder="点钱箱后填" /><i>元</i></label>
+        <div v-if="diff !== null" class="diffbox" :class="{bad: diff !== 0}"><span>差额</span><b>{{ diff === 0 ? '¥0.00 · 刚好' : (diff > 0 ? '长款 ¥' + yuan(diff) : '短款 ¥' + yuan(-diff)) }}</b></div>
+        <el-input v-model="remark" size="large" placeholder="备注：差额原因等，选填" />
+        <div class="pad"><button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" @pointerdown.prevent @mousedown.prevent @click="k === 'ok' ? closeShift() : (counted = padNext(counted, k))">{{ {back: '⌫', clear: '清空', ok: '交班'}[k] || k }}</button></div>
+        <div class="note">交班后，下一位收银员点清备用金后开班。不开班也能收银，但不能按收银员算现金差额。</div>
+      </template>
+      <template v-else>
+        <h2>开班</h2>
+        <div class="muted">点清钱箱里的备用金（找零用的钱）后开班，交班时按这一班的收款核对现金。</div>
+        <label class="bigfield"><span>备用金</span><el-input v-model="opening" data-no-osk inputmode="decimal" placeholder="0" /><i>元</i></label>
+        <div class="pad"><button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" @pointerdown.prevent @mousedown.prevent @click="k === 'ok' ? openShift() : (opening = padNext(opening, k))">{{ {back: '⌫', clear: '清空', ok: '开班'}[k] || k }}</button></div>
+        <div class="note">不开班也能收银；开班后才能按收银员交班、算现金差额。</div>
+      </template>
+    </section>
+  </div>`,
   setup(props) {
     const cur = ref(null), loaded = ref(false), opening = ref(''), counted = ref(''), remark = ref(''), busy = ref(false), last = ref(null), history = ref([]);
     const parse = (v) => Shouyin.parseMoney(v);
@@ -1121,7 +1132,8 @@ const Shift = {
     };
     onMounted(() => { loadCur(); loadHistory(); });
     watch(() => props.sync, () => { loadCur(); loadHistory(); });
-    return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, yuan };
+    const cashOf = (k) => ((cur.value && cur.value.methods.cash) || {})[k] || 0;
+    return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, cashOf, PAD, padNext, yuan };
   },
 };
 
@@ -1129,21 +1141,28 @@ const Shift = {
 const Stock = {
   props: ['storeId', 'canEdit', 'sync'],
   template: `
-  <div class="ws-body"><div class="page-pad">
-    <div class="panel">
-      <div class="toolbar"><b>本店库存</b><el-input v-model="kw" placeholder="搜索" clearable style="width:160px" @keyup.enter="load" /><el-button @click="load">刷新</el-button>
-        <span class="grow"></span><el-button v-if="canEdit" type="primary" @click="startAdjust">盘点</el-button></div>
-      <el-table :data="rows" border>
-        <el-table-column label="库存品"><template #default="{row}">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">该补货了</el-tag><span v-if="row.earliest_expiry" class="muted" style="margin-left:8px">最早到期 {{row.earliest_expiry}}</span></template></el-table-column>
-        <el-table-column prop="unit" label="单位" width="80" />
-        <el-table-column prop="qty" label="库存" width="100" />
-        <el-table-column v-if="adjusting" label="实盘数" width="140"><template #default="{row}"><el-input v-model="row.real" inputmode="decimal" size="small" /></template></el-table-column>
-      </el-table>
-      <div v-if="adjusting" style="margin-top:10px"><el-button @click="adjusting=false">取消</el-button><el-button type="primary" @click="submit">提交盘点</el-button></div>
+  <div class="ws-body shiftpage"><section class="spane grow">
+    <div class="sp-head"><h2>本店库存 <span class="muted">{{rows.length}} 个库存品</span></h2>
+      <div class="sp-btns"><el-button size="large" @click="load">刷新</el-button><el-button v-if="canEdit && !adjusting" size="large" type="primary" @click="startAdjust">盘点</el-button></div></div>
+    <div class="otool">
+      <el-input v-model="kw" size="large" placeholder="搜索名称" clearable style="flex:1 1 280px" @keyup.enter="load" @clear="load" />
+      <div class="chips"><button type="button" class="chip" :class="{on: !onlyLow}" @click="onlyLow = false">全部</button><button type="button" class="chip" :class="{on: onlyLow}" @click="onlyLow = true">该补货了 · {{lowCount}}</button></div>
     </div>
-  </div></div>`,
+    <el-table :data="shownRows">
+      <el-table-column label="库存品" min-width="200"><template #default="{row}"><b>{{row.name}}</b></template></el-table-column>
+      <el-table-column prop="unit" label="单位" width="80" />
+      <el-table-column label="库存" width="100" align="right"><template #default="{row}"><b :style="{color: row.qty <= 0 ? '#CB2634' : (row.low ? '#86501A' : '')}">{{row.qty}}</b></template></el-table-column>
+      <el-table-column label="最早到期" width="130"><template #default="{row}">{{row.earliest_expiry || '—'}}</template></el-table-column>
+      <el-table-column label="状态" width="110"><template #default="{row}"><el-tag v-if="row.qty <= 0" type="danger" round>缺货</el-tag><el-tag v-else-if="row.low" type="warning" round>该补货了</el-tag></template></el-table-column>
+      <el-table-column v-if="adjusting" label="实盘数" width="150"><template #default="{row}"><el-input v-model="row.real" inputmode="decimal" size="large" /></template></el-table-column>
+    </el-table>
+    <div v-if="adjusting" class="sp-foot"><button type="button" class="bigbtn" @click="adjusting=false">取消</button><button type="button" class="bigbtn pri" @click="submit">提交盘点</button></div>
+    <div class="note">盘点时只填数过的库存品，没填的保持不变。店员能否看、能否改本店库存，在后台“门店与区域”里设置。</div>
+  </section></div>`,
   setup(props) {
-    const kw = ref(''), rows = ref([]), adjusting = ref(false); let reqId = '';
+    const kw = ref(''), rows = ref([]), adjusting = ref(false), onlyLow = ref(false); let reqId = '';
+    const lowCount = computed(() => rows.value.filter(r => r.low || r.qty <= 0).length);
+    const shownRows = computed(() => onlyLow.value ? rows.value.filter(r => r.low || r.qty <= 0) : rows.value);
     const load = async () => { try { rows.value = (await api.get('/api/stores/' + props.storeId + '/stock', { keyword: kw.value })).map(r => ({ ...r, real: '' })); } catch (e) { err(e); } };
     const startAdjust = () => { reqId = rid(); adjusting.value = true; };
     const submit = async () => {
@@ -1153,7 +1172,7 @@ const Stock = {
     };
     onMounted(load);
     watch(() => props.sync, load);
-    return { kw, rows, adjusting, load, startAdjust, submit };
+    return { kw, rows, adjusting, onlyLow, lowCount, shownRows, load, startAdjust, submit };
   },
 };
 
@@ -1161,12 +1180,10 @@ const Stock = {
 const Requisitions = {
   props: ['storeId', 'stockVisible', 'sync'],
   template: `
-  <div class="ws-body"><div class="page-pad">
-    <div class="panel">
-      <div class="toolbar"><b>向仓库要货</b>
-        <el-radio-group v-model="status" @change="load"><el-radio-button value="">全部</el-radio-button><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button></el-radio-group>
-        <el-button @click="load">刷新</el-button><span class="grow"></span><el-button type="primary" @click="openNew">新建要货单</el-button></div>
-      <el-table :data="rows" border>
+  <div class="ws-body shiftpage"><section class="spane grow">
+      <div class="sp-head"><h2>向仓库要货</h2><div class="sp-btns"><el-button size="large" @click="load">刷新</el-button><el-button size="large" type="primary" @click="openNew">新建要货单</el-button></div></div>
+      <div class="chips"><button v-for="t in [['', '全部'], ['pending', '待处理'], ['done', '已调拨'], ['rejected', '已驳回']]" :key="t[0]" type="button" class="chip" :class="{on: status === t[0]}" @click="status = t[0]; load()">{{t[1]}}</button></div>
+      <el-table :data="rows">
         <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
           <el-table :data="row.lines" size="small" border>
             <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="70" />
@@ -1179,19 +1196,19 @@ const Requisitions = {
           <el-tag :type="{pending: 'warning', done: 'success', rejected: 'danger', cancelled: 'info'}[row.status]" size="small">{{row.status_text}}</el-tag>
           <div v-if="row.status === 'done'" class="muted">{{row.handled_at}} 调拨 {{row.transfer_doc_no}}</div>
           <div v-if="row.handle_note" class="muted">{{ row.status === 'rejected' ? '驳回原因：' : '仓库备注：' }}{{row.handle_note}}</div></template></el-table-column>
-        <el-table-column width="90"><template #default="{row}"><el-button v-if="row.status === 'pending'" link type="danger" @click="cancel(row)">撤回</el-button></template></el-table-column>
+        <el-table-column width="100"><template #default="{row}"><el-button v-if="row.status === 'pending'" size="large" type="danger" plain @click="cancel(row)">撤回</el-button></template></el-table-column>
       </el-table>
-    </div>
+    </section>
     <el-dialog v-model="dlg" title="新建要货单" width="640px" top="5vh">
-      <div class="toolbar"><el-input v-model="kw" placeholder="搜索库存品" clearable style="width:200px" /><el-input v-model="remark" placeholder="备注（选填）" style="flex:1" /></div>
-      <el-table :data="shown" border size="small" max-height="460">
+      <div class="otool" style="margin-bottom:10px"><el-input v-model="kw" size="large" placeholder="搜索库存品" clearable style="width:220px" /><el-input v-model="remark" size="large" placeholder="备注（选填）" style="flex:1" /></div>
+      <el-table :data="shown" max-height="460">
         <el-table-column prop="name" label="库存品" /><el-table-column prop="unit" label="单位" width="70" />
         <el-table-column v-if="stockVisible" label="本店现有" width="90" align="right"><template #default="{row}">{{ have[row.id] ?? 0 }}</template></el-table-column>
-        <el-table-column label="要几个" width="120"><template #default="{row}"><el-input v-model="row.qty" inputmode="decimal" size="small" /></template></el-table-column>
+        <el-table-column label="要几个" width="130"><template #default="{row}"><el-input v-model="row.qty" inputmode="decimal" /></template></el-table-column>
       </el-table>
-      <template #footer><el-button @click="dlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submit">提交给仓库</el-button></template>
+      <template #footer><el-button size="large" @click="dlg=false">取消</el-button><el-button size="large" type="primary" :loading="saving" @click="submit">提交给仓库</el-button></template>
     </el-dialog>
-  </div></div>`,
+  </div>`,
   setup(props) {
     const rows = ref([]), status = ref(''), dlg = ref(false), items = ref([]), kw = ref(''), remark = ref(''), saving = ref(false), have = ref({});
     let reqId = '';
