@@ -56,9 +56,9 @@ const Products = {
       <el-button @click="load">查询</el-button>
       <el-button @click="exp">导出</el-button>
       <span class="grow"></span>
-      <el-button type="primary" @click="edit()">新增商品</el-button>
+      <el-button type="primary" @click="edit()">＋ 新增商品</el-button>
     </div>
-    <div class="muted" style="margin:-4px 0 12px">共 {{rows.length}} 个商品 · 在售 {{rows.filter(r => r.active).length}} · 仅门店 {{rows.filter(r => r.active && !r.online_visible).length}}</div>
+    <div class="muted" style="margin:-2px 0 12px">共 <b style="color:var(--text)">{{rows.length}}</b> 个商品 · 在售 {{rows.filter(r => r.active).length}} · 仅门店 {{rows.filter(r => r.active && !r.online_visible).length}}</div>
     <el-table :data="rows" @row-click="edit" row-class-name="clickable" class="prod-table">
       <el-table-column label="商品" min-width="220"><template #default="{row}">
         <div style="display:flex;align-items:center;gap:12px">
@@ -69,23 +69,22 @@ const Products = {
       <el-table-column label="分类" min-width="110"><template #default="{row}">
         <span v-for="n in (row.category_name || '').split('、').filter(Boolean)" :key="n" class="chip">{{n}}</span>
         <span v-if="!row.category_name" class="muted">未分类</span></template></el-table-column>
-      <el-table-column label="规格与售价" min-width="320"><template #default="{row}">
-        <div class="skus"><span v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="sku-chip" :class="{nostock: !s.stock_item_id}"
+      <el-table-column label="规格与售价" min-width="340"><template #default="{row}">
+        <div v-if="showDeduct" class="spec-lines"><div v-for="s in row.skus.filter(x => x.active)" :key="s.id">{{s.name === '默认' ? '' : s.name}} <b>¥{{yuan(s.price)}}</b>
+          <span class="muted">{{ s.stock_item_name ? '扣 ' + s.stock_item_name + ' ×' + s.deduct_qty : '不扣库存' }}</span></div></div>
+        <div v-else class="skus"><span v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="sku-chip" :class="{nostock: !s.stock_item_id}"
           :title="s.stock_item_name ? '扣 ' + s.stock_item_name + ' −' + s.deduct_qty : '不扣库存'">{{s.name === '默认' ? '' : s.name + ' '}}<b>¥{{yuan(s.price)}}</b></span></div></template></el-table-column>
-      <el-table-column v-if="showDeduct" label="扣库存" min-width="190"><template #default="{row}">
-        <div v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="c-sub" style="margin:0">
-          <template v-if="s.stock_item_name">{{s.stock_item_name}} <span style="color:var(--text)">−{{s.deduct_qty}}</span><span v-if="row.skus.filter(x => x.active).length > 1"> /{{s.name}}</span></template>
-          <template v-else>不扣库存</template></div></template></el-table-column>
       <el-table-column label="扫码点单" min-width="100"><template #default="{row}">
-        <span v-if="!row.online_visible" class="muted">不显示</span>
+        <el-tag v-if="!row.online_visible" type="info">不显示</el-tag>
         <template v-else>
-          <div class="c-sub" style="margin:0;color:var(--text-2)">{{qtyText(row)}}</div>
+          <el-tag>显示</el-tag>
+          <div class="c-sub">{{qtyText(row)}}</div>
           <div class="c-sub" style="margin:0" v-if="row.area_limited">仅 {{row.area_ids.length}} 个区域</div></template></template></el-table-column>
       <el-table-column label="状态" width="76"><template #default="{row}">
         <el-tag v-if="!row.active" type="info" size="small">已下架</el-tag>
         <el-tag v-else-if="!row.online_visible" type="warning" size="small">仅门店</el-tag>
         <el-tag v-else type="success" size="small">在售</el-tag></template></el-table-column>
-      <el-table-column width="64" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
+      <el-table-column width="64" align="right"><template #default><a style="white-space:nowrap">编辑 ›</a></template></el-table-column>
     </el-table>
 
     <el-dialog v-model="dlg" :title="form.id ? '编辑商品' : '新增商品'" width="900px" top="4vh">
@@ -482,35 +481,52 @@ const Stores = {
 };
 
 // ---------------- 仓库与库存 ----------------
-const Inventory = {
-  props: ['meta'],
+// 同一块内容：独立菜单页里直接铺在页面上，其他地方弹窗打开
+const DlgPage = {
+  props: { modelValue: Boolean, inline: Boolean, title: String, width: String, top: String },
+  emits: ['update:modelValue'],
   template: `
-  <div class="panel">
-    <div class="segs">
+  <div v-if="inline" class="panel">
+    <div v-if="title" class="panel-title" style="margin-bottom:14px">{{title}}</div>
+    <slot />
+    <div v-if="$slots.footer" class="page-foot"><slot name="footer" /></div>
+  </div>
+  <el-dialog v-else :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title" :width="width" :top="top">
+    <slot /><template v-if="$slots.footer" #footer><slot name="footer" /></template>
+  </el-dialog>`,
+};
+// 库存相关的几个菜单页共用一个组件，view 决定显示哪一块
+const Inventory = {
+  props: { meta: Object, go: Function, view: { type: String, default: 'inventory' } },
+  components: { DlgPage },
+  template: `
+  <div>
+  <div v-if="view === 'inventory'" class="panel" style="padding-bottom:0">
+    <div class="toolbar" style="margin-bottom:6px"><span class="muted">地点</span><span class="grow"></span>
+      <el-button type="primary" @click="go('stockIn')">入库</el-button><el-button @click="go('stockIn', 'out')">出库</el-button>
+      <el-button @click="go('stockCount')">盘点</el-button><el-button @click="go('requests')">调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button></div>
+    <div class="segs" style="margin-bottom:0;border-bottom:0">
       <div v-for="l in locations" :key="l.id" class="seg" :class="{on: loc === l.id}" @click="loc = l.id; load()">
         {{l.name}}<span class="n">{{l.kind_text}}</span></div>
-      <span class="seg" style="color:var(--primary)" @click="newWarehouse">+ 新增仓库</span>
+      <span class="seg" style="color:var(--primary)" @click="newWarehouse">＋ 新增仓库</span>
     </div>
-    <div class="toolbar">
-      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
-      <el-input v-model="kw" placeholder="搜索名称或编码" clearable style="width:180px" />
-      <el-button @click="load">查询</el-button>
-      <el-button @click="expLedger">导出</el-button>
-      <span class="grow"></span>
-      <el-button @click="openReqs">要货申请<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button>
-      <el-button @click="openBatches">批次 / 有效期</el-button>
-      <el-button @click="openDocs">单据记录</el-button>
-      <el-button @click="openDoc('in')">入库</el-button>
-      <el-button @click="openDoc('out')">出库</el-button>
-      <el-button @click="openDoc('adjust')">盘点</el-button>
-      <el-button type="primary" @click="openDoc('transfer')">调拨到门店</el-button>
-    </div>
-    <div class="stats" style="margin-bottom:14px">
+  </div>
+  <template v-if="view === 'inventory'">
+    <div class="stats">
       <div class="stat"><div class="k">库存品</div><div class="v">{{rows.length}}</div><div class="s">本地点有记录的</div></div>
       <div class="stat"><div class="k">期间入库 + 调入</div><div class="v">{{fmtN(sumOf('in') + sumOf('transfer_in'))}}</div></div>
       <div class="stat"><div class="k">期间销售</div><div class="v">{{fmtN(sumOf('sale') - sumOf('sale_return'))}}</div><div class="s">已扣除退货回补</div></div>
       <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div><div class="s">需要补货或核对</div></div>
-      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--danger)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
+      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--warn)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
+    </div>
+    <div class="panel">
+    <div class="toolbar">
+      <el-input v-model="kw" placeholder="搜索名称或编码" clearable style="width:200px" />
+      <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
+      <el-button type="primary" @click="load">查询</el-button>
+      <el-button @click="expLedger">导出</el-button>
+      <span class="grow"></span>
+      <span class="link-more" @click="go('docs')">单据与台账 ›</span>
     </div>
     <el-table :data="shownRows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 || row.low ? 'row-low' : ''">
       <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag><el-tag v-if="nearExp(row.earliest_expiry)" type="warning" size="small" style="margin-left:6px">{{ expText(row.earliest_expiry) }}</el-tag></div><div class="c-sub">{{row.unit}}<span v-if="row.earliest_expiry"> · 最早到期 {{row.earliest_expiry}}</span></div></template></el-table-column>
@@ -520,9 +536,13 @@ const Inventory = {
       <el-table-column label="当前库存" min-width="96" align="right" fixed="right"><template #default="{row}">
         <b class="money" :style="row.current <= 0 ? 'color:var(--danger)' : ''">{{fmtN(row.current)}}</b></template></el-table-column>
     </el-table>
-    <div class="muted" style="margin-top:6px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
+    <div class="muted" style="margin-top:10px;font-size:12px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
+    </div>
+  </template>
 
-    <el-dialog v-model="dDlg" :title="docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
+    <dlg-page v-model="dDlg" :inline="docInline" :title="docInline ? '' : docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
+      <div v-if="view === 'stockIn'" class="toolbar"><div class="segs mini"><div class="seg" :class="{on: doc.kind === 'in'}" @click="openDoc('in')">入库</div><div class="seg" :class="{on: doc.kind === 'out'}" @click="openDoc('out')">出库</div></div>
+        <span class="muted" style="font-size:12px">{{ doc.kind === 'in' ? '采购到货登记入库' : '报损、领用、退供应商等' }}</span></div>
       <el-form label-width="80px" inline>
         <el-form-item v-if="doc.kind==='out' || doc.kind==='transfer'" label="调出"><el-select v-model="doc.from" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind!=='out'" :label="doc.kind==='transfer' ? '调入' : (doc.kind==='adjust' ? '盘点地点' : '入库到')"><el-select v-model="doc.to" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
@@ -552,13 +572,15 @@ const Inventory = {
       </el-table>
       <el-pagination v-if="docMatched.length > dSize" v-model:current-page="dPage" :page-size="dSize" :total="docMatched.length" layout="prev, pager, next" background small style="margin-top:8px;justify-content:center" />
       <div v-if="doc.kind==='in' && docAmt" style="text-align:right;margin-top:8px">进货金额合计 <b class="money">¥{{yuan(docAmt)}}</b></div>
-      <template #footer><el-button @click="dDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
-    </el-dialog>
-    <el-dialog v-model="rqDlg" title="门店要货申请" width="960px" top="5vh">
+      <template #footer><el-button @click="docInline ? openDoc(doc.kind) : (dDlg = false)">{{ docInline ? '清空' : '取消' }}</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
+    </dlg-page>
+    <div v-if="docInline" class="note">提交后库存立即变化；填错的单据到“单据与台账”里点“作废”，库存按原单反向冲回，单据保留可查。</div>
+    <dlg-page v-model="rqDlg" :inline="view === 'requests'" title="门店要货申请" width="960px" top="5vh">
       <div class="toolbar">
         <el-radio-group v-model="rq.status" @change="loadReqs"><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button><el-radio-button value="">全部</el-radio-button></el-radio-group>
-        <span class="muted">门店在门店工作台“要货”里提交；点“处理”从仓库调拨，数量可以改。</span></div>
-      <el-table :data="reqs" size="small" max-height="540">
+        <span class="muted" style="font-size:12px">门店在门店工作台“要货”里提交；点“处理”从仓库调拨，数量可以改。</span>
+        <span class="grow"></span><el-button v-if="view === 'requests'" type="primary" @click="openDoc('transfer')">新建调拨单</el-button></div>
+      <el-table :data="reqs" :max-height="view === 'requests' ? undefined : 540">
         <el-table-column label="要货单" min-width="180"><template #default="{row}"><div class="c-main">{{row.store_name}}</div><div class="c-sub">{{row.no}} · {{row.created_at}} · {{row.created_by_name}}</div></template></el-table-column>
         <el-table-column label="要什么" min-width="260"><template #default="{row}">{{ row.lines.filter(l => +l.qty > 0).map(l => l.name + '×' + l.qty).join('、') }}<div v-if="row.remark" class="muted">备注：{{row.remark}}</div></template></el-table-column>
         <el-table-column label="状态" width="200"><template #default="{row}">
@@ -567,7 +589,7 @@ const Inventory = {
         <el-table-column width="130" align="right"><template #default="{row}"><template v-if="row.status === 'pending'">
           <el-button link type="primary" @click="openFulfill(row)">处理</el-button><el-button link type="danger" @click="rejectReq(row)">驳回</el-button></template></template></el-table-column>
       </el-table>
-    </el-dialog>
+    </dlg-page>
     <el-dialog v-model="ffDlg" :title="'处理要货单：' + (ff.req ? ff.req.store_name : '')" width="680px" top="6vh">
       <el-form inline><el-form-item label="从"><el-select v-model="ff.from" style="width:160px" @change="fetchBal(ff.from)"><el-option v-for="l in locations.filter(l => l.kind === 'warehouse')" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item label="备注"><el-input v-model="ff.note" placeholder="选填，门店能看到" style="width:260px" /></el-form-item></el-form>
@@ -580,13 +602,13 @@ const Inventory = {
       <div class="muted" style="margin-top:6px">实发填 0 表示这项不发。提交后生成调拨单，库存立即变化，先出最早到期的批次。</div>
       <template #footer><el-button @click="ffDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitFulfill">确认调拨</el-button></template>
     </el-dialog>
-    <el-dialog v-model="bDlg" title="批次 / 有效期" width="900px" top="6vh">
+    <dlg-page v-model="bDlg" :inline="view === 'batches'" title="批次 / 有效期" width="900px" top="6vh">
       <div class="toolbar">
         <el-select v-model="bq.location_id" placeholder="全部地点" clearable style="width:160px" @change="loadBatches"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
         <el-checkbox v-model="bq.onlyNear">只看 {{expiryDays}} 天内到期</el-checkbox>
         <span class="muted">有剩余的批次，最早到期的在前。临期天数在“业务规则”里改。</span>
       </div>
-      <el-table :data="bq.onlyNear ? batches.filter(b => nearExp(b.expiry_date)) : batches" size="small" max-height="520">
+      <el-table :data="bq.onlyNear ? batches.filter(b => nearExp(b.expiry_date)) : batches" :max-height="view === 'batches' ? undefined : 520">
         <el-table-column prop="location_name" label="仓库 / 门店" width="140" />
         <el-table-column prop="name" label="库存品" min-width="150" />
         <el-table-column prop="batch_no" label="批号" width="110" />
@@ -595,8 +617,8 @@ const Inventory = {
           <el-tag v-if="nearExp(row.expiry_date)" :type="row.expired ? 'danger' : 'warning'" size="small" style="margin-left:4px">{{ expText(row.expiry_date) }}</el-tag></template></el-table-column>
         <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
       </el-table>
-    </el-dialog>
-    <el-dialog v-model="lDlg" title="出入库单据" width="980px" top="4vh">
+    </dlg-page>
+    <dlg-page v-model="lDlg" :inline="view === 'docs'" title="出入库单据" width="980px" top="4vh">
       <div class="toolbar">
         <el-select v-model="lq.kind" placeholder="全部类型" clearable style="width:110px" @change="loadDocs"><el-option v-for="(t, k) in kindText" :key="k" :label="t" :value="k" /></el-select>
         <el-select v-model="lq.location_id" placeholder="全部地点" clearable style="width:140px" @change="loadDocs"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
@@ -604,7 +626,7 @@ const Inventory = {
         <el-input v-model="lq.keyword" placeholder="单号 / 备注" clearable style="width:150px" @keyup.enter="loadDocs" @clear="loadDocs" />
         <el-button @click="loadDocs">查询</el-button><el-button @click="expDocs">导出</el-button>
       </div>
-      <el-table :data="docs" size="small" max-height="560" :row-class-name="({row}) => row.voided ? 'row-void' : ''">
+      <el-table :data="docs" :max-height="view === 'docs' ? undefined : 560" :row-class-name="({row}) => row.voided ? 'row-void' : ''">
         <el-table-column type="expand"><template #default="{row}">
           <div style="padding:4px 12px 10px 48px">
             <div class="muted" style="margin-bottom:6px">
@@ -630,7 +652,7 @@ const Inventory = {
           <el-button v-else link type="danger" @click="voidDoc(row)">作废</el-button></template></el-table-column>
       </el-table>
       <div class="muted" style="margin-top:6px">填错的单据点“作废”：库存按原单反向冲回，单据保留可查。盘点单作废只冲回当时的盈亏数量。</div>
-    </el-dialog>
+    </dlg-page>
     <el-dialog v-model="mDlg" :title="mTitle" width="640px">
       <el-table :data="moves" border size="small" max-height="460">
         <el-table-column prop="created_at" label="时间" width="160" />
@@ -640,6 +662,7 @@ const Inventory = {
         <el-table-column prop="ref" label="单据 / 订单" />
       </el-table>
     </el-dialog>
+  </div>
   </div>`,
   setup(props) {
     const locations = ref([]), loc = ref(null), range = ref([today(), today()]), kw = ref(''), rows = ref([]);
@@ -782,7 +805,8 @@ const Inventory = {
         await api.post('/api/stock-docs', { kind: doc.kind, from_location_id: doc.kind === 'out' || doc.kind === 'transfer' ? doc.from : null,
           to_location_id: doc.kind === 'out' ? null : doc.to, supplier_id: doc.kind === 'in' || doc.reason === '退供应商' ? doc.supplier_id : null,
           reason: doc.kind === 'out' ? (doc.reason || '') : '', remark: doc.remark, request_id: doc.rid, lines });
-        ok('已提交'); dDlg.value = false; load();
+        ok('已提交');
+        if (docInline.value) openDoc(doc.kind); else { dDlg.value = false; load(); }
       } catch (e) { err(e); } finally { saving.value = false; }
     };
     const showMoves = async (row) => {
@@ -793,9 +817,20 @@ const Inventory = {
       let name; try { ({ value: name } = await ElMessageBox.prompt('仓库名称', '新增仓库')); } catch (e) { return; }
       try { await api.post('/api/warehouses', { name }); ok(); loadLocs(); } catch (e) { err(e); }
     };
-    onMounted(async () => { try { await loadLocs(); load(); countReqs(); } catch (e) { err(e); } });
+    const docInline = computed(() => props.view === 'stockIn' || props.view === 'stockCount');
+    onMounted(async () => {
+      try { await loadLocs(); } catch (e) { err(e); }
+      countReqs();
+      if (props.view === 'inventory') load();
+      else if (props.view === 'stockIn') { let k = 'in'; try { if (sessionStorage.getItem('stockKind') === 'out') k = 'out'; } catch (e) {} openDoc(k); }
+      else if (props.view === 'stockCount') openDoc('adjust');
+      else if (props.view === 'requests') openReqs();
+      else if (props.view === 'batches') openBatches();
+      else if (props.view === 'docs') openDocs();
+      try { sessionStorage.removeItem('stockKind'); } catch (e) {}
+    });
     return { reqPending, rqDlg, reqs, rq, ffDlg, ff, loadReqs, openReqs, openFulfill, submitFulfill, rejectReq, fetchBal, expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
-      locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, dq, dFilled, dPage, dSize, dLoading, dTable, dqInput, filledCount, docMatched, docShown, dqEnter, mDlg, moves, mTitle, showMoves, newWarehouse };
+      docInline, locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, dq, dFilled, dPage, dSize, dLoading, dTable, dqInput, filledCount, docMatched, docShown, dqEnter, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
 
@@ -899,18 +934,19 @@ const Orders = {
 };
 
 // ---------------- 图表（纯 HTML/SVG，不引第三方库） ----------------
-const PAY_COLORS = { cash: '#f5a524', wechat: '#22c55e', alipay: '#1677ff', other: '#c4c7cf' };  // 收款方式用大家熟悉的颜色
+const PAY_COLORS = { wechat: '#165dff', alipay: '#14c9c9', cash: '#f7ba1e', other: '#c9cdd4' };  // 按后台设计稿配色
 const CHART_COLORS = ['#0071e3', '#34c759', '#ff9500', '#af52de', '#8e8e93', '#5ac8fa'];
 const niceMax = (v) => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
 // 柱状图：items = [{ label, value, tip }]；悬停显示数值，最高的一根和悬停的一根用主色
 const BarChart = {
-  props: { items: Array, fmt: { type: Function, default: (v) => v }, height: { type: Number, default: 200 } },
+  props: { items: Array, fmt: { type: Function, default: (v) => v }, height: { type: Number, default: 200 }, labels: Boolean },
   template: `
   <div class="bar-chart" :style="{height: height + 'px'}">
     <div class="axis"><div v-for="t in ticks" :key="t" class="tick"><span>{{short(t)}}</span></div></div>
     <div class="bars" @mouseleave="hover = -1">
       <div v-for="(it, i) in items" :key="it.label" class="bar-col" @mouseenter="hover = i">
         <div class="bar" :class="{on: i === hover || (hover < 0 && i === top)}" :style="{height: pct(it) + '%'}"></div>
+        <div v-if="labels && it.value > 0 && i !== hover" class="bar-val" :style="{bottom: 'calc(' + pct(it) + '% + 4px)'}">{{short(it.value)}}</div>
         <div v-if="i === hover" class="bar-tip" :class="{left: i > items.length * .7}" :style="{bottom: 'calc(' + pct(it) + '% + 6px)'}"><b>{{fmt(it.value)}}</b><span>{{it.tip || it.label}}</span></div>
         <div class="bar-x" v-if="showLabel(i)">{{it.label}}</div>
       </div>
@@ -928,35 +964,65 @@ const BarChart = {
     return { hover, max, ticks, top, showLabel, short, pct };
   },
 };
-// 环形图：parts = [{ label, value, color }]；细圆环、圆头、段间留缝，中间大字显示合计
+// 环形图：parts = [{ label, value, color }]；粗圆环，中间显示合计
 const DonutChart = {
-  props: { parts: Array, fmt: { type: Function, default: (v) => v }, center: String },
+  props: { parts: Array, fmt: { type: Function, default: (v) => v }, center: String, short: Function },
   template: `
   <div class="donut">
     <div class="donut-ring">
-      <svg viewBox="0 0 120 120">
-        <circle cx="60" cy="60" r="50" fill="none" stroke="#f1f2f4" stroke-width="10" />
-        <circle v-for="(s, i) in segs" :key="i" cx="60" cy="60" r="50" fill="none" :stroke="s.color" stroke-width="10" stroke-linecap="round"
-          :stroke-dasharray="s.len + ' ' + C" :stroke-dashoffset="-s.off" transform="rotate(-90 60 60)" />
+      <svg viewBox="0 0 42 42">
+        <circle cx="21" cy="21" r="15.915" fill="none" stroke="#f2f3f5" stroke-width="6" />
+        <circle v-for="(s, i) in segs" :key="i" cx="21" cy="21" r="15.915" fill="none" :stroke="s.color" stroke-width="6"
+          :stroke-dasharray="s.len + ' ' + (100 - s.len)" :stroke-dashoffset="25 - s.off" />
       </svg>
-      <div class="donut-c"><b>{{fmt(total)}}</b><span>{{center}}</span></div>
+      <div class="donut-c"><span>{{center}}</span><b>{{(short || fmt)(total)}}</b></div>
     </div>
     <div class="legend">
       <div v-for="(p, i) in parts" :key="p.label" class="lg"><i :style="{background: colorOf(p, i)}"></i>
-        <span>{{p.label}}</span><b>{{fmt(p.value)}}</b><em>{{ total > 0 ? Math.round(Math.max(0, p.value) / total * 100) : 0 }}%</em></div>
+        <span>{{p.label}}</span><em>{{fmt(p.value)}}</em><b>{{ total > 0 ? Math.round(Math.max(0, p.value) / total * 100) : 0 }}%</b></div>
     </div>
   </div>`,
   setup(props) {
-    const C = 2 * Math.PI * 50, GAP = 14;  // 圆头会向两端各伸出半个线宽，所以缝要留够
     const colorOf = (p, i) => p.color || CHART_COLORS[i % CHART_COLORS.length];
     const total = computed(() => props.parts.reduce((a, p) => a + Math.max(0, p.value), 0));
-    const segs = computed(() => {
-      const shown = props.parts.map((p, i) => ({ v: Math.max(0, p.value), color: colorOf(p, i) })).filter(p => p.v > 0);
-      const gap = shown.length > 1 ? GAP : 0;
-      let off = gap / 2;
-      return shown.map(p => { const full = p.v / total.value * C; const s = { len: Math.max(.01, full - gap), off, color: p.color }; off += full; return s; });
-    });
-    return { C, total, segs, colorOf };
+    const segs = computed(() => { let off = 0;
+      return props.parts.map((p, i) => ({ v: Math.max(0, p.value), color: colorOf(p, i) })).filter(p => p.v > 0)
+        .map(p => { const len = p.v / total.value * 100; const s = { len, off, color: p.color }; off += len; return s; }); });
+    return { total, segs, colorOf };
+  },
+};
+// 折线面积图：items = [{ label, value, tip }]；悬停显示数值
+const LineChart = {
+  props: { items: Array, fmt: { type: Function, default: (v) => v }, height: { type: Number, default: 230 } },
+  template: `
+  <div class="line-chart" @mouseleave="hover = -1">
+    <svg :viewBox="'0 0 640 ' + height" role="img" aria-label="走势图" @mousemove="move">
+      <defs><linearGradient id="lc-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#165DFF" stop-opacity=".2" /><stop offset="1" stop-color="#165DFF" stop-opacity="0" /></linearGradient></defs>
+      <g stroke="#EEF0F3"><line v-for="t in ticks" :key="t.y" x1="44" :y1="t.y" x2="630" :y2="t.y" /></g>
+      <g font-size="11" fill="#4E5969" text-anchor="end"><text v-for="t in ticks" :key="'t' + t.y" x="36" :y="t.y + 4">{{t.label}}</text></g>
+      <path v-if="pts.length > 1" :d="area" fill="url(#lc-area)" />
+      <path v-if="pts.length > 1" :d="line" fill="none" stroke="#165DFF" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+      <line v-if="hover >= 0" :x1="pts[hover].x" :x2="pts[hover].x" y1="20" :y2="base" stroke="#C9CDD4" stroke-dasharray="3 3" />
+      <circle v-for="(p, i) in pts" :key="i" v-show="pts.length <= 31 || i === hover" :cx="p.x" :cy="p.y" :r="i === hover ? 4.5 : 3" fill="#fff" stroke="#165DFF" stroke-width="2" />
+      <g font-size="10.5" fill="#4E5969" text-anchor="middle"><text v-for="(p, i) in pts" :key="'x' + i" v-show="showLabel(i)" :x="p.x" :y="base + 22">{{p.label}}</text></g>
+    </svg>
+    <div v-if="hover >= 0" class="lc-tip" :style="{left: pts[hover].x / 6.4 + '%', top: pts[hover].y / height * 100 + '%'}"><b>{{fmt(items[hover].value)}}</b><span>{{items[hover].tip || items[hover].label}}</span></div>
+  </div>`,
+  setup(props) {
+    const hover = ref(-1);
+    const base = computed(() => props.height - 40);
+    const max = computed(() => niceMax(Math.max(0, ...props.items.map(i => i.value))));
+    const short = (v) => v >= 10000 ? +(v / 10000).toFixed(1) + '万' : (v >= 1000 ? +(v / 1000).toFixed(1) + 'k' : +(+v).toFixed(2));
+    const ticks = computed(() => [0, 1, 2, 3, 4].map(k => ({ y: base.value - (base.value - 30) * k / 4, label: short(max.value * k / 4) })));
+    const pts = computed(() => { const n = props.items.length, w = 570;
+      return props.items.map((it, i) => ({ x: n > 1 ? 56 + i * w / (n - 1) : 340, y: base.value - (base.value - 30) * Math.max(0, it.value) / max.value, label: it.label })); });
+    const line = computed(() => pts.value.map((p, i) => (i ? 'L' : 'M') + p.x.toFixed(1) + ' ' + p.y.toFixed(1)).join(' '));
+    const area = computed(() => pts.value.length ? line.value + ` L${pts.value[pts.value.length - 1].x} ${base.value} L${pts.value[0].x} ${base.value} Z` : '');
+    const step = computed(() => Math.ceil(props.items.length / 10));
+    const showLabel = (i) => props.items.length <= 14 || i % step.value === 0 || i === props.items.length - 1;
+    const move = (e) => { const r = e.currentTarget.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width * 640;
+      let k = -1, d = 1e9; pts.value.forEach((p, i) => { const dd = Math.abs(p.x - x); if (dd < d) { d = dd; k = i; } }); hover.value = k; };
+    return { hover, base, ticks, pts, line, area, showLabel, move };
   },
 };
 // 热力图：heat[星期一..星期日][0..23]，只画有数据的营业时段（至少 8–20 点）
@@ -978,7 +1044,7 @@ const HeatMap = {
     const hours = computed(() => { let a = 8, b = 20; (props.heat || []).forEach(r => r.forEach((v, h) => { if (v) { a = Math.min(a, h); b = Math.max(b, h); } }));
       return Array.from({ length: b - a + 1 }, (_, i) => a + i); });
     const max = computed(() => Math.max(1, ...(props.heat || []).flat()));
-    const color = (v) => !v ? '#f3f4f6' : `rgba(0, 113, 227, ${(.15 + .85 * Math.min(1, v / max.value)).toFixed(2)})`;
+    const color = (v) => !v ? '#f2f3f5' : `rgba(22, 93, 255, ${(.08 + .85 * Math.min(1, v / max.value)).toFixed(2)})`;
     return { days, hours, max, color };
   },
 };
@@ -1012,42 +1078,55 @@ const revenueSeries = (rows, begin, end, group, key = 'net') => {
 const Revenue = {
   props: ['meta'],
   template: `
-  <div class="panel">
-    <div class="toolbar">
+  <div>
+    <div class="panel toolbar" style="margin-bottom:16px">
       <el-radio-group v-model="group" @change="load"><el-radio-button value="day">日报</el-radio-button><el-radio-button value="week">周报</el-radio-button><el-radio-button value="month">月报</el-radio-button></el-radio-group>
-      <el-select v-model="store" placeholder="全部门店" clearable style="width:140px" @change="load"><el-option v-for="s in meta.stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
+      <el-select v-model="store" placeholder="全部门店" clearable style="width:150px" @change="load"><el-option v-for="s in meta.stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
       <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" style="width:260px" @change="load" />
-      <el-button @click="load">查询</el-button>
+      <el-button type="primary" @click="load">查询</el-button>
       <span class="grow"></span>
-      <el-button type="primary" @click="exp">导出 Excel</el-button>
+      <el-button @click="exp">导出 Excel</el-button>
     </div>
     <div class="stats" v-if="data.total">
-      <div class="stat"><div class="k">实收</div><div class="v">¥{{yuan(data.total.net)}}</div><div class="s">收款 ¥{{yuan(data.total.received)}} − 退款 ¥{{yuan(data.total.refunded)}}</div></div>
+      <div class="stat"><div class="k">实收</div><div class="v">¥{{yuan(data.total.net)}}</div><div class="s">收款 ¥{{yuan(data.total.received)}} · 退款 ¥{{yuan(data.total.refunded)}}</div></div>
       <div class="stat"><div class="k">单数</div><div class="v">{{data.total.orders}}</div><div class="s">门店收银 {{data.total.pos_orders}} · 扫码点单 {{data.total.online_orders}}</div></div>
       <div class="stat"><div class="k">优惠</div><div class="v">¥{{yuan(data.total.discount)}}</div><div class="s">商品原价 ¥{{yuan(data.total.original)}}</div></div>
-      <div class="stat"><div class="k">毛利</div><div class="v">¥{{yuan(data.total.profit)}}</div><div class="s">成本 ¥{{yuan(data.total.cost)}}</div></div>
+      <div class="stat"><div class="k">毛利</div><div class="v" style="color:var(--success)">¥{{yuan(data.total.profit)}}</div><div class="s">成本 ¥{{yuan(data.total.cost)}}<template v-if="data.total.net > 0"> · 毛利率 {{(data.total.profit / data.total.net * 100).toFixed(1)}}%</template></div></div>
     </div>
     <div class="dash-row" v-if="data.total">
-      <div class="sub-card">
-        <div class="panel-title">实收走势</div><div class="panel-desc">{{ {day: '每天', week: '每周', month: '每月'}[group] }}实收，悬停看金额</div>
-        <bar-chart :items="series" :fmt="v => '¥' + yuan(v * 100)" :height="200" />
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">实收走势</div><span class="muted" style="font-size:12px">{{ {day: '每天', week: '每周', month: '每月'}[group] }}实收，悬停看金额</span></div>
+        <div style="height:16px"></div>
+        <bar-chart :items="series" :fmt="v => '¥' + yuan(v * 100)" :height="210" :labels="series.length <= 14" />
       </div>
-      <div class="sub-card">
-        <div class="panel-title">收款方式</div><div class="panel-desc">净收（已扣退款）</div>
-        <donut-chart :parts="methodList.map(m => ({label: m[1], value: data.total.methods[m[0]] || 0, color: PAY_COLORS[m[0]]}))" :fmt="v => '¥' + yuan(v)" center="净收" />
-      </div>
-    </div>
-    <div class="dash-row" v-if="ins">
-      <div class="sub-card">
-        <div class="panel-title">下单时段</div><div class="panel-desc">每个时段的收款单数</div>
-        <heat-map :heat="ins.heat" />
-      </div>
-      <div class="sub-card">
-        <div class="panel-title">扫码点单区域排行</div><div class="panel-desc">按单数，金额为订单应收</div>
-        <rank-list :rows="ins.areas.slice(0, 8).map(a => ({name: a.name, value: a.orders, sub: '¥' + yuan(a.amount)}))" :fmt="v => v + ' 单'" empty="这段时间没有扫码点单" />
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">收款方式</div><span class="muted" style="font-size:12px">净收（已扣退款）</span></div>
+        <div style="height:16px"></div>
+        <div class="hbars">
+          <div v-for="m in methodRows" :key="m.k" class="hbar"><div class="t"><span>{{m.label}}</span><b>¥{{yuan(m.v)}}</b></div><div class="b"><i :style="{width: m.pct + '%'}"></i></div></div>
+        </div>
+        <div class="note" style="margin-top:16px">微信 / 支付宝目前按收银员选择的方式记账，未接入线上支付对账。</div>
       </div>
     </div>
-    <div class="panel-title" style="margin:6px 0 10px">明细</div>
+    <div class="dash-row even" v-if="ins">
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">下单时段</div><span class="muted" style="font-size:12px">每个时段的收款单数</span></div>
+        <div style="height:16px"></div>
+        <bar-chart class="cyan" :items="hourItems" :fmt="v => v + ' 单'" :height="170" />
+      </div>
+      <div class="panel">
+        <div class="panel-head"><div class="panel-title">扫码点单区域排行</div><span class="muted" style="font-size:12px">按单数，金额为订单应收</span></div>
+        <div style="height:12px"></div>
+        <el-table v-if="ins.areas.length" :data="ins.areas.slice(0, 8)">
+          <el-table-column prop="name" label="区域" min-width="120" />
+          <el-table-column label="单数" width="90" align="right"><template #default="{row}">{{row.orders}} 单</template></el-table-column>
+          <el-table-column label="金额" width="120" align="right"><template #default="{row}">¥{{yuan(row.amount)}}</template></el-table-column>
+        </el-table>
+        <el-empty v-else :image-size="50" description="这段时间没有扫码点单" />
+      </div>
+    </div>
+    <div class="panel">
+    <div class="panel-title" style="margin-bottom:12px">明细</div>
     <el-table :data="rowsWithTotal" :row-class-name="({row}) => row.period === '合计' ? 'row-total' : ''">
       <el-table-column label="期间" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.period}}</div><div class="c-sub" v-if="row.store_name">{{row.store_name}}</div></template></el-table-column>
       <el-table-column prop="orders" label="单数" min-width="70" align="right" />
@@ -1059,7 +1138,8 @@ const Revenue = {
       <el-table-column label="成本" min-width="90" align="right"><template #default="{row}"><span class="money">{{yuan(row.cost)}}</span></template></el-table-column>
       <el-table-column label="毛利" min-width="100" align="right"><template #default="{row}"><span class="money">{{yuan(row.profit)}}</span></template></el-table-column>
     </el-table>
-    <div class="muted" style="margin-top:6px">收款按收款时间、退款按退款时间计入；实收 = 收款 − 退款。微信 / 支付宝目前是店员确认收款的记账，不是在线支付。</div>
+    <div class="muted" style="margin-top:10px;font-size:12px">收款按收款时间、退款按退款时间计入；实收 = 收款 − 退款。</div>
+    </div>
   </div>`,
   setup() {
     const group = ref('day'), store = ref(null), range = ref([daysAgo(6), today()]), data = ref({ rows: [], total: null });
@@ -1067,12 +1147,18 @@ const Revenue = {
     const ins = ref(null);
     const load = async () => { try { [data.value, ins.value] = await Promise.all([api.get('/api/reports/revenue', params()),
       api.get('/api/reports/insights', { store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1] })]); } catch (e) { err(e); } };
+    const methodRows = computed(() => { const t = data.value.total; if (!t) return [];
+      const rows = methodList.map(([k, n]) => ({ k, label: n, v: t.methods[k] || 0 })).filter(r => r.v || r.k !== 'other');
+      const mx = Math.max(1, ...rows.map(r => r.v)); return rows.sort((a, b) => b.v - a.v).map(r => ({ ...r, pct: Math.max(0, r.v) / mx * 100 })); });
+    const hourItems = computed(() => { if (!ins.value) return []; const hs = Array(24).fill(0); ins.value.heat.forEach(r => r.forEach((v, h) => { hs[h] += v; }));
+      let a = 8, b = 20; hs.forEach((v, h) => { if (v) { a = Math.min(a, h); b = Math.max(b, h); } });
+      return hs.slice(a, b + 1).map((v, i) => ({ label: String(a + i), tip: (a + i) + ':00–' + (a + i + 1) + ':00', value: v })); });
     const series = computed(() => data.value.total ? revenueSeries(data.value.rows, data.value.begin, data.value.end, data.value.group).map(x => ({ ...x, value: x.value / 100 })) : []);
     const exp = async () => { try { await api.download('/api/reports/revenue', params()); } catch (e) { err(e); } };
     const rowsWithTotal = computed(() => data.value.total ? [...data.value.rows, { ...data.value.total, period: '合计', store_name: '' }] : []);
     onMounted(load);
     const methodList = [['cash', '现金'], ['wechat', '微信'], ['alipay', '支付宝'], ['other', '其他']];
-    return { PAY_COLORS, group, store, range, data, ins, series, load, exp, rowsWithTotal, methodList, yuan };
+    return { PAY_COLORS, methodRows, hourItems, group, store, range, data, ins, series, load, exp, rowsWithTotal, methodList, yuan };
   },
 };
 
@@ -1489,108 +1575,112 @@ const Dashboard = {
   props: ['meta', 'go'],
   template: `
   <div>
-    <div class="stats cards">
-      <div class="stat"><div class="k">今日实收<span class="ic" v-html="icon('cash')"></span></div><div class="v">¥{{yuan(t.net)}}</div>
-        <div class="s"><span v-if="cmp(t.net, y.net)" class="delta" :class="cmp(t.net, y.net).cls">{{cmp(t.net, y.net).text}}</span>昨日 ¥{{yuan(y.net)}}</div></div>
-      <div class="stat"><div class="k">今日单数<span class="ic" v-html="icon('receipt')"></span></div><div class="v">{{t.orders || 0}}</div>
-        <div class="s"><span v-if="cmp(t.orders, y.orders)" class="delta" :class="cmp(t.orders, y.orders).cls">{{cmp(t.orders, y.orders).text}}</span>门店 {{t.pos_orders || 0}} · 扫码 {{t.online_orders || 0}}</div></div>
-      <div class="stat clickable" @click="go('orders')"><div class="k">待接单<span class="ic" v-html="icon('inbox')"></span></div><div class="v" :style="pending ? 'color:var(--danger)' : ''">{{pending}}</div>
-        <div class="s"><span v-if="pending" class="delta down">需处理</span>各门店扫码点单</div></div>
-      <div class="stat"><div class="k">本月实收<span class="ic" v-html="icon('chart')"></span></div><div class="v">¥{{yuan(m.net)}}</div>
-        <div class="s"><span class="delta up" v-if="m.net > 0">毛利 {{Math.round(m.profit / m.net * 100)}}%</span>毛利 ¥{{yuan(m.profit)}}</div></div>
+    <div class="stats tint">
+      <div class="stat t-blue"><div class="k">今日实收</div><div class="v">¥{{yuan(t.net)}}</div>
+        <div class="s">昨日 ¥{{yuan(y.net)}}<template v-if="cmp(t.net, y.net)"> · <span :class="cmp(t.net, y.net).cls + '-t'">{{cmp(t.net, y.net).text}}</span></template></div></div>
+      <div class="stat t-cyan"><div class="k">今日单数</div><div class="v">{{t.orders || 0}} <small>单</small></div>
+        <div class="s">门店收银 {{t.pos_orders || 0}} · 扫码点单 {{t.online_orders || 0}}</div></div>
+      <div class="stat t-red clickable" @click="go('orders')"><div class="k">待接单</div><div class="v" :style="pending ? 'color:var(--danger)' : ''">{{pending}} <small v-if="pending" style="color:var(--danger)">需处理</small></div>
+        <div class="s">各门店扫码点单 · 点击查看 ›</div></div>
+      <div class="stat t-purple"><div class="k">本月实收</div><div class="v">¥{{yuan(m.net)}}</div>
+        <div class="s">毛利 ¥{{yuan(m.profit)}}<template v-if="m.net > 0"> · 毛利率 {{(m.profit / m.net * 100).toFixed(1)}}%</template></div></div>
     </div>
     <div class="dash-row">
       <div class="panel">
-        <div class="panel-head"><div><div class="panel-title">营收趋势</div><div class="panel-desc">每天实收（收款 − 退款），悬停看具体金额</div></div>
-          <div class="segs mini"><div v-for="n in [7, 30, 90]" :key="n" class="seg" :class="{on: days === n}" @click="days = n; loadTrend()">近 {{n}} 天</div></div></div>
-        <div class="metrics">
-          <div><span>实收</span><b>¥{{yuan(pt.net)}}</b></div>
-          <div><span>单数</span><b>{{pt.orders || 0}}</b></div>
-          <div><span>客单价</span><b>¥{{ pt.orders ? yuan(Math.round(pt.net / pt.orders)) : '0.00' }}</b></div>
-          <div><span>毛利率</span><b>{{ pt.net > 0 ? Math.round(pt.profit / pt.net * 100) + '%' : '–' }}</b></div>
-        </div>
-        <bar-chart :items="trend" :fmt="v => '¥' + yuan(v * 100)" :height="210" />
+        <div class="panel-head"><div><div class="panel-title">营收趋势</div><div class="panel-desc">{{ {net: '每天实收（收款 − 退款）', orders: '每天收款单数', avg: '每天客单价（实收 ÷ 单数）', margin: '每天毛利率（毛利 ÷ 实收）'}[metric] }}，悬停看具体数值</div></div>
+          <div class="toolbar" style="margin:0">
+            <div class="segs mini"><div v-for="x in [['net', '实收'], ['orders', '单数'], ['avg', '客单价'], ['margin', '毛利率']]" :key="x[0]" class="seg" :class="{on: metric === x[0]}" @click="metric = x[0]">{{x[1]}}</div></div>
+            <div class="segs mini"><div v-for="n in [14, 30, 90]" :key="n" class="seg" :class="{on: days === n}" @click="days = n; loadTrend()">近 {{n}} 天</div></div>
+          </div></div>
+        <line-chart :items="trendItems" :fmt="trendFmt" :height="240" />
       </div>
       <div class="panel">
-        <div class="panel-title">收款方式</div><div class="panel-desc">近 {{days}} 天净收（已扣退款）</div>
-        <donut-chart :parts="methodParts" :fmt="v => '¥' + yuan(v)" center="净收" />
-        <div class="split" v-if="pt.orders">
-          <div class="split-k"><span>门店收银 <b>{{pt.pos_orders}}</b> 单</span><span>扫码点单 <b>{{pt.online_orders}}</b> 单</span></div>
-          <div class="split-bar"><i :style="{width: pt.pos_orders / pt.orders * 100 + '%'}"></i></div>
-        </div>
+        <div class="panel-head"><div class="panel-title">收款方式</div><span class="muted" style="font-size:12px">近 {{days}} 天净收</span></div>
+        <div style="height:12px"></div>
+        <donut-chart :parts="methodParts" :fmt="v => '¥' + yuan(v)" :short="v => '¥' + wan(v)" center="净收" />
+        <div class="mini-stats"><div><span>门店收银</span><b>{{pt.pos_orders || 0}} 单</b></div><div><span>扫码点单</span><b>{{pt.online_orders || 0}} 单</b></div></div>
       </div>
     </div>
     <div class="dash-row">
       <div class="panel">
-        <div class="panel-title">下单时段</div><div class="panel-desc">近 {{days}} 天每个时段的收款单数，用来安排排班和补货</div>
+        <div class="panel-title">下单时段</div><div class="panel-desc">按收款时间，格子越深单越多（近 {{days}} 天）</div>
         <heat-map v-if="heat" :heat="heat" />
       </div>
       <div class="panel">
-        <div class="panel-title">热销商品</div><div class="panel-desc">近 {{days}} 天净销量前 6</div>
+        <div class="panel-head"><div class="panel-title">热销商品</div><span class="link-more" @click="go('productSales')">商品销售核对 ›</span></div>
+        <div style="height:12px"></div>
         <rank-list :rows="hot" :fmt="v => v + ' 件'" empty="这段时间还没有销售" />
       </div>
     </div>
     <div class="dash-row">
       <div class="panel">
         <div class="panel-title">今日各门店</div><div class="panel-desc">按收款时间统计，退款已扣除</div>
-        <el-table v-if="byStore.length" :data="byStore" size="small">
-          <el-table-column prop="store_name" label="门店" />
-          <el-table-column prop="orders" label="单数" width="80" />
-          <el-table-column label="优惠" width="100" class-name="right"><template #default="{row}">{{yuan(row.discount)}}</template></el-table-column>
-          <el-table-column label="实收" width="110" class-name="right"><template #default="{row}"><b>{{yuan(row.net)}}</b></template></el-table-column>
+        <el-table v-if="byStore.length" :data="byStore">
+          <el-table-column prop="store_name" label="门店" min-width="160" />
+          <el-table-column prop="orders" label="单数" width="80" align="right" />
+          <el-table-column label="实收" width="120" align="right"><template #default="{row}"><b>¥{{yuan(row.net)}}</b></template></el-table-column>
+          <el-table-column label="优惠" width="110" align="right"><template #default="{row}">¥{{yuan(row.discount)}}</template></el-table-column>
+          <el-table-column label="退款" width="110" align="right"><template #default="{row}">¥{{yuan(row.refunded)}}</template></el-table-column>
         </el-table>
         <el-empty v-if="!byStore.length" :image-size="60" description="今天还没有收款" />
       </div>
       <div class="panel">
-        <div class="panel-title">常用</div><div class="panel-desc">&nbsp;</div>
+        <div class="panel-title" style="margin-bottom:12px">常用</div>
         <div class="quick">
           <div class="q" @click="go('products')"><b>新增商品</b><span>规格、库存品、扣减量</span></div>
-          <div class="q" @click="go('inventory')"><b>调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></b><span>{{ reqPending ? reqPending + ' 张要货申请待处理' : '仓库每日出库' }}</span></div>
+          <div class="q" @click="go('requests')"><b>调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></b><span>{{ reqPending ? reqPending + ' 张要货申请待处理' : '处理门店要货' }}</span></div>
           <div class="q" @click="go('revenue')"><b>营收报表</b><span>日报 / 周报 / 月报</span></div>
           <div class="q" @click="go('stores')"><b>区域二维码</b><span>打印贴到区域</span></div>
         </div>
       </div>
     </div>
-    <div v-if="alerts !== null" class="panel" style="margin-top:16px">
-      <div class="panel-title">库存预警 <span v-if="alerts.length" style="color:var(--danger)">{{alerts.length}}</span></div>
-      <div class="panel-desc">库存小于等于预警量的库存品；预警量在“库存品”里设置</div>
-      <el-table v-if="alerts.length" :data="alerts.slice(0, 20)" size="small">
-        <el-table-column prop="location_name" label="仓库 / 门店" width="160" />
-        <el-table-column prop="name" label="库存品" />
-        <el-table-column label="现有" width="90" align="right"><template #default="{row}"><b style="color:var(--danger)">{{row.qty}}</b> {{row.unit}}</template></el-table-column>
-        <el-table-column prop="alert_qty" label="预警量" width="80" align="right" />
-      </el-table>
-      <div v-if="alerts.length > 20" class="muted" style="margin-top:6px">还有 {{alerts.length - 20}} 条，到“仓库与库存”里查看</div>
-      <el-empty v-if="!alerts.length" :image-size="50" description="没有低于预警量的库存品" />
-    </div>
-    <div v-if="expiring !== null" class="panel" style="margin-top:16px">
-      <div class="panel-title">临期提醒 <span v-if="expiring.length" style="color:var(--danger)">{{expiring.length}}</span></div>
-      <div class="panel-desc">快到期或已过期、还有剩余的批次；提醒天数在“业务规则”里设置</div>
-      <el-table v-if="expiring.length" :data="expiring.slice(0, 20)" size="small">
-        <el-table-column prop="location_name" label="仓库 / 门店" width="160" />
-        <el-table-column prop="name" label="库存品" />
-        <el-table-column prop="batch_no" label="批号" width="110" />
-        <el-table-column label="有效期至" width="190"><template #default="{row}">{{row.expiry_date}}
-          <el-tag :type="row.expired ? 'danger' : 'warning'" size="small" style="margin-left:4px">{{ row.expired ? '已过期 ' + (-row.days_left) + ' 天' : (row.days_left ? row.days_left + ' 天后' : '今天到期') }}</el-tag></template></el-table-column>
-        <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
-      </el-table>
-      <div v-if="expiring.length > 20" class="muted" style="margin-top:6px">还有 {{expiring.length - 20}} 条，到“仓库与库存 → 批次 / 有效期”里查看</div>
-      <el-empty v-if="!expiring.length" :image-size="50" description="没有临期的批次" />
+    <div class="dash-row even" v-if="alerts !== null || expiring !== null">
+      <div v-if="alerts !== null" class="panel">
+        <div class="panel-head"><div><div class="panel-title">库存预警 <span v-if="alerts.length" style="color:var(--danger)">{{alerts.length}}</span></div>
+          <div class="panel-desc">库存 ≤ 预警量的库存品；预警量在“库存品”里设置</div></div><span class="link-more" @click="go('inventory')">库存总览 ›</span></div>
+        <el-table v-if="alerts.length" :data="alerts.slice(0, 8)">
+          <el-table-column prop="location_name" label="仓库 / 门店" min-width="110" />
+          <el-table-column prop="name" label="库存品" min-width="150" />
+          <el-table-column label="现有" width="90" align="right"><template #default="{row}"><el-tag :type="row.qty <= 0 ? 'danger' : 'warning'">{{row.qty}}</el-tag></template></el-table-column>
+          <el-table-column prop="alert_qty" label="预警量" width="80" align="right" />
+        </el-table>
+        <div v-if="alerts.length > 8" class="muted" style="margin-top:8px;font-size:12px">还有 {{alerts.length - 8}} 条，到“库存总览”里查看</div>
+        <el-empty v-if="!alerts.length" :image-size="50" description="没有低于预警量的库存品" />
+      </div>
+      <div v-if="expiring !== null" class="panel">
+        <div class="panel-head"><div><div class="panel-title">临期提醒 <span v-if="expiring.length" style="color:var(--danger)">{{expiring.length}}</span></div>
+          <div class="panel-desc">快到期或已过期、还有剩余的批次；天数在“业务规则”里设置</div></div><span class="link-more" @click="go('batches')">批次 / 有效期 ›</span></div>
+        <el-table v-if="expiring.length" :data="expiring.slice(0, 8)">
+          <el-table-column prop="name" label="库存品" min-width="150" />
+          <el-table-column prop="batch_no" label="批号" width="100" />
+          <el-table-column label="有效期至" min-width="150"><template #default="{row}"><el-tag :type="row.expired ? 'danger' : 'warning'">{{row.expiry_date}}{{ row.expired ? ' 已过期' : '' }}</el-tag></template></el-table-column>
+          <el-table-column label="剩余" width="80" align="right"><template #default="{row}">{{row.qty}}</template></el-table-column>
+        </el-table>
+        <div v-if="expiring.length > 8" class="muted" style="margin-top:8px;font-size:12px">还有 {{expiring.length - 8}} 条，到“批次 / 有效期”里查看</div>
+        <el-empty v-if="!expiring.length" :image-size="50" description="没有临期的批次" />
+      </div>
     </div>
   </div>`,
   setup() {
-    const days = ref(30), trend = ref([]), pt = ref({}), heat = ref(null), hot = ref([]);
-    const methodParts = computed(() => [['cash', '现金'], ['wechat', '微信'], ['alipay', '支付宝'], ['other', '其他']]
+    const days = ref(14), metric = ref('net'), trend = ref([]), pt = ref({}), heat = ref(null), hot = ref([]);
+    // 营收趋势可切换：实收 / 单数 / 客单价 / 毛利率（按天）
+    const trendItems = computed(() => trend.value.map(d => ({ label: d.label, tip: d.tip,
+      value: metric.value === 'net' ? d.net / 100 : metric.value === 'orders' ? d.orders : metric.value === 'avg' ? (d.orders ? d.net / d.orders / 100 : 0) : (d.net > 0 ? d.profit / d.net * 100 : 0) })));
+    const trendFmt = (v) => metric.value === 'orders' ? v + ' 单' : metric.value === 'margin' ? v.toFixed(1) + '%' : '¥' + yuan(Math.round(v * 100));
+    const wan = (fen) => fen >= 1000000 ? +(fen / 1000000).toFixed(1) + '万' : yuan(fen);
+    const methodParts = computed(() => [['wechat', '微信'], ['alipay', '支付宝'], ['cash', '现金'], ['other', '其他']]
       .map(([k, n]) => ({ label: n, value: ((pt.value.methods || {})[k]) || 0, color: PAY_COLORS[k] })));
     const loadTrend = async () => {
       const b = daysAgo(days.value - 1), e = today();
       try {
         const [r, ins, ps] = await Promise.all([api.get('/api/reports/revenue', { begin: b, end: e }), api.get('/api/reports/insights', { begin: b, end: e }),
           api.get('/api/reports/product-sales', { begin: b, end: e })]);
-        pt.value = r.total; trend.value = revenueSeries(r.rows, b, e, 'day').map(x => ({ ...x, value: x.value / 100 }));
+        pt.value = r.total;
+        const net = revenueSeries(r.rows, b, e, 'day'), ord = revenueSeries(r.rows, b, e, 'day', 'orders'), pro = revenueSeries(r.rows, b, e, 'day', 'profit');
+        trend.value = net.map((x, i) => ({ label: i === net.length - 1 ? '今日' : x.label, tip: x.tip, net: x.value, orders: ord[i].value, profit: pro[i].value }));
         heat.value = ins.heat;
         hot.value = ps.rows.filter(x => x.net_qty > 0).sort((a, c) => c.net_qty - a.net_qty).slice(0, 6)
-          .map(x => ({ name: x.product_name + (x.sku_name && x.sku_name !== '默认' ? ' ' + x.sku_name : ''), value: x.net_qty, sub: '净收 ¥' + yuan(x.net) }));
+          .map(x => ({ name: x.product_name + (x.sku_name && x.sku_name !== '默认' ? ' · ' + x.sku_name : ''), value: x.net_qty }));
       } catch (e) {}
     };
     const t = ref({}), m = ref({}), y = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null), reqPending = ref(0);
@@ -1610,23 +1700,28 @@ const Dashboard = {
     // 和昨日比：今天或昨日为 0 时不显示百分比（早上还没开单时不显示“↓100%”）
     const cmp = (a, b) => { a = +a || 0; b = +b || 0; if (!a || !b) return null; const r = Math.round((a - b) / b * 100);
       return { cls: r >= 0 ? 'up' : 'down', text: (r >= 0 ? '↑ ' : '↓ ') + Math.abs(r) + '%' }; };
-    return { days, trend, pt, heat, hot, methodParts, loadTrend, t, m, y, cmp, pending, byStore, alerts, expiring, reqPending, yuan, icon: Shouyin.icon };
+    return { days, metric, trendItems, trendFmt, wan, trend, pt, heat, hot, methodParts, loadTrend, t, m, y, cmp, pending, byStore, alerts, expiring, reqPending, yuan, icon: Shouyin.icon };
   },
 };
 
 // ---------------- 主框架 ----------------
 // [键, 名称, 权限, 组件, 分组, 图标, 说明]
 const MENU = [
+  ['products', '商品档案', 'catalog', Products, '商品资料', 'package', '名称、规格、售价、图片、医疗器械资料'],
+  ['categories', '商品分类', 'catalog', Categories, '商品资料', 'tag', '大类、小类'],
+  ['stockItems', '库存品', 'catalog', StockItems, '商品资料', 'layers', '实际占库存的东西，多个规格可共用'],
+  ['suppliers', '供应商', 'catalog', Suppliers, '商品资料', 'truck', '供货单位和联系方式'],
   ['dashboard', '经营概览', 'reports', Dashboard, '经营', 'home', '今天和本月的营收、待处理订单'],
   ['orders', '订单', 'reports', Orders, '经营', 'receipt', '所有门店的收银单和小程序订单'],
   ['revenue', '营收报表', 'reports', Revenue, '经营', 'chart', '按门店、日 / 周 / 月统计，可导出'],
   ['shifts', '交班记录', 'reports', Shifts, '经营', 'clock', '每个收银员每一班的收款、备用金、现金差额'],
   ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '按商品或按分类查卖了多少，展开看逐单明细'],
-  ['products', '商品', 'catalog', Products, '商品资料', 'package', '名称、规格、售价、图片、医疗器械资料'],
-  ['categories', '商品分类', 'catalog', Categories, '商品资料', 'tag', '大类、小类'],
-  ['stockItems', '库存品', 'catalog', StockItems, '商品资料', 'layers', '实际占库存的东西，多个规格可共用'],
-  ['suppliers', '供应商', 'catalog', Suppliers, '商品资料', 'truck', ''],
-  ['inventory', '仓库与库存', 'inventory', Inventory, '库存', 'warehouse', '入库、出库、调拨到门店、盘点、台账'],
+  ['inventory', '库存总览', 'inventory', Inventory, '库存', 'warehouse', '仓库和各门店的库存、期间进出与预警'],
+  ['stockIn', '入库 / 出库', 'inventory', Inventory, '库存', 'box', '采购到货登记入库；出库用于报损、领用等'],
+  ['stockCount', '盘点', 'inventory', Inventory, '库存', 'scan', '按实点数量调整库存，差额记入台账'],
+  ['requests', '要货与调拨', 'inventory', Inventory, '库存', 'refresh', '处理门店要货申请，仓库调拨到门店'],
+  ['batches', '批次 / 有效期', 'inventory', Inventory, '库存', 'clock', '按批次查看生产日期、有效期和剩余数量'],
+  ['docs', '单据与台账', 'inventory', Inventory, '库存', 'inbox', '入库、出库、盘点、调拨单据和库存流水'],
   ['stores', '门店与区域', 'stores', Stores, '门店', 'store', '门店设置、区域二维码、出票方式'],
   ['receipt', '小票设置', 'receipt_config', ReceiptSettings, '门店', 'printer', '小票文字、字段、排版、底部图片'],
   ['rules', '业务规则', 'stores', Rules, '门店', 'sliders', '扣库存时机、库存不够能否卖'],
@@ -1658,7 +1753,7 @@ const App = {
     <div class="switch"><el-button link @click="logout">换个账号登录</el-button></div></div></div></div>
   <div v-else class="layout">
     <div class="aside">
-      <div class="brand"><span class="mark">收</span><div>收银系统<small>后台管理</small></div></div>
+      <div class="brand"><span class="mark">AW</span><div>{{shop.name || '收银系统'}}<small>收银系统 · 后台管理</small></div></div>
       <label class="nav-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input ref="navQ" v-model="navKw" placeholder="搜索菜单" @keyup.enter="navGo"><kbd>Ctrl K</kbd></label>
       <div class="nav">
@@ -1666,6 +1761,7 @@ const App = {
           <div class="group">{{g}}</div>
           <div v-for="m in navMenu.filter(x => x[4] === g)" :key="m[0]" class="item" :class="{on: tab === m[0]}" @click="tab = m[0]"><span class="ico" v-html="icon(m[5])"></span>{{m[1]}}</div>
         </template>
+        <div v-if="shop.address" class="shop">{{shop.address}}<template v-if="shop.phone"><br>电话 {{shop.phone}}</template></div>
       </div>
     </div>
     <div class="main">
@@ -1679,7 +1775,7 @@ const App = {
           </el-dropdown></div>
       </div>
       <div class="content" ref="contentEl" @scroll.passive="onScroll">
-        <component v-if="ready" :is="tab" :meta="meta" v-bind="tab === 'dashboard' ? {go: k => tab = k} : {}" :key="tab" />
+        <component v-if="ready" :is="tab" :meta="meta" v-bind="viewProps" :key="tab" />
       </div>
       <transition name="totop"><button v-if="showTop" class="totop" aria-label="回到顶部" title="回到顶部" @click="toTop"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button></transition>
     </div>
@@ -1690,6 +1786,11 @@ const App = {
     const menu = computed(() => user.value ? MENU.filter(m => user.value.is_admin && user.value.permissions.includes(m[2])) : []);
     const groups = computed(() => [...new Set(menu.value.map(m => m[4]))]);
     const cur = computed(() => menu.value.find(m => m[0] === tab.value) || []);
+    // 页面间跳转；kind 给入库/出库页指定打开哪种单据
+    const go = (k, kind) => { try { kind ? sessionStorage.setItem('stockKind', kind) : sessionStorage.removeItem('stockKind'); } catch (e) {} tab.value = k; };
+    const viewProps = computed(() => cur.value[3] === Inventory ? { go, view: tab.value } : (tab.value === 'dashboard' ? { go } : {}));
+    // 侧栏品牌块和底部信息：只有一家门店时显示它的名称、地址
+    const shop = computed(() => meta.stores.length === 1 ? meta.stores[0] : {});
     // 侧栏搜索：按名称和说明筛菜单，回车进第一个；Ctrl+K 聚焦
     const navKw = ref(''), navQ = ref(null);
     const navMenu = computed(() => { const k = navKw.value.trim(); return k ? menu.value.filter(m => (m[1] + m[6]).includes(k)) : menu.value; });
@@ -1728,10 +1829,10 @@ const App = {
     };
     window.onUnauthorized = () => { user.value = null; ready.value = false; };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await loadMeta(); } catch (e) {} } });
-    return { user, lf, busy, tab, menu, groups, cur, navKw, navQ, navMenu, navGroups, navGo, greet, dateText, meta, ready, login, logout, changePw, toStore, contentEl, showTop, onScroll, toTop, icon: Shouyin.icon };
+    return { user, lf, busy, tab, menu, groups, cur, shop, navKw, navQ, navMenu, navGroups, navGo, greet, dateText, meta, ready, login, logout, changePw, toStore, contentEl, showTop, onScroll, toTop, viewProps, icon: Shouyin.icon };
   },
 };
 
 const app = createApp(App); app.config.globalProperties.thumb = Shouyin.thumb;
-app.component('bar-chart', BarChart); app.component('donut-chart', DonutChart); app.component('heat-map', HeatMap); app.component('rank-list', RankList);
+app.component('bar-chart', BarChart); app.component('line-chart', LineChart); app.component('donut-chart', DonutChart); app.component('heat-map', HeatMap); app.component('rank-list', RankList);
 app.use(ElementPlus, { locale: ElementPlusLocaleZhCn }).mount('#app');
