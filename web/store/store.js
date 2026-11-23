@@ -1260,11 +1260,11 @@ const App = {
         <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
         <span class="tb-sep"></span>
         <button type="button" class="tb" :class="{busy: syncing}" :disabled="syncing" title="从服务器获取最新的商品、价格及门店设置" @click="sync"><span class="ico" v-html="icon('refresh')"></span>同步</button>
-      <el-popover placement="bottom" :width="280" trigger="click">
+      <el-popover placement="bottom" :width="340" trigger="click" popper-class="setpop">
         <template #reference><button type="button" class="tb"><span class="ico" v-html="icon('settings')"></span>本机设置</button></template>
         <div><el-checkbox v-model="settings.sound">提示音和语音播报</el-checkbox></div>
         <div><el-checkbox v-model="settings.keyHints">显示键盘快捷键提示</el-checkbox></div>
-        <div class="osk-set"><span>屏幕键盘</span><el-radio-group v-model="settings.osk" size="small">
+        <div class="osk-set"><span>屏幕键盘</span><el-radio-group v-model="settings.osk">
           <el-radio-button value="auto">触摸时弹出</el-radio-button><el-radio-button value="always">总是弹出</el-radio-button><el-radio-button value="off">关闭</el-radio-button></el-radio-group></div>
         <div v-if="cur.print_mode === 'agent'" class="hint" style="margin:0 0 6px">本店小票由接小票机那台电脑上的“打印小助手”出票（后台设置），下面两项打印选项在本机不起作用。</div>
         <div v-else-if="desk && desk.printMode === 'off'" class="hint" style="margin:0 0 6px">这台电脑设置为不出票，下面两项不起作用。</div>
@@ -1273,7 +1273,7 @@ const App = {
         <template v-if="desk">
           <div class="desk-box">
             <div>小票机：<b>{{desk.printer || '未选择'}}</b><span class="muted">　{{ {raw: '直接出票', driver: '驱动出票', off: '不出票'}[desk.printMode] }}</span></div>
-            <div style="margin-top:8px"><el-button size="small" @click="deskTest">打印测试页</el-button><el-button size="small" @click="deskDrawer">开钱箱</el-button><el-button size="small" type="primary" plain @click="openDeskSettings">桌面软件设置</el-button></div>
+            <div class="desk-btns"><el-button @click="deskTest">打印测试页</el-button><el-button @click="deskDrawer">开钱箱</el-button><el-button type="primary" plain @click="openDeskSettings">桌面软件设置</el-button></div>
             <div class="muted" style="font-size:12px;margin-top:6px">桌面版 {{desk.version}} · <kbd>F11</kbd> 全屏 · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 设置 · <kbd>Ctrl</kbd>+<kbd>+</kbd>/<kbd>−</kbd> 缩放</div>
           </div>
         </template>
