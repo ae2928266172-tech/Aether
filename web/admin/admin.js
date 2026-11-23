@@ -1358,16 +1358,20 @@ const Dashboard = {
   props: ['meta', 'go'],
   template: `
   <div>
-    <div class="stats">
-      <div class="stat accent"><div class="k">今日实收</div><div class="v">¥{{yuan(t.net)}}</div><div class="s">收款 ¥{{yuan(t.received)}} · 退款 ¥{{yuan(t.refunded)}}</div></div>
-      <div class="stat"><div class="k">今日单数</div><div class="v">{{t.orders || 0}}</div><div class="s">门店收银 {{t.pos_orders || 0}} · 小程序 {{t.online_orders || 0}}</div></div>
-      <div class="stat"><div class="k">待接单</div><div class="v" :style="pending ? 'color:#dc2626' : ''">{{pending}}</div><div class="s">各门店小程序订单</div></div>
-      <div class="stat"><div class="k">本月实收</div><div class="v">¥{{yuan(m.net)}}</div><div class="s">毛利 ¥{{yuan(m.profit)}}</div></div>
+    <div class="stats cards">
+      <div class="stat"><div class="k">今日实收<span class="ic" v-html="icon('cash')"></span></div><div class="v">¥{{yuan(t.net)}}</div>
+        <div class="s"><span v-if="cmp(t.net, y.net)" class="delta" :class="cmp(t.net, y.net).cls">{{cmp(t.net, y.net).text}}</span>昨日 ¥{{yuan(y.net)}}</div></div>
+      <div class="stat"><div class="k">今日单数<span class="ic" v-html="icon('receipt')"></span></div><div class="v">{{t.orders || 0}}</div>
+        <div class="s"><span v-if="cmp(t.orders, y.orders)" class="delta" :class="cmp(t.orders, y.orders).cls">{{cmp(t.orders, y.orders).text}}</span>门店 {{t.pos_orders || 0}} · 扫码 {{t.online_orders || 0}}</div></div>
+      <div class="stat clickable" @click="go('orders')"><div class="k">待接单<span class="ic" v-html="icon('inbox')"></span></div><div class="v" :style="pending ? 'color:var(--danger)' : ''">{{pending}}</div>
+        <div class="s"><span v-if="pending" class="delta down">需处理</span>各门店扫码点单</div></div>
+      <div class="stat"><div class="k">本月实收<span class="ic" v-html="icon('chart')"></span></div><div class="v">¥{{yuan(m.net)}}</div>
+        <div class="s"><span class="delta up" v-if="m.net > 0">毛利 {{Math.round(m.profit / m.net * 100)}}%</span>毛利 ¥{{yuan(m.profit)}}</div></div>
     </div>
     <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px">
       <div class="panel">
         <div class="panel-title">今日各门店</div><div class="panel-desc">按收款时间统计，退款已扣除</div>
-        <el-table :data="byStore" size="small">
+        <el-table v-if="byStore.length" :data="byStore" size="small">
           <el-table-column prop="store_name" label="门店" />
           <el-table-column prop="orders" label="单数" width="80" />
           <el-table-column label="优惠" width="100" class-name="right"><template #default="{row}">{{yuan(row.discount)}}</template></el-table-column>
@@ -1413,18 +1417,23 @@ const Dashboard = {
     </div>
   </div>`,
   setup() {
-    const t = ref({}), m = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null), reqPending = ref(0);
+    const t = ref({}), m = ref({}), y = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null), reqPending = ref(0);
     onMounted(async () => {
       const d = today();
       try {
-        const [a, b, p] = await Promise.all([api.get('/api/reports/revenue', { begin: d, end: d }),
-          api.get('/api/reports/revenue', { begin: d.slice(0, 8) + '01', end: d, group: 'month' }), api.get('/api/orders', { status: 'pending', size: 1 })]);
-        t.value = a.total; m.value = b.total; pending.value = p.total; byStore.value = a.rows;
+        const yd = daysAgo(1);
+        const [a, b, p, c] = await Promise.all([api.get('/api/reports/revenue', { begin: d, end: d }),
+          api.get('/api/reports/revenue', { begin: d.slice(0, 8) + '01', end: d, group: 'month' }), api.get('/api/orders', { status: 'pending', size: 1 }),
+          api.get('/api/reports/revenue', { begin: yd, end: yd })]);
+        t.value = a.total; m.value = b.total; pending.value = p.total; byStore.value = a.rows; y.value = c.total || {};
       } catch (e) { err(e); }
       try { alerts.value = await api.get('/api/stock-alerts'); expiring.value = await api.get('/api/expiry-alerts');
         reqPending.value = (await api.get('/api/requisitions', { status: 'pending', size: 1 })).total; } catch (e) { alerts.value = null; }  // 没有库存权限的账号不显示
     });
-    return { t, m, pending, byStore, alerts, expiring, reqPending, yuan };
+    // 和昨日比：今天或昨日为 0 时不显示百分比（早上还没开单时不显示“↓100%”）
+    const cmp = (a, b) => { a = +a || 0; b = +b || 0; if (!a || !b) return null; const r = Math.round((a - b) / b * 100);
+      return { cls: r >= 0 ? 'up' : 'down', text: (r >= 0 ? '↑ ' : '↓ ') + Math.abs(r) + '%' }; };
+    return { t, m, y, cmp, pending, byStore, alerts, expiring, reqPending, yuan, icon: Shouyin.icon };
   },
 };
 
@@ -1473,19 +1482,22 @@ const App = {
   <div v-else class="layout">
     <div class="aside">
       <div class="brand"><span class="mark">收</span><div>收银系统<small>后台管理</small></div></div>
+      <label class="nav-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input ref="navQ" v-model="navKw" placeholder="搜索菜单" @keyup.enter="navGo"><kbd>Ctrl K</kbd></label>
       <div class="nav">
-        <template v-for="g in groups" :key="g">
+        <template v-for="g in navGroups" :key="g">
           <div class="group">{{g}}</div>
-          <div v-for="m in menu.filter(x => x[4] === g)" :key="m[0]" class="item" :class="{on: tab === m[0]}" @click="tab = m[0]"><span class="ico" v-html="icon(m[5])"></span>{{m[1]}}</div>
+          <div v-for="m in navMenu.filter(x => x[4] === g)" :key="m[0]" class="item" :class="{on: tab === m[0]}" @click="tab = m[0]"><span class="ico" v-html="icon(m[5])"></span>{{m[1]}}</div>
         </template>
       </div>
     </div>
     <div class="main">
       <div class="topbar">
-        <div class="title">{{cur[1]}}<small>{{cur[6]}}</small></div>
+        <div v-if="tab === 'dashboard'" class="title hello">{{greet}}，{{user.display_name || user.username}}<small>{{dateText}} · 以下是各门店今天的经营情况</small></div>
+        <div v-else class="title">{{cur[1]}}<small>{{cur[6]}}</small></div>
         <div class="who"><a class="pill" href="/web/store/"><span class="ico" v-html="icon('cart')"></span>门店工作台</a>
           <el-dropdown @command="c => c === 'pw' ? changePw() : logout()">
-            <span style="display:flex;align-items:center;gap:8px;cursor:pointer"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span>{{user.display_name || user.username}}</span>
+            <span class="me"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span><small>{{user.role_name}}</small>{{user.display_name || user.username}}</span></span>
             <template #dropdown><el-dropdown-menu><el-dropdown-item disabled>{{user.role_name}}</el-dropdown-item><el-dropdown-item command="pw">修改密码</el-dropdown-item><el-dropdown-item command="out" divided>退出登录</el-dropdown-item></el-dropdown-menu></template>
           </el-dropdown></div>
       </div>
@@ -1501,6 +1513,14 @@ const App = {
     const menu = computed(() => user.value ? MENU.filter(m => user.value.is_admin && user.value.permissions.includes(m[2])) : []);
     const groups = computed(() => [...new Set(menu.value.map(m => m[4]))]);
     const cur = computed(() => menu.value.find(m => m[0] === tab.value) || []);
+    // 侧栏搜索：按名称和说明筛菜单，回车进第一个；Ctrl+K 聚焦
+    const navKw = ref(''), navQ = ref(null);
+    const navMenu = computed(() => { const k = navKw.value.trim(); return k ? menu.value.filter(m => (m[1] + m[6]).includes(k)) : menu.value; });
+    const navGroups = computed(() => [...new Set(navMenu.value.map(m => m[4]))]);
+    const navGo = () => { if (navMenu.value.length) { tab.value = navMenu.value[0][0]; navKw.value = ''; navQ.value && navQ.value.blur(); } };
+    window.addEventListener('keydown', e => { if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k' && navQ.value) { e.preventDefault(); navQ.value.focus(); } });
+    const hour = new Date().getHours(), greet = hour < 11 ? '早上好' : (hour < 13 ? '中午好' : (hour < 18 ? '下午好' : '晚上好'));
+    const dateText = new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' });
     const toStore = () => { location.href = '/web/store/'; };
     // 滚过一屏出现“回到顶部”，平滑回顶，到顶后自动隐藏
     const contentEl = ref(null), showTop = ref(false);
@@ -1531,7 +1551,7 @@ const App = {
     };
     window.onUnauthorized = () => { user.value = null; ready.value = false; };
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await loadMeta(); } catch (e) {} } });
-    return { user, lf, busy, tab, menu, groups, cur, meta, ready, login, logout, changePw, toStore, contentEl, showTop, onScroll, toTop, icon: Shouyin.icon };
+    return { user, lf, busy, tab, menu, groups, cur, navKw, navQ, navMenu, navGroups, navGo, greet, dateText, meta, ready, login, logout, changePw, toStore, contentEl, showTop, onScroll, toTop, icon: Shouyin.icon };
   },
 };
 
