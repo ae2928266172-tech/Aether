@@ -52,38 +52,40 @@ const Products = {
         <el-option v-for="c in meta.categories" :key="c.id" :label="catLabel(c)" :value="c.id" />
       </el-select>
       <el-checkbox v-model="showOff" @change="load">显示已下架</el-checkbox>
+      <el-checkbox v-model="showDeduct">显示扣库存</el-checkbox>
       <el-button @click="load">查询</el-button>
       <el-button @click="exp">导出</el-button>
       <span class="grow"></span>
       <el-button type="primary" @click="edit()">新增商品</el-button>
     </div>
     <div class="muted" style="margin:-4px 0 12px">共 {{rows.length}} 个商品 · 在售 {{rows.filter(r => r.active).length}} · 仅门店 {{rows.filter(r => r.active && !r.online_visible).length}}</div>
-    <el-table :data="rows" @row-click="edit" row-class-name="clickable">
+    <el-table :data="rows" @row-click="edit" row-class-name="clickable" class="prod-table">
       <el-table-column label="商品" min-width="220"><template #default="{row}">
         <div style="display:flex;align-items:center;gap:12px">
           <div class="thumb"><img v-if="row.image" :src="thumb(row.image, 160)" loading="lazy"><span v-else>{{row.name.slice(0,1)}}</span></div>
           <div style="min-width:0"><div class="c-main">{{row.name}}</div>
             <div class="c-sub">{{[row.code && '货号 ' + row.code, row.mnemonic && '助记码 ' + row.mnemonic, row.supplier_name].filter(Boolean).join(' · ') || '—'}}</div></div>
         </div></template></el-table-column>
-      <el-table-column label="分类" min-width="150"><template #default="{row}">
+      <el-table-column label="分类" min-width="110"><template #default="{row}">
         <span v-for="n in (row.category_name || '').split('、').filter(Boolean)" :key="n" class="chip">{{n}}</span>
         <span v-if="!row.category_name" class="muted">未分类</span></template></el-table-column>
-      <el-table-column label="规格与售价" min-width="230"><template #default="{row}">
-        <div class="skus"><span v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="sku-chip">{{s.name === '默认' ? '' : s.name + ' '}}<b>¥{{yuan(s.price)}}</b></span></div></template></el-table-column>
-      <el-table-column label="扣库存" min-width="190"><template #default="{row}">
+      <el-table-column label="规格与售价" min-width="320"><template #default="{row}">
+        <div class="skus"><span v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="sku-chip" :class="{nostock: !s.stock_item_id}"
+          :title="s.stock_item_name ? '扣 ' + s.stock_item_name + ' −' + s.deduct_qty : '不扣库存'">{{s.name === '默认' ? '' : s.name + ' '}}<b>¥{{yuan(s.price)}}</b></span></div></template></el-table-column>
+      <el-table-column v-if="showDeduct" label="扣库存" min-width="190"><template #default="{row}">
         <div v-for="s in row.skus.filter(x => x.active)" :key="s.id" class="c-sub" style="margin:0">
           <template v-if="s.stock_item_name">{{s.stock_item_name}} <span style="color:var(--text)">−{{s.deduct_qty}}</span><span v-if="row.skus.filter(x => x.active).length > 1"> /{{s.name}}</span></template>
           <template v-else>不扣库存</template></div></template></el-table-column>
-      <el-table-column label="扫码点单" min-width="130"><template #default="{row}">
+      <el-table-column label="扫码点单" min-width="100"><template #default="{row}">
         <span v-if="!row.online_visible" class="muted">不显示</span>
         <template v-else>
           <div class="c-sub" style="margin:0;color:var(--text-2)">{{qtyText(row)}}</div>
           <div class="c-sub" style="margin:0" v-if="row.area_limited">仅 {{row.area_ids.length}} 个区域</div></template></template></el-table-column>
-      <el-table-column label="状态" width="90"><template #default="{row}">
+      <el-table-column label="状态" width="76"><template #default="{row}">
         <el-tag v-if="!row.active" type="info" size="small">已下架</el-tag>
         <el-tag v-else-if="!row.online_visible" type="warning" size="small">仅门店</el-tag>
         <el-tag v-else type="success" size="small">在售</el-tag></template></el-table-column>
-      <el-table-column width="80" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
+      <el-table-column width="64" align="right"><template #default><span class="muted" style="white-space:nowrap">编辑 ›</span></template></el-table-column>
     </el-table>
 
     <el-dialog v-model="dlg" :title="form.id ? '编辑商品' : '新增商品'" width="900px" top="4vh">
@@ -154,6 +156,9 @@ const Products = {
   </div>`,
   setup(props) {
     const rows = ref([]), kw = ref(''), cat = ref(null), showOff = ref(false), dlg = ref(false), saving = ref(false);
+    // 扣库存一栏默认收起（每个规格一行太占地方），勾选后在本机记住；规格标签悬停也能看到扣哪个库存品
+    const showDeduct = ref((() => { try { return localStorage.getItem('admin.showDeduct') === '1'; } catch (e) { return false; } })());
+    watch(showDeduct, v => { try { localStorage.setItem('admin.showDeduct', v ? '1' : '0'); } catch (e) {} });
     const form = reactive({});
     const catLabel = (c) => { const p = props.meta.categories.find(x => x.id === c.parent_id); return p ? p.name + ' / ' + c.name : c.name; };
     const load = async () => { try { rows.value = await api.get('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
@@ -207,7 +212,7 @@ const Products = {
       try { await ElMessageBox.confirm('把规格“' + row.name + '”合并到“' + keep.name + '”？库存相加，批次和历史订单跟着走，“' + row.name + '”会被删除，不能拆开。\n表单里没保存的修改会丢掉。', '合并规格', { type: 'warning' }); } catch (e) { return; }
       try { const p = await api.post('/api/skus/merge', { keep_id: keepId, drop_ids: [row.id] }); ElMessage.success('已合并'); await load(); edit(p); } catch (e) { err(e); }
     };
-    return { exp, rows, kw, cat, showOff, dlg, form, saving, load, edit, addSku, save, catLabel, qtyText, yuan,
+    return { exp, rows, kw, cat, showOff, showDeduct, dlg, form, saving, load, edit, addSku, save, catLabel, qtyText, yuan,
       mergeInto };
   },
 };
