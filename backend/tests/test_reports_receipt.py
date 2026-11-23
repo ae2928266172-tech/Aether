@@ -102,3 +102,22 @@ def test_auth(client, admin, world):
     c = customer(client)
     c.get("/api/orders", expect=401)
     assert login
+
+
+def test_insights_heat_and_areas(client, admin, world):
+    from app import db as dbmod
+    w = world
+    _sale(world["clerk"], w, [{"sku_id": w["small"]["id"], "qty": 1}])
+    c = customer(client)
+    o = c.post("/api/customer/orders", {"area_code": w["a1"]["code"], "location_note": "1",
+                                        "lines": [{"sku_id": w["small"]["id"], "qty": 2}]})
+    # 未收款的扫码订单不计入
+    r = admin.get("/api/reports/insights")
+    assert sum(map(sum, r["heat"])) == 1 and r["areas"] == []
+    clerk = world["clerk"]
+    clerk.post(f"/api/orders/{o['id']}/accept", {})
+    clerk.post(f"/api/orders/{o['id']}/collect", {"payments": [{"method": "cash", "amount": o["payable_amount"]}]})
+    r = admin.get("/api/reports/insights")
+    now = dbmod.now()
+    assert r["heat"][now.weekday()][now.hour] >= 1 and sum(map(sum, r["heat"])) == 2
+    assert r["areas"][0]["orders"] == 1 and r["areas"][0]["amount"] == o["payable_amount"]
