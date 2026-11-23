@@ -119,9 +119,6 @@ const Products = {
           <el-table-column label="扣减量" width="76"><template #default="{row}"><el-input v-model="row.deduct_qty" size="small" /></template></el-table-column>
           <el-table-column label="启用" width="60"><template #default="{row}"><el-checkbox v-model="row.active" /></template></el-table-column>
           <el-table-column width="60"><template #default="{$index}"><el-button link type="danger" @click="form.skus.splice($index,1)">删除</el-button></template></el-table-column>
-          <el-table-column v-if="form.id && form.skus.filter(x => x.id).length > 1" label="合并到" width="120"><template #default="{row}">
-            <el-select v-if="row.id" :model-value="null" size="small" placeholder="选规格" @change="v => mergeInto(v, row)">
-              <el-option v-for="k in form.skus.filter(x => x.id && x.id !== row.id)" :key="k.id" :label="k.name" :value="k.id" /></el-select></template></el-table-column>
         </el-table>
         <el-button style="margin-top:8px" @click="addSku">添加规格</el-button>
 
@@ -206,13 +203,7 @@ const Products = {
     onMounted(load);
     const qtyText = (r) => [r.min_qty > 1 ? r.min_qty + ' 件起' : '', r.max_qty ? '限 ' + r.max_qty + ' 件' : ''].filter(Boolean).join('，') || '不限数量';
     const exp = async () => { try { await api.download('/api/products', { keyword: kw.value, category_id: cat.value, include_inactive: showOff.value }); } catch (e) { err(e); } };
-    const mergeInto = async (keepId, row) => {
-      const keep = form.skus.find(k => k.id === keepId);
-      try { await ElMessageBox.confirm('把规格“' + row.name + '”合并到“' + keep.name + '”？库存相加，批次和历史订单跟着走，“' + row.name + '”会被删除，不能拆开。\n表单里没保存的修改会丢掉。', '合并规格', { type: 'warning' }); } catch (e) { return; }
-      try { const p = await api.post('/api/skus/merge', { keep_id: keepId, drop_ids: [row.id] }); ElMessage.success('已合并'); await load(); edit(p); } catch (e) { err(e); }
-    };
-    return { exp, rows, kw, cat, showOff, showDeduct, dlg, form, saving, load, edit, addSku, save, catLabel, qtyText, yuan,
-      mergeInto };
+    return { exp, rows, kw, cat, showOff, showDeduct, dlg, form, saving, load, edit, addSku, save, catLabel, qtyText, yuan };
   },
 };
 
