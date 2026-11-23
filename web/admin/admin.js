@@ -898,6 +898,109 @@ const Orders = {
   },
 };
 
+// ---------------- 图表（纯 HTML/SVG，不引第三方库） ----------------
+const CHART_COLORS = ['#0071e3', '#34c759', '#ff9500', '#af52de', '#8e8e93', '#5ac8fa'];
+const niceMax = (v) => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
+// 柱状图：items = [{ label, value, tip }]；悬停显示数值，最高的一根和悬停的一根用主色
+const BarChart = {
+  props: { items: Array, fmt: { type: Function, default: (v) => v }, height: { type: Number, default: 200 } },
+  template: `
+  <div class="bar-chart" :style="{height: height + 'px'}">
+    <div class="axis"><div v-for="t in ticks" :key="t" class="tick"><span>{{short(t)}}</span></div></div>
+    <div class="bars" @mouseleave="hover = -1">
+      <div v-for="(it, i) in items" :key="it.label" class="bar-col" @mouseenter="hover = i">
+        <div class="bar" :class="{on: i === hover || (hover < 0 && i === top)}" :style="{height: pct(it) + '%'}"></div>
+        <div v-if="i === hover" class="bar-tip" :class="{left: i > items.length * .7}" :style="{bottom: 'calc(' + pct(it) + '% + 6px)'}"><b>{{fmt(it.value)}}</b><span>{{it.tip || it.label}}</span></div>
+        <div class="bar-x" v-if="showLabel(i)">{{it.label}}</div>
+      </div>
+    </div>
+  </div>`,
+  setup(props) {
+    const hover = ref(-1);
+    const max = computed(() => niceMax(Math.max(0, ...props.items.map(i => i.value))));
+    const ticks = computed(() => [max.value, max.value / 2, 0]);
+    const top = computed(() => { let k = -1, v = 0; props.items.forEach((it, i) => { if (it.value > v) { v = it.value; k = i; } }); return k; });
+    const step = computed(() => Math.ceil(props.items.length / 10));
+    const showLabel = (i) => props.items.length <= 12 || i % step.value === 0 || i === props.items.length - 1;
+    const short = (v) => v >= 10000 ? +(v / 10000).toFixed(1) + '万' : (v >= 1000 ? +(v / 1000).toFixed(1) + 'k' : +v.toFixed(2));
+    const pct = (it) => it.value > 0 ? Math.max(1.5, it.value / max.value * 100) : 0;
+    return { hover, max, ticks, top, showLabel, short, pct };
+  },
+};
+// 环形图：parts = [{ label, value }]，中间显示合计
+const DonutChart = {
+  props: { parts: Array, fmt: { type: Function, default: (v) => v }, center: String },
+  template: `
+  <div class="donut">
+    <svg viewBox="0 0 120 120" width="132" height="132">
+      <circle cx="60" cy="60" r="48" fill="none" stroke="#f1f2f4" stroke-width="14" />
+      <circle v-for="(s, i) in segs" :key="i" cx="60" cy="60" r="48" fill="none" :stroke="s.color" stroke-width="14"
+        :stroke-dasharray="s.len + ' ' + (C - s.len)" :stroke-dashoffset="-s.off" transform="rotate(-90 60 60)" />
+      <text x="60" y="56" text-anchor="middle" class="d-k">{{center}}</text>
+      <text x="60" y="74" text-anchor="middle" class="d-v">{{fmt(total)}}</text>
+    </svg>
+    <div class="legend">
+      <div v-for="(p, i) in parts" :key="p.label" class="lg"><i :style="{background: CHART_COLORS[i % CHART_COLORS.length]}"></i>
+        <span>{{p.label}}</span><b>{{fmt(p.value)}}</b><em>{{ total > 0 ? Math.round(Math.max(0, p.value) / total * 100) : 0 }}%</em></div>
+    </div>
+  </div>`,
+  setup(props) {
+    const C = 2 * Math.PI * 48;
+    const total = computed(() => props.parts.reduce((a, p) => a + Math.max(0, p.value), 0));
+    const segs = computed(() => { let off = 0; return props.parts.map((p, i) => { const len = total.value > 0 ? Math.max(0, p.value) / total.value * C : 0;
+      const s = { len: Math.max(0, len - (len > 2 ? 1.5 : 0)), off, color: CHART_COLORS[i % CHART_COLORS.length] }; off += len; return s; }).filter(s => s.len > 0); });
+    return { C, total, segs, CHART_COLORS };
+  },
+};
+// 热力图：heat[星期一..星期日][0..23]，只画有数据的营业时段（至少 8–20 点）
+const HeatMap = {
+  props: { heat: Array },
+  template: `
+  <div class="heat">
+    <div class="heat-grid" :style="{gridTemplateColumns: '36px repeat(' + hours.length + ', 1fr)'}">
+      <template v-for="(row, d) in heat" :key="d">
+        <div class="hl">{{days[d]}}</div>
+        <div v-for="h in hours" :key="h" class="hc" :style="{background: color(row[h])}" :title="days[d] + ' ' + h + ':00–' + (h + 1) + ':00　' + row[h] + ' 单'"></div>
+      </template>
+      <div></div><div v-for="h in hours" :key="'x' + h" class="hx">{{ h % 2 === 0 ? h : '' }}</div>
+    </div>
+    <div class="heat-lg"><span>少</span><i v-for="k in 5" :key="k" :style="{background: color(max * (k - .5) / 5)}"></i><span>多</span><span class="muted" style="margin-left:8px">按收款时间，格子越深单越多</span></div>
+  </div>`,
+  setup(props) {
+    const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+    const hours = computed(() => { let a = 8, b = 20; (props.heat || []).forEach(r => r.forEach((v, h) => { if (v) { a = Math.min(a, h); b = Math.max(b, h); } }));
+      return Array.from({ length: b - a + 1 }, (_, i) => a + i); });
+    const max = computed(() => Math.max(1, ...(props.heat || []).flat()));
+    const color = (v) => !v ? '#f3f4f6' : `rgba(0, 113, 227, ${(.15 + .85 * Math.min(1, v / max.value)).toFixed(2)})`;
+    return { days, hours, max, color };
+  },
+};
+// 排行：rows = [{ name, value, sub }]，条形长度按最大值
+const RankList = {
+  props: { rows: Array, fmt: { type: Function, default: (v) => v }, empty: { type: String, default: '暂无数据' } },
+  template: `
+  <div class="rank">
+    <div v-for="(r, i) in rows" :key="r.name + i" class="rk">
+      <span class="no" :class="{top: i < 3}">{{i + 1}}</span>
+      <div class="rk-main"><div class="rk-t"><span class="ellipsis">{{r.name}}</span><b>{{fmt(r.value)}}</b></div>
+        <div class="rk-bar"><i :style="{width: (max ? Math.max(2, r.value / max * 100) : 0) + '%'}"></i></div>
+        <div v-if="r.sub" class="c-sub">{{r.sub}}</div></div>
+    </div>
+    <div v-if="!rows.length" class="muted" style="padding:24px 0;text-align:center">{{empty}}</div>
+  </div>`,
+  setup(props) { return { max: computed(() => Math.max(0, ...props.rows.map(r => r.value))) }; },
+};
+// 把营收接口按（期间, 门店）分的行合并成每期一个数；按天时补齐没有数据的日子
+const revenueSeries = (rows, begin, end, group, key = 'net') => {
+  const m = {}; rows.forEach(r => { m[r.period] = (m[r.period] || 0) + (r[key] || 0); });
+  if (group !== 'day') return Object.keys(m).sort().map(p => ({ label: group === 'week' ? p.slice(5, 10).replace('-', '/') : +p.slice(5) + '月', tip: group === 'week' ? p.replace('~', ' ~ ') + ' 当周' : p.replace('-', ' 年 ') + ' 月', value: m[p] }));
+  const out = []; for (let d = new Date(begin + 'T00:00:00'); d <= new Date(end + 'T00:00:00'); d.setDate(d.getDate() + 1)) {
+    const k = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    out.push({ label: k.slice(5).replace('-', '/'), tip: k + ' 周' + '日一二三四五六'[d.getDay()], value: m[k] || 0 });
+  }
+  return out;
+};
+
 // ---------------- 营收报表 ----------------
 const Revenue = {
   props: ['meta'],
@@ -917,9 +1020,27 @@ const Revenue = {
       <div class="stat"><div class="k">优惠</div><div class="v">¥{{yuan(data.total.discount)}}</div><div class="s">商品原价 ¥{{yuan(data.total.original)}}</div></div>
       <div class="stat"><div class="k">毛利</div><div class="v">¥{{yuan(data.total.profit)}}</div><div class="s">成本 ¥{{yuan(data.total.cost)}}</div></div>
     </div>
-    <div class="chips-row" v-if="data.total">
-      <span v-for="m in methodList" :key="m[0]" class="chip">{{m[1]}} <b class="money">¥{{yuan(data.total.methods[m[0]])}}</b></span>
+    <div class="dash-row" v-if="data.total">
+      <div class="sub-card">
+        <div class="panel-title">实收走势</div><div class="panel-desc">{{ {day: '每天', week: '每周', month: '每月'}[group] }}实收，悬停看金额</div>
+        <bar-chart :items="series" :fmt="v => '¥' + yuan(v * 100)" :height="200" />
+      </div>
+      <div class="sub-card">
+        <div class="panel-title">收款方式</div><div class="panel-desc">净收（已扣退款）</div>
+        <donut-chart :parts="methodList.map(m => ({label: m[1], value: data.total.methods[m[0]] || 0}))" :fmt="v => '¥' + yuan(v)" center="净收" />
+      </div>
     </div>
+    <div class="dash-row" v-if="ins">
+      <div class="sub-card">
+        <div class="panel-title">下单时段</div><div class="panel-desc">每个时段的收款单数</div>
+        <heat-map :heat="ins.heat" />
+      </div>
+      <div class="sub-card">
+        <div class="panel-title">扫码点单区域排行</div><div class="panel-desc">按单数，金额为订单应收</div>
+        <rank-list :rows="ins.areas.slice(0, 8).map(a => ({name: a.name, value: a.orders, sub: '¥' + yuan(a.amount)}))" :fmt="v => v + ' 单'" empty="这段时间没有扫码点单" />
+      </div>
+    </div>
+    <div class="panel-title" style="margin:6px 0 10px">明细</div>
     <el-table :data="rowsWithTotal" :row-class-name="({row}) => row.period === '合计' ? 'row-total' : ''">
       <el-table-column label="期间" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.period}}</div><div class="c-sub" v-if="row.store_name">{{row.store_name}}</div></template></el-table-column>
       <el-table-column prop="orders" label="单数" min-width="70" align="right" />
@@ -936,12 +1057,15 @@ const Revenue = {
   setup() {
     const group = ref('day'), store = ref(null), range = ref([daysAgo(6), today()]), data = ref({ rows: [], total: null });
     const params = () => ({ group: group.value, store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1] });
-    const load = async () => { try { data.value = await api.get('/api/reports/revenue', params()); } catch (e) { err(e); } };
+    const ins = ref(null);
+    const load = async () => { try { [data.value, ins.value] = await Promise.all([api.get('/api/reports/revenue', params()),
+      api.get('/api/reports/insights', { store_id: store.value, begin: (range.value || [])[0], end: (range.value || [])[1] })]); } catch (e) { err(e); } };
+    const series = computed(() => data.value.total ? revenueSeries(data.value.rows, data.value.begin, data.value.end, data.value.group).map(x => ({ ...x, value: x.value / 100 })) : []);
     const exp = async () => { try { await api.download('/api/reports/revenue', params()); } catch (e) { err(e); } };
     const rowsWithTotal = computed(() => data.value.total ? [...data.value.rows, { ...data.value.total, period: '合计', store_name: '' }] : []);
     onMounted(load);
     const methodList = [['cash', '现金'], ['wechat', '微信'], ['alipay', '支付宝'], ['other', '其他']];
-    return { group, store, range, data, load, exp, rowsWithTotal, methodList, yuan };
+    return { group, store, range, data, ins, series, load, exp, rowsWithTotal, methodList, yuan };
   },
 };
 
@@ -1368,7 +1492,38 @@ const Dashboard = {
       <div class="stat"><div class="k">本月实收<span class="ic" v-html="icon('chart')"></span></div><div class="v">¥{{yuan(m.net)}}</div>
         <div class="s"><span class="delta up" v-if="m.net > 0">毛利 {{Math.round(m.profit / m.net * 100)}}%</span>毛利 ¥{{yuan(m.profit)}}</div></div>
     </div>
-    <div style="display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr);gap:16px">
+    <div class="dash-row">
+      <div class="panel">
+        <div class="panel-head"><div><div class="panel-title">营收趋势</div><div class="panel-desc">每天实收（收款 − 退款），悬停看具体金额</div></div>
+          <div class="segs mini"><div v-for="n in [7, 30, 90]" :key="n" class="seg" :class="{on: days === n}" @click="days = n; loadTrend()">近 {{n}} 天</div></div></div>
+        <div class="metrics">
+          <div><span>实收</span><b>¥{{yuan(pt.net)}}</b></div>
+          <div><span>单数</span><b>{{pt.orders || 0}}</b></div>
+          <div><span>客单价</span><b>¥{{ pt.orders ? yuan(Math.round(pt.net / pt.orders)) : '0.00' }}</b></div>
+          <div><span>毛利率</span><b>{{ pt.net > 0 ? Math.round(pt.profit / pt.net * 100) + '%' : '–' }}</b></div>
+        </div>
+        <bar-chart :items="trend" :fmt="v => '¥' + yuan(v * 100)" :height="210" />
+      </div>
+      <div class="panel">
+        <div class="panel-title">收款方式</div><div class="panel-desc">近 {{days}} 天净收（已扣退款）</div>
+        <donut-chart :parts="methodParts" :fmt="v => '¥' + yuan(v)" center="净收" />
+        <div class="split" v-if="pt.orders">
+          <div class="split-k"><span>门店收银 <b>{{pt.pos_orders}}</b> 单</span><span>扫码点单 <b>{{pt.online_orders}}</b> 单</span></div>
+          <div class="split-bar"><i :style="{width: pt.pos_orders / pt.orders * 100 + '%'}"></i></div>
+        </div>
+      </div>
+    </div>
+    <div class="dash-row">
+      <div class="panel">
+        <div class="panel-title">下单时段</div><div class="panel-desc">近 {{days}} 天每个时段的收款单数，用来安排排班和补货</div>
+        <heat-map v-if="heat" :heat="heat" />
+      </div>
+      <div class="panel">
+        <div class="panel-title">热销商品</div><div class="panel-desc">近 {{days}} 天净销量前 6</div>
+        <rank-list :rows="hot" :fmt="v => v + ' 件'" empty="这段时间还没有销售" />
+      </div>
+    </div>
+    <div class="dash-row">
       <div class="panel">
         <div class="panel-title">今日各门店</div><div class="panel-desc">按收款时间统计，退款已扣除</div>
         <el-table v-if="byStore.length" :data="byStore" size="small">
@@ -1417,8 +1572,23 @@ const Dashboard = {
     </div>
   </div>`,
   setup() {
+    const days = ref(30), trend = ref([]), pt = ref({}), heat = ref(null), hot = ref([]);
+    const methodParts = computed(() => [['cash', '现金'], ['wechat', '微信'], ['alipay', '支付宝'], ['other', '其他']]
+      .map(([k, n]) => ({ label: n, value: ((pt.value.methods || {})[k]) || 0 })));
+    const loadTrend = async () => {
+      const b = daysAgo(days.value - 1), e = today();
+      try {
+        const [r, ins, ps] = await Promise.all([api.get('/api/reports/revenue', { begin: b, end: e }), api.get('/api/reports/insights', { begin: b, end: e }),
+          api.get('/api/reports/product-sales', { begin: b, end: e })]);
+        pt.value = r.total; trend.value = revenueSeries(r.rows, b, e, 'day').map(x => ({ ...x, value: x.value / 100 }));
+        heat.value = ins.heat;
+        hot.value = ps.rows.filter(x => x.net_qty > 0).sort((a, c) => c.net_qty - a.net_qty).slice(0, 6)
+          .map(x => ({ name: x.product_name + (x.sku_name && x.sku_name !== '默认' ? ' ' + x.sku_name : ''), value: x.net_qty, sub: '净收 ¥' + yuan(x.net) }));
+      } catch (e) {}
+    };
     const t = ref({}), m = ref({}), y = ref({}), pending = ref(0), byStore = ref([]), alerts = ref(null), expiring = ref(null), reqPending = ref(0);
     onMounted(async () => {
+      loadTrend();
       const d = today();
       try {
         const yd = daysAgo(1);
@@ -1433,7 +1603,7 @@ const Dashboard = {
     // 和昨日比：今天或昨日为 0 时不显示百分比（早上还没开单时不显示“↓100%”）
     const cmp = (a, b) => { a = +a || 0; b = +b || 0; if (!a || !b) return null; const r = Math.round((a - b) / b * 100);
       return { cls: r >= 0 ? 'up' : 'down', text: (r >= 0 ? '↑ ' : '↓ ') + Math.abs(r) + '%' }; };
-    return { t, m, y, cmp, pending, byStore, alerts, expiring, reqPending, yuan, icon: Shouyin.icon };
+    return { days, trend, pt, heat, hot, methodParts, loadTrend, t, m, y, cmp, pending, byStore, alerts, expiring, reqPending, yuan, icon: Shouyin.icon };
   },
 };
 
@@ -1556,4 +1726,5 @@ const App = {
 };
 
 const app = createApp(App); app.config.globalProperties.thumb = Shouyin.thumb;
+app.component('bar-chart', BarChart); app.component('donut-chart', DonutChart); app.component('heat-map', HeatMap); app.component('rank-list', RankList);
 app.use(ElementPlus, { locale: ElementPlusLocaleZhCn }).mount('#app');

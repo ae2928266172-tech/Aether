@@ -182,6 +182,28 @@ def revenue(begin: date | None = None, end: date | None = None, store_id: int | 
     return {"begin": b.isoformat(), "end": e.isoformat(), "group": group, "rows": rows, "total": total}
 
 
+@router.get("/insights")
+def insights(begin: date | None = None, end: date | None = None, store_id: int | None = None,
+             db: Session = Depends(get_db), _: User = Depends(require("reports"))):
+    """图表用：按“星期 × 小时”统计收款单数（看哪个时段忙），扫码点单按区域排行。
+    口径同营收：按收款时间，未收款、已取消不计；区域排行的金额是订单应收（未扣退款）。"""
+    b, e, start, stop = _range(begin, end)
+    q = select(Order.paid_at, Order.source, Order.area_name, Order.payable_amount) \
+        .where(Order.paid_at >= start, Order.paid_at < stop)
+    if store_id:
+        q = q.where(Order.store_id == store_id)
+    heat = [[0] * 24 for _ in range(7)]  # heat[星期一=0][小时]
+    areas: dict[str, dict] = {}
+    for paid_at, source, area, amount in db.execute(q):
+        heat[paid_at.weekday()][paid_at.hour] += 1
+        if source == "online":
+            a = areas.setdefault(area or "未填区域", {"name": area or "未填区域", "orders": 0, "amount": 0})
+            a["orders"] += 1
+            a["amount"] += amount or 0
+    return {"begin": b.isoformat(), "end": e.isoformat(), "heat": heat,
+            "areas": sorted(areas.values(), key=lambda a: (-a["orders"], -a["amount"], a["name"]))}
+
+
 def category_product_ids(db: Session, category_id: int) -> set[int]:
     """某个分类（含它的小类）下的所有商品：商品主分类或附加分类命中都算。"""
     from ..models import Category, Product, ProductCategory
