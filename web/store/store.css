@@ -248,7 +248,14 @@ body.osk-dock .pos-right { padding-bottom: var(--osk-h, 0px); }
 .osk-enter { background: var(--primary); color: #fff; font-size: 15px !important; box-shadow: 0 1px 0 var(--primary-press); }
 .osk-full .osk-enter { flex: 1.6; }
 .osk-enter:active { background: var(--primary-press); }
-.osk-set { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.osk-set { margin: 8px 0 10px; }
+.osk-set > span { display: block; font-size: 14px; color: var(--text-2); margin-bottom: 6px; }
+.osk-set .el-radio-group { display: flex; width: 100%; }
+.osk-set .el-radio-button { flex: 1; }
+.osk-set .el-radio-button__inner { width: 100%; padding-left: 0; padding-right: 0; }
+.setpop .el-checkbox { height: 36px; }
+.setpop .desk-btns { display: grid; grid-template-columns: 1fr 1fr 1.3fr; gap: 6px; margin-top: 8px; }
+.setpop .desk-btns .el-button { margin: 0; padding: 0 6px; }
 
 /* 键盘快捷键提示：触摸屏默认隐藏，本机设置可打开 */
 body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyhint { display: none !important; }
