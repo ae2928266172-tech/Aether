@@ -488,7 +488,7 @@ const Inventory = {
     </div>
     <div class="toolbar">
       <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
-      <el-input v-model="kw" placeholder="搜索库存品" clearable style="width:160px" @keyup.enter="load" @clear="load" />
+      <el-input v-model="kw" placeholder="搜索名称或编码" clearable style="width:180px" />
       <el-button @click="load">查询</el-button>
       <el-button @click="expLedger">导出</el-button>
       <span class="grow"></span>
@@ -526,7 +526,13 @@ const Inventory = {
         <el-form-item label="备注"><el-input v-model="doc.remark" style="width:170px" /></el-form-item>
       </el-form>
       <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '填写实际盘点数量，留空表示不盘该项。' : (doc.kind==='in' ? '在数量列直接填数，留空或 0 表示不处理。批号、生产日期、有效期至选填；同一库存品有几个批次就点“+批次”分几行。' : '在数量列直接填数，留空或 0 表示不处理。出库、调拨会先出最早到期的批次。') }}</div>
-      <el-table :data="doc.lines" border size="small" max-height="420">
+      <div class="toolbar" style="margin-bottom:6px">
+        <el-input ref="dqInput" v-model="dq" placeholder="搜索名称或编码，空格分隔多个词" clearable style="width:280px" @keyup.enter="dqEnter" />
+        <el-checkbox v-model="dFilled">只看已填（{{ filledCount }}）</el-checkbox>
+        <span class="grow"></span>
+        <span class="muted">共 {{ docMatched.length }} 项</span>
+      </div>
+      <el-table ref="dTable" v-loading="dLoading" :data="docShown" border size="small" max-height="420" row-key="key">
         <el-table-column prop="name" label="库存品" />
         <el-table-column prop="unit" label="单位" width="60" />
         <el-table-column label="来源现有" width="90"><template #default="{row}">{{ stockAt(doc.kind==='in' || doc.kind==='adjust' ? doc.to : doc.from, row.id) }}</template></el-table-column>
@@ -534,11 +540,12 @@ const Inventory = {
         <el-table-column v-if="doc.kind==='in'" label="批号" width="110"><template #default="{row}"><el-input v-model="row.batch_no" size="small" /></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="生产日期" width="140"><template #default="{row}"><el-date-picker v-model="row.production_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="有效期至" width="140"><template #default="{row}"><el-date-picker v-model="row.expiry_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
-        <el-table-column v-if="doc.kind==='in'" width="64"><template #default="{row, $index}"><el-button link size="small" @click="splitLine($index)">+批次</el-button></template></el-table-column>
+        <el-table-column v-if="doc.kind==='in'" width="64"><template #default="{row, $index}"><el-button link size="small" @click="splitLine(row)">+批次</el-button></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="进价（元）" width="110"><template #default="{row}"><el-input v-model="row.price" size="small" /></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="金额" width="90" align="right"><template #default="{row}">{{ lineAmt(row) == null ? '' : yuan(lineAmt(row)) }}</template></el-table-column>
         <el-table-column v-if="doc.kind==='adjust'" label="盈亏" width="80" align="right"><template #default="{row}"><span v-if="diffOf(row) != null" :style="{color: diffOf(row) < 0 ? 'var(--danger)' : (diffOf(row) > 0 ? 'var(--success, #16a34a)' : '')}">{{ diffOf(row) > 0 ? '+' : '' }}{{ diffOf(row) }}</span></template></el-table-column>
       </el-table>
+      <el-pagination v-if="docMatched.length > dSize" v-model:current-page="dPage" :page-size="dSize" :total="docMatched.length" layout="prev, pager, next" background small style="margin-top:8px;justify-content:center" />
       <div v-if="doc.kind==='in' && docAmt" style="text-align:right;margin-top:8px">进货金额合计 <b class="money">¥{{yuan(docAmt)}}</b></div>
       <template #footer><el-button @click="dDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
     </el-dialog>
@@ -644,7 +651,21 @@ const Inventory = {
     const expText = (d) => { const n = daysTo(d); return n < 0 ? '已过期 ' + (-n) + ' 天' : (n === 0 ? '今天到期' : n + ' 天后到期'); };
     const loadBatches = async () => { try { batches.value = await api.get('/api/stock-batches', { location_id: bq.location_id || undefined }); } catch (e) { err(e); } };
     const openBatches = () => { bq.location_id = loc.value; bDlg.value = true; loadBatches(); };
-    const splitLine = (i) => { const r = doc.lines[i]; doc.lines.splice(i + 1, 0, { ...r, qty: '', batch_no: '', production_date: null, expiry_date: null, split: true }); };
+    const splitLine = (r) => { const i = doc.lines.indexOf(r); doc.lines.splice(i + 1, 0, { ...r, key: r.key + '-' + (++lineSeq), qty: '', batch_no: '', production_date: null, expiry_date: null, split: true }); };
+    // 单据弹窗只渲染一页（每行有输入框和日期框，800 多行一次全渲染会卡几十秒）；搜索、只看已填在全部行上筛选
+    const dq = ref(''), dFilled = ref(false), dPage = ref(1), dSize = 50, dLoading = ref(false), dTable = ref(null), dqInput = ref(null);
+    let lineSeq = 0;
+    const filledOf = (l) => !blank(l.qty) || !blank(l.batch_no) || !!l.production_date || !!l.expiry_date;
+    const filledCount = computed(() => doc.lines.filter(filledOf).length);
+    const docMatched = computed(() => {
+      const words = dq.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      return doc.lines.filter(l => (!dFilled.value || filledOf(l)) && words.every(w => l.search.includes(w)));
+    });
+    const docShown = computed(() => docMatched.value.slice((dPage.value - 1) * dSize, dPage.value * dSize));
+    watch([dq, dFilled], () => { dPage.value = 1; });
+    watch(dPage, () => { const el = dTable.value && dTable.value.$el.querySelector('.el-scrollbar__wrap'); if (el) el.scrollTop = 0; });
+    // 搜索框回车（包括扫码枪）：只剩一项时直接跳到它的数量框
+    const dqEnter = () => { if (docMatched.value.length !== 1) return; Vue.nextTick(() => { const i = dTable.value && dTable.value.$el.querySelector('.el-table__body tr input'); if (i) i.focus(); }); };
     const reqPending = ref(0), rqDlg = ref(false), reqs = ref([]), rq = reactive({ status: 'pending' }), ffDlg = ref(false), ff = reactive({ req: null, from: null, note: '', lines: [], rid: '' });
     const countReqs = async () => { try { reqPending.value = (await api.get('/api/requisitions', { status: 'pending', size: 1 })).total; } catch (e) {} };
     const loadReqs = async () => { try { reqs.value = (await api.get('/api/requisitions', { status: rq.status, size: 200 })).items; } catch (e) { err(e); } countReqs(); };
@@ -696,14 +717,19 @@ const Inventory = {
     const loadLocs = async () => { locations.value = await api.get('/api/locations'); if (!loc.value && locations.value.length) loc.value = locations.value[0].id; };
     const load = async () => {
       if (!loc.value) return;
-      try { rows.value = await api.get('/api/stock-ledger', { location_id: loc.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value }); } catch (e) { err(e); }
+      try { rows.value = (await api.get('/api/stock-ledger', { location_id: loc.value, begin: (range.value || [])[0], end: (range.value || [])[1] }))
+        .map(r => ({ ...r, search: (r.name + ' ' + (r.code || '')).toLowerCase() })); } catch (e) { err(e); }
     };
     const fmtN = (v) => +(+v || 0).toFixed(3);
     const sumOf = (k) => shownRows.value.reduce((a, r) => a + (+r[k] || 0), 0);
     const lowCount = computed(() => rows.value.filter(r => r.current <= 0).length);
     const onlyLow = ref(false);
     const alertCount = computed(() => rows.value.filter(r => r.low).length);
-    const shownRows = computed(() => onlyLow.value ? rows.value.filter(r => r.low) : rows.value);
+    // 搜索在本地即时筛选，不用再点查询
+    const shownRows = computed(() => {
+      const words = kw.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+      return rows.value.filter(r => (!onlyLow.value || r.low) && words.every(w => r.search.includes(w)));
+    });
     // 合计行：各列数量相加（不同单位相加只用于核对，和表格里点出来的流水对得上即可）
     const summary = ({ columns }) => columns.map((c, i) => {
       if (i === 0) return '合计';
@@ -711,8 +737,8 @@ const Inventory = {
       return fmtN(sumOf(key)) || '–';
     });
     const docTitle = computed(() => ({ in: '入库', out: '出库', transfer: '调拨（仓库 → 门店）', adjust: '盘点' }[doc.kind]));
-    const stockAt = (lid, sid) => { const m = balances[lid]; if (!m) return ''; const r = m.find(x => x.stock_item_id === sid); return r ? r.qty : 0; };
-    const fetchBal = async (lid) => { if (lid && !balances[lid]) balances[lid] = await api.get('/api/stock', { location_id: lid }); };
+    const stockAt = (lid, sid) => { const m = balances[lid]; if (!m) return ''; return m.get(sid) ?? 0; };
+    const fetchBal = async (lid) => { if (lid && !balances[lid]) balances[lid] = Vue.markRaw(new Map((await api.get('/api/stock', { location_id: lid })).map(x => [x.stock_item_id, x.qty]))); };
     watch(() => [doc.from, doc.to], ([a, b]) => { fetchBal(a).catch(() => {}); fetchBal(b).catch(() => {}); });
     const openDoc = async (kind) => {
       Object.keys(balances).forEach(k => delete balances[k]);
@@ -722,12 +748,15 @@ const Inventory = {
         to: kind === 'transfer' ? (st || {}).id : (kind === 'out' ? null : loc.value) });
       // 地点没变时 watch 不会触发，这里主动取一次现有库存
       fetchBal(doc.from).catch(() => {}); fetchBal(doc.to).catch(() => {});
-      // 停用的库存品也列出来（排在后面），方便把剩余库存出库或盘为 0
+      // 先打开弹窗再取库存品；停用的也列出来（排在后面），方便把剩余库存出库或盘为 0
+      dq.value = ''; dFilled.value = false; dPage.value = 1; doc.lines = []; dLoading.value = true; dDlg.value = true;
+      Vue.nextTick(() => dqInput.value && dqInput.value.focus());
       let all = props.meta.stockItems;
       try { all = await api.get('/api/stock-items'); } catch (e) {}
       doc.lines = [...all.filter(i => i.active), ...all.filter(i => !i.active)]
-        .map(i => ({ id: i.id, name: i.name + (i.active ? '' : '（已停用）'), unit: i.unit, qty: '', price: i.cost == null ? '' : yuan(i.cost), batch_no: '', production_date: null, expiry_date: null }));
-      dDlg.value = true;
+        .map(i => ({ key: String(i.id), id: i.id, name: i.name + (i.active ? '' : '（已停用）'), unit: i.unit, search: (i.name + ' ' + (i.code || '')).toLowerCase(),
+          qty: '', price: i.cost == null ? '' : yuan(i.cost), batch_no: '', production_date: null, expiry_date: null }));
+      dLoading.value = false;
     };
     const submitDoc = async () => {
       const bad = doc.lines.find(l => String(l.qty).trim() !== '' && !(isFinite(parseFloat(l.qty)) && /^\d+(\.\d{1,3})?$/.test(String(l.qty).trim())));
@@ -761,7 +790,7 @@ const Inventory = {
     };
     onMounted(async () => { try { await loadLocs(); load(); countReqs(); } catch (e) { err(e); } });
     return { reqPending, rqDlg, reqs, rq, ffDlg, ff, loadReqs, openReqs, openFulfill, submitFulfill, rejectReq, fetchBal, expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
-      locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, mDlg, moves, mTitle, showMoves, newWarehouse };
+      locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, dq, dFilled, dPage, dSize, dLoading, dTable, dqInput, filledCount, docMatched, docShown, dqEnter, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
 
