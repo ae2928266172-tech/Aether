@@ -899,6 +899,7 @@ const Orders = {
 };
 
 // ---------------- 图表（纯 HTML/SVG，不引第三方库） ----------------
+const PAY_COLORS = { cash: '#f5a524', wechat: '#22c55e', alipay: '#1677ff', other: '#c4c7cf' };  // 收款方式用大家熟悉的颜色
 const CHART_COLORS = ['#0071e3', '#34c759', '#ff9500', '#af52de', '#8e8e93', '#5ac8fa'];
 const niceMax = (v) => { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 5 ? 5 : 10) * p; };
 // 柱状图：items = [{ label, value, tip }]；悬停显示数值，最高的一根和悬停的一根用主色
@@ -927,29 +928,35 @@ const BarChart = {
     return { hover, max, ticks, top, showLabel, short, pct };
   },
 };
-// 环形图：parts = [{ label, value }]，中间显示合计
+// 环形图：parts = [{ label, value, color }]；细圆环、圆头、段间留缝，中间大字显示合计
 const DonutChart = {
   props: { parts: Array, fmt: { type: Function, default: (v) => v }, center: String },
   template: `
   <div class="donut">
-    <svg viewBox="0 0 120 120" width="132" height="132">
-      <circle cx="60" cy="60" r="48" fill="none" stroke="#f1f2f4" stroke-width="14" />
-      <circle v-for="(s, i) in segs" :key="i" cx="60" cy="60" r="48" fill="none" :stroke="s.color" stroke-width="14"
-        :stroke-dasharray="s.len + ' ' + (C - s.len)" :stroke-dashoffset="-s.off" transform="rotate(-90 60 60)" />
-      <text x="60" y="56" text-anchor="middle" class="d-k">{{center}}</text>
-      <text x="60" y="74" text-anchor="middle" class="d-v">{{fmt(total)}}</text>
-    </svg>
+    <div class="donut-ring">
+      <svg viewBox="0 0 120 120">
+        <circle cx="60" cy="60" r="50" fill="none" stroke="#f1f2f4" stroke-width="10" />
+        <circle v-for="(s, i) in segs" :key="i" cx="60" cy="60" r="50" fill="none" :stroke="s.color" stroke-width="10" stroke-linecap="round"
+          :stroke-dasharray="s.len + ' ' + C" :stroke-dashoffset="-s.off" transform="rotate(-90 60 60)" />
+      </svg>
+      <div class="donut-c"><b>{{fmt(total)}}</b><span>{{center}}</span></div>
+    </div>
     <div class="legend">
-      <div v-for="(p, i) in parts" :key="p.label" class="lg"><i :style="{background: CHART_COLORS[i % CHART_COLORS.length]}"></i>
+      <div v-for="(p, i) in parts" :key="p.label" class="lg"><i :style="{background: colorOf(p, i)}"></i>
         <span>{{p.label}}</span><b>{{fmt(p.value)}}</b><em>{{ total > 0 ? Math.round(Math.max(0, p.value) / total * 100) : 0 }}%</em></div>
     </div>
   </div>`,
   setup(props) {
-    const C = 2 * Math.PI * 48;
+    const C = 2 * Math.PI * 50, GAP = 14;  // 圆头会向两端各伸出半个线宽，所以缝要留够
+    const colorOf = (p, i) => p.color || CHART_COLORS[i % CHART_COLORS.length];
     const total = computed(() => props.parts.reduce((a, p) => a + Math.max(0, p.value), 0));
-    const segs = computed(() => { let off = 0; return props.parts.map((p, i) => { const len = total.value > 0 ? Math.max(0, p.value) / total.value * C : 0;
-      const s = { len: Math.max(0, len - (len > 2 ? 1.5 : 0)), off, color: CHART_COLORS[i % CHART_COLORS.length] }; off += len; return s; }).filter(s => s.len > 0); });
-    return { C, total, segs, CHART_COLORS };
+    const segs = computed(() => {
+      const shown = props.parts.map((p, i) => ({ v: Math.max(0, p.value), color: colorOf(p, i) })).filter(p => p.v > 0);
+      const gap = shown.length > 1 ? GAP : 0;
+      let off = gap / 2;
+      return shown.map(p => { const full = p.v / total.value * C; const s = { len: Math.max(.01, full - gap), off, color: p.color }; off += full; return s; });
+    });
+    return { C, total, segs, colorOf };
   },
 };
 // 热力图：heat[星期一..星期日][0..23]，只画有数据的营业时段（至少 8–20 点）
@@ -1027,7 +1034,7 @@ const Revenue = {
       </div>
       <div class="sub-card">
         <div class="panel-title">收款方式</div><div class="panel-desc">净收（已扣退款）</div>
-        <donut-chart :parts="methodList.map(m => ({label: m[1], value: data.total.methods[m[0]] || 0}))" :fmt="v => '¥' + yuan(v)" center="净收" />
+        <donut-chart :parts="methodList.map(m => ({label: m[1], value: data.total.methods[m[0]] || 0, color: PAY_COLORS[m[0]]}))" :fmt="v => '¥' + yuan(v)" center="净收" />
       </div>
     </div>
     <div class="dash-row" v-if="ins">
@@ -1065,7 +1072,7 @@ const Revenue = {
     const rowsWithTotal = computed(() => data.value.total ? [...data.value.rows, { ...data.value.total, period: '合计', store_name: '' }] : []);
     onMounted(load);
     const methodList = [['cash', '现金'], ['wechat', '微信'], ['alipay', '支付宝'], ['other', '其他']];
-    return { group, store, range, data, ins, series, load, exp, rowsWithTotal, methodList, yuan };
+    return { PAY_COLORS, group, store, range, data, ins, series, load, exp, rowsWithTotal, methodList, yuan };
   },
 };
 
@@ -1574,7 +1581,7 @@ const Dashboard = {
   setup() {
     const days = ref(30), trend = ref([]), pt = ref({}), heat = ref(null), hot = ref([]);
     const methodParts = computed(() => [['cash', '现金'], ['wechat', '微信'], ['alipay', '支付宝'], ['other', '其他']]
-      .map(([k, n]) => ({ label: n, value: ((pt.value.methods || {})[k]) || 0 })));
+      .map(([k, n]) => ({ label: n, value: ((pt.value.methods || {})[k]) || 0, color: PAY_COLORS[k] })));
     const loadTrend = async () => {
       const b = daysAgo(days.value - 1), e = today();
       try {
