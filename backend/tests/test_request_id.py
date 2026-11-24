@@ -59,3 +59,39 @@ def test_collect_request_id_returns_paid_order(client, world):
     assert "已收款" in r["detail"]
     # 不带请求号时行为不变
     w["clerk"].post(f"/api/orders/{o['id']}/collect", {"payments": body["payments"]}, expect=409)
+
+
+def test_collect_request_id_checks_content(client, admin, world):
+    """收款请求号相同但内容变了（付款方式 / 金额 / 操作人 / 折扣），不能当成重复请求返回原单。"""
+    w = world
+    o = customer(client).post("/api/customer/orders", {
+        "area_code": w["a1"]["code"], "location_note": "1",
+        "lines": [{"sku_id": w["small"]["id"], "qty": 1}]})
+    amt = o["payable_amount"]
+    body = {"payments": [{"method": "cash", "amount": amt}], "request_id": "pay-c"}
+    first = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    assert first["pay_status"] == "paid"
+    # 同一个请求号，第一次现金、第二次改成微信：账上还是现金，不能返回 200
+    r = w["clerk"].post(f"/api/orders/{o['id']}/collect",
+                        {**body, "payments": [{"method": "wechat", "amount": amt}]}, expect=409)
+    assert "请求号" in r["detail"]
+    # 改金额
+    w["clerk"].post(f"/api/orders/{o['id']}/collect",
+                    {**body, "payments": [{"method": "cash", "amount": amt + 100}]}, expect=409)
+    # 换一个账号重试
+    admin.post(f"/api/orders/{o['id']}/collect", body, expect=409)
+    # 原样重试仍返回原单，且只有一笔收款，方式仍是现金
+    again = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    assert again["id"] == first["id"] and again["paid_amount"] == first["paid_amount"]
+    pays = [p for p in w["clerk"].get(f"/api/orders/{o['id']}")["payments"] if p["kind"] == "pay"]
+    assert len(pays) == 1 and pays[0]["method"] == "cash"
+
+    # 折扣 / 应收变了也不行
+    o2 = customer(client).post("/api/customer/orders", {
+        "area_code": w["a1"]["code"], "location_note": "1",
+        "lines": [{"sku_id": w["small"]["id"], "qty": 1}]})
+    b2 = {"payments": [{"method": "cash", "amount": 950}], "discount_rate": 95, "request_id": "pay-d"}
+    admin.post(f"/api/orders/{o2['id']}/collect", b2)
+    admin.post(f"/api/orders/{o2['id']}/collect", {**b2, "discount_rate": 90}, expect=409)
+    admin.post(f"/api/orders/{o2['id']}/collect", {**b2, "payable": 940}, expect=409)
+    assert admin.post(f"/api/orders/{o2['id']}/collect", b2)["id"] == o2["id"]

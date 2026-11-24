@@ -240,6 +240,45 @@ def _record_payments(db: Session, order: Order, payments: list[dict], user: User
     order.paid_at = now()
 
 
+def _payments_sig(payments: list[dict]) -> list[tuple[str, int, int]]:
+    """按 _record_payments 的规则把请求里的付款明细归一成（方式、金额、实收），用于核对重发的请求。"""
+    if not payments:
+        raise HTTPException(400, "请选择收款方式")
+    sig = []
+    for p in payments:
+        method = p.get("method")
+        if method not in PAY_METHODS:
+            raise HTTPException(400, "收款方式错误")
+        amount = int(p["amount"])
+        if amount < 0:
+            raise HTTPException(400, "收款金额不能为负数")
+        received = amount if p.get("received") is None else int(p["received"])
+        if method == "cash" and received < amount:
+            raise HTTPException(400, "现金实收不能少于应收")
+        if method != "cash":
+            received = amount
+        sig.append((method, amount, received))
+    return sig
+
+
+def collect_replay_ok(db: Session, order: Order, user: User, payments: list[dict],
+                      discount_rate: int | None, payable: int | None) -> bool:
+    """同一个收款请求号重发时，核对是不是同一个人、同一批付款明细、同样的折扣和应收。
+    内容变了（例如第一次现金、第二次改成微信）不能当成重复请求返回原单。"""
+    pays = db.scalars(select(Payment).where(Payment.order_id == order.id, Payment.kind == "pay")
+                      .order_by(Payment.id)).all()
+    if any(p.created_by != user.id for p in pays):
+        return False
+    if [(p.method, p.amount, p.received) for p in pays] != _payments_sig(payments):
+        return False
+    # 100 表示不打折，apply_pricing 里会存成 None
+    if order.discount_rate != (None if discount_rate == 100 else discount_rate):
+        return False
+    if payable is not None and order.payable_amount != payable:
+        return False
+    return True
+
+
 def get_order(db: Session, order_id: int, lock: bool = False) -> Order:
     q = select(Order).where(Order.id == order_id)
     if lock:
