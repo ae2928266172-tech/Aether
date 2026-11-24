@@ -392,6 +392,10 @@ body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyh
 .x-picker .pick-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); }
 .x-rec { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .el-message-box__btns .el-button { height: 40px; padding: 0 20px; font-size: 15px; }
+/* 清空购物车 / 退出登录这类不可撤销操作的确认框：按钮加大，方便触屏点 */
+.big-confirm { max-width: min(480px, 92vw); }
+.big-confirm .el-message-box__message { font-size: 17px; }
+.big-confirm .el-message-box__btns .el-button { height: 52px; min-width: 120px; font-size: 17px; }
 
 /* 悬停效果只给鼠标：触摸屏点一下会“粘住”悬停样式，看起来像还选着 */
 @media (hover: hover) and (pointer: fine) {
