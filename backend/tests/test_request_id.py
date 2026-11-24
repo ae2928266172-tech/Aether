@@ -95,3 +95,58 @@ def test_collect_request_id_checks_content(client, admin, world):
     admin.post(f"/api/orders/{o2['id']}/collect", {**b2, "discount_rate": 90}, expect=409)
     admin.post(f"/api/orders/{o2['id']}/collect", {**b2, "payable": 940}, expect=409)
     assert admin.post(f"/api/orders/{o2['id']}/collect", b2)["id"] == o2["id"]
+
+
+def _online(client, w, qty=1):
+    return customer(client).post("/api/customer/orders", {
+        "area_code": w["a1"]["code"], "location_note": "1",
+        "lines": [{"sku_id": w["small"]["id"], "qty": qty}]})
+
+
+def test_collect_replay_without_payable_checks_pricing(client, admin, world):
+    """首次手动改收 9 元；同号重试去掉 payable、仍交 9 元现金：按定价规则应收 10 元，是冲突。"""
+    w = world
+    o = _online(client, w)
+    assert o["payable_amount"] == 1000
+    body = {"payments": [{"method": "cash", "amount": 900}], "payable": 900, "request_id": "pay-p"}
+    admin.post(f"/api/orders/{o['id']}/collect", body)
+    admin.post(f"/api/orders/{o['id']}/collect", {k: v for k, v in body.items() if k != "payable"}, expect=409)
+    assert admin.post(f"/api/orders/{o['id']}/collect", body)["payable_amount"] == 900
+    # 不改价时省略 payable 照常认
+    o2 = _online(client, w)
+    b2 = {"payments": [{"method": "cash", "amount": 1000}], "request_id": "pay-q"}
+    admin.post(f"/api/orders/{o2['id']}/collect", b2)
+    assert admin.post(f"/api/orders/{o2['id']}/collect", b2)["id"] == o2["id"]
+    assert admin.post(f"/api/orders/{o2['id']}/collect", {**b2, "payable": 1000})["id"] == o2["id"]
+    pays = [p for p in admin.get(f"/api/orders/{o['id']}")["payments"] if p["kind"] == "pay"]
+    assert len(pays) == 1
+
+
+def test_collect_replay_after_refund(client, world):
+    """收款后部分退款，原样重试仍返回原单（状态照实是部分退款），不报“已收款”。"""
+    w = world
+    o = _online(client, w, qty=2)
+    body = {"payments": [{"method": "cash", "amount": o["payable_amount"]}], "request_id": "pay-r"}
+    paid = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    w["clerk"].post(f"/api/orders/{o['id']}/refund", {"lines": [{"order_item_id": paid["items"][0]["id"], "qty": 1}],
+                                                      "request_id": "rf-r"})
+    again = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    assert again["id"] == o["id"] and again["pay_status"] == "partial_refunded"
+    w["clerk"].post(f"/api/orders/{o['id']}/collect",
+                    {**body, "payments": [{"method": "wechat", "amount": o["payable_amount"]}]}, expect=409)
+
+
+def test_collect_replay_after_exchange(client, admin, world):
+    """收款后换货补差（补差也是 kind=pay），原样重试仍返回原单；改付款方式仍是 409。"""
+    w = world
+    o = _online(client, w)
+    body = {"payments": [{"method": "cash", "amount": 1000}], "request_id": "pay-x"}
+    paid = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    r = admin.post(f"/api/orders/{o['id']}/exchange", {
+        "returns": [{"order_item_id": paid["items"][0]["id"], "qty": 1}],
+        "items": [{"sku_id": w["big"]["id"], "qty": 1}], "method": "wechat", "request_id": "ex-x"})
+    assert r["exchange"]["diff"] == 800
+    again = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    assert again["id"] == o["id"] and again["paid_amount"] == 1800
+    w["clerk"].post(f"/api/orders/{o['id']}/collect",
+                    {**body, "payments": [{"method": "wechat", "amount": 1000}]}, expect=409)

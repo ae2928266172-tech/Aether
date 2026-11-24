@@ -171,8 +171,9 @@ class CollectIn(BaseModel):
 @router.post("/orders/{oid}/collect")
 def collect(oid: int, body: CollectIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
     o = _load(db, oid, user, lock=True)
-    if body.request_id and o.collect_request_id == body.request_id and o.pay_status == "paid":
+    if body.request_id and o.collect_request_id == body.request_id and o.pay_status != "unpaid":
         # 上一次其实已经收款成功（网络抖动导致前端没拿到响应），同一个请求号重发直接返回原单。
+        # 之后退过款（部分退款 / 已退款）、换过货也一样认，返回的订单照实反映售后状态。
         # 但必须核对内容没变：换了付款方式 / 金额 / 操作人，不能把这笔账当成重复请求
         svc.same_request(svc.collect_replay_ok(db, o, user, [p.model_dump() for p in body.payments],
                                                body.discount_rate, body.payable))
