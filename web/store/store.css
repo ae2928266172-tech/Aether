@@ -140,8 +140,10 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .done-btns .el-button { flex: 1; height: 56px; font-size: 17px; margin: 0; }
 .done-btns .el-button--primary { flex: 1.4; }
 
-/* 收款框：左边金额和优惠，右边实收和数字键盘 */
-.paybox .el-dialog__body { padding-top: 4px; }
+/* 收款框：左边金额和优惠，右边实收和数字键盘。窄屏 / 矮屏时整体收窄、内容区滚动，保证底部按钮不被裁掉 */
+.paybox.el-dialog { display: flex; flex-direction: column; max-height: 92vh; max-height: 92dvh; margin-top: 4vh; margin-bottom: 0; }
+.paybox .el-dialog__header, .paybox .el-dialog__footer { flex-shrink: 0; }
+.paybox .el-dialog__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-top: 4px; }
 .pay-grid { display: flex; gap: 20px; }
 .pay-l { flex: 1; min-width: 0; }
 .pay-r { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -412,6 +414,10 @@ body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyh
 .x-picker .pick-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 150px), 1fr)); }
 .x-rec { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--el-border-color-lighter); }
 .el-message-box__btns .el-button { height: 40px; padding: 0 20px; font-size: 15px; }
+/* 清空购物车 / 退出登录这类不可撤销操作的确认框：按钮加大，方便触屏点 */
+.big-confirm { max-width: min(480px, 92vw); }
+.big-confirm .el-message-box__message { font-size: 17px; }
+.big-confirm .el-message-box__btns .el-button { height: 52px; min-width: 120px; font-size: 17px; }
 
 /* 悬停效果只给鼠标：触摸屏点一下会“粘住”悬停样式，看起来像还选着 */
 @media (hover: hover) and (pointer: fine) {

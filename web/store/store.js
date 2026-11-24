@@ -107,7 +107,7 @@ const PayDialog = {
   props: ['modelValue', 'user', 'lines', 'title', 'onPay'],
   emits: ['update:modelValue'],
   template: `
-  <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="900px" class="paybox" @open="reset" @opened="focusReceived">
+  <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="min(900px, 96vw)" class="paybox" @open="reset" @opened="focusReceived">
     <div class="pay-grid">
       <div class="pay-l">
         <div class="total">
@@ -398,7 +398,9 @@ const Pos = {
       }
     };
     // 每个商品在购物车里的件数：购物车一变只算一次，不用每张卡片各自去翻购物车
-    const cartQty = computed(() => { const m = new Map(); for (const l of cart.value) m.set(l.sku_id, (m.get(l.sku_id) || 0) + l.qty); return m; });
+    // 数量框删空还没失焦时 l.qty 是空字符串，按现有规则（fix）一律当 1 件算
+    const qtyOf = (l) => Math.max(1, parseInt(l.qty, 10) || 1);
+    const cartQty = computed(() => { const m = new Map(); for (const l of cart.value) m.set(l.sku_id, (m.get(l.sku_id) || 0) + qtyOf(l)); return m; });
     const inCart = (p) => { const m = cartQty.value; if (!m.size) return 0; let n = 0; for (const s of p.skus) n += m.get(s.id) || 0; return n; };
     // 商品多时先画前 36 个，滚到底再接着画，切分类、搜索时回到前 36 个
     const PAGE = 36, limit = ref(PAGE), more = ref(null);
@@ -415,7 +417,17 @@ const Pos = {
     const dec = (i) => { if (cart.value[i].qty > 1) cart.value[i].qty--; else remove(i); };
     const remove = (i) => { cart.value.splice(i, 1); sel.value = Math.min(sel.value, cart.value.length - 1); };
     const fix = (i) => { const l = cart.value[i]; l.qty = Math.max(1, parseInt(l.qty) || 1); };
-    const clear = () => { cart.value = []; remark.value = ''; sel.value = -1; };
+    const resetCart = () => { cart.value = []; remark.value = ''; sel.value = -1; };
+    const clear = async () => {
+      const n = cart.value.reduce((a, l) => a + qtyOf(l), 0);
+      if (n >= 2) {  // 只有 1 件时直接清，避免多一次点击；2 件以上误触代价大
+        try {
+          await ElMessageBox.confirm(`购物车里还有 ${n} 件商品，确定清空吗？`, '清空购物车',
+            { confirmButtonText: '清空', cancelButtonText: '取消', type: 'warning', customClass: 'big-confirm' });
+        } catch (e) { return; }
+      }
+      resetCart();
+    };
     // 挂单：顾客临时去拿东西、先收下一位时，把当前购物车存起来（存在本机浏览器）
     const heldKey = 'shouyin_held_' + props.storeId, held = ref([]), heldDlg = ref(false);
     try { held.value = JSON.parse(localStorage.getItem(heldKey) || '[]'); } catch (e) { held.value = []; }
@@ -424,7 +436,7 @@ const Pos = {
       if (!cart.value.length) return;
       const d = new Date();
       held.value.push({ at: Date.now(), time: d.toTimeString().slice(0, 5), cart: JSON.parse(JSON.stringify(cart.value)), remark: remark.value });
-      saveHeld(); clear(); ElMessage.success('已挂单，可通过“取单”取回');
+      saveHeld(); resetCart(); ElMessage.success('已挂单，可通过“取单”取回');
     };
     const HELD_PER_PAGE = 6, heldPg = ref(0);
     const heldPages = computed(() => Math.max(1, Math.ceil(held.value.length / HELD_PER_PAGE)));
@@ -450,8 +462,8 @@ const Pos = {
       held.value.splice(i, 1); saveHeld(); ElMessage.success('挂单已删除');
       if (!held.value.length) heldDlg.value = false;
     };
-    const count = computed(() => cart.value.reduce((a, l) => a + l.qty, 0));
-    const total = computed(() => cart.value.reduce((a, l) => a + l.qty * l.price, 0));
+    const count = computed(() => cart.value.reduce((a, l) => a + qtyOf(l), 0));
+    const total = computed(() => cart.value.reduce((a, l) => a + qtyOf(l) * l.price, 0));
     const lines = computed(() => cart.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
     let paying = false;
     const pay = async (p) => {
@@ -466,7 +478,7 @@ const Pos = {
           payable: p.payable, remark: remark.value, request_id: reqId });
       } catch (e) { return err(e); }
       // 到这里收款已经成功。后面的提示音、打印出错都不能让店员误以为没收到钱
-      reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount; payDlg.value = false; clear();
+      reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount; payDlg.value = false; resetCart();
       // 收款成功只在顶部提示，不弹框、不用点；现金有找零时提示停留久一点（要补打小票点右侧“补打小票”或按 F8）
       ElMessage({ type: 'success', duration: p.change ? 6000 : 2500, showClose: !!p.change,
         message: '收款成功　应收 ¥' + yuan(o.payable_amount) + (lastReceived.value !== o.payable_amount ? '　实收 ¥' + yuan(lastReceived.value) : '') + (p.change ? '　找零 ¥' + yuan(p.change) : '') });
@@ -781,11 +793,12 @@ const Orders = {
     const refresh = async () => { cur.value = await api.get('/api/orders/' + cur.value.id); load(); };
     const act = async (a) => { try { await api.post('/api/orders/' + cur.value.id + '/' + a); await refresh(); ElMessage.success('已接单'); } catch (e) { err(e); } };
     const curLines = computed(() => cur.value ? cur.value.items.map(i => ({ sku_id: i.sku_id, qty: i.qty })) : []);
-    let collecting = false;
+    let collecting = false, collectRid = '';
+    watch(payDlg, (v) => { if (v) collectRid = rid(); });  // 每次打开收款框生成新请求号；网络重试沿用同一个
     const collect = async (p) => {
       if (collecting) return;  // 连点只发一次
       collecting = true;
-      try { await api.post('/api/orders/' + cur.value.id + '/collect', { payments: p.payments, discount_rate: p.discount_rate, payable: p.payable }); payDlg.value = false; await refresh(); ElMessage.success('已收款'); }
+      try { await api.post('/api/orders/' + cur.value.id + '/collect', { payments: p.payments, discount_rate: p.discount_rate, payable: p.payable, request_id: collectRid || undefined }); payDlg.value = false; await refresh(); ElMessage.success('已收款'); }
       catch (e) { err(e); } finally { collecting = false; }
     };
     const cancel = async () => {
@@ -1452,7 +1465,13 @@ const App = {
         if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，请点右上角头像，选“修改密码”' });
       } catch (e) { err(e); } finally { busy.value = false; }
     };
-    const logout = () => { api.setToken(''); user.value = null; clearInterval(timer); hideToast(); };
+    const logout = async () => {
+      try {
+        await ElMessageBox.confirm('确定退出登录吗？退出后需要重新输入账号密码。', '退出登录',
+          { confirmButtonText: '退出', cancelButtonText: '取消', type: 'warning', customClass: 'big-confirm' });
+      } catch (e) { return; }
+      api.setToken(''); user.value = null; clearInterval(timer); hideToast();
+    };
     // 自己改密码：旧密码 + 两次新密码。忘记密码找管理员在后台“账号与权限”里重置
     const changePw = async () => {
       let o, n, n2;

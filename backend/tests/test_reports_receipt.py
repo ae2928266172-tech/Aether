@@ -104,6 +104,43 @@ def test_auth(client, admin, world):
     assert login
 
 
+def test_receipt_phone_and_big_area(admin, client, world):
+    """配送小票：给顾客电话单独开一行；区域 / 位置（床号）加大加粗。"""
+    w = world
+    c = customer(client)
+    o = c.post("/api/customer/orders", {"area_code": w["a1"]["code"], "location_note": "12 床",
+                                        "contact_phone": "13800001234",
+                                        "lines": [{"sku_id": w["small"]["id"], "qty": 1}]})
+    r = w["clerk"].post(f"/api/orders/{o['id']}/print", {})
+    by_label = {row[0]: row for row in r["info"]}
+    assert by_label["电话"][1] == "13800001234"
+    assert by_label["病区"][2] == "big" and by_label["床号"][2] == "big"
+    assert r["style"]["area_size"] == "l" and r["style"]["area_bold"] is True
+    assert "电话：13800001234" in r["text"]
+    # 关掉开关就不打印电话
+    admin.put("/api/settings/receipt", {"show_phone": False})
+    r2 = w["clerk"].post(f"/api/orders/{o['id']}/print", {"reprint": True})
+    assert all(row[0] != "电话" for row in r2["info"]) and "13800001234" not in r2["text"]
+    admin.put("/api/settings/receipt", {"show_phone": True})
+    # 没有留电话的订单不打印电话行
+    o2 = _sale(w["clerk"], w, [{"sku_id": w["small"]["id"], "qty": 1}])
+    r3 = w["clerk"].post(f"/api/orders/{o2['id']}/print", {})
+    assert all(row[0] != "电话" for row in r3["info"])
+    # 后台预览的示例订单带电话，能直接看到效果
+    pv = admin.post("/api/settings/receipt/preview", {})
+    assert any(row[0] == "电话" for row in pv["info"])
+
+
+def test_receipt_area_style_can_be_saved(admin):
+    """后台改「区域 / 位置」的字号和加粗后要能存下来，重新读取和预览都用新值。"""
+    saved = admin.put("/api/settings/receipt", {"area_size": "m", "area_bold": False})
+    assert saved["area_size"] == "m" and saved["area_bold"] is False
+    got = admin.get("/api/settings/receipt")
+    assert got["area_size"] == "m" and got["area_bold"] is False
+    pv = admin.post("/api/settings/receipt/preview", {})
+    assert pv["style"]["area_size"] == "m" and pv["style"]["area_bold"] is False
+
+
 def test_insights_heat_and_areas(client, admin, world):
     from app import db as dbmod
     w = world

@@ -1300,12 +1300,13 @@ const ReceiptSettings = {
       { k: 'store', label: '门店名', bold: true, alignNote: '同标题' },
       { k: 'header', label: '抬头文字', align: 'header' },
       { k: 'info', label: '单号 / 时间等' },
+      { k: 'area', label: '区域 / 位置', bold: true },
       { k: 'item', label: '商品名称', bold: true },
       { k: 'medical', label: '医疗器械资料' },
       { k: 'total', label: '应收金额', bold: true },
       { k: 'footer', label: '底部文字', align: 'footer' },
     ];
-    const toggles = { show_store: '门店名', show_order_no: '单号', show_time: '时间', show_area: '区域 / 位置', show_cashier: '操作员',
+    const toggles = { show_store: '门店名', show_order_no: '单号', show_time: '时间', show_area: '区域 / 位置', show_phone: '顾客电话', show_cashier: '操作员',
       show_sku: '规格', show_unit_price: '单价', show_discount: '优惠', show_payment: '收款方式', show_remark: '备注' };
     let timer = null;
     const preview = async () => { try { last.value = await api.post('/api/settings/receipt/preview', { ...f }); html.value = receiptHtml(last.value); } catch (e) { err(e); } };

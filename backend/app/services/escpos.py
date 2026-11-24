@@ -120,9 +120,12 @@ def build(r: dict) -> bytes:
     if not r.get("title") and not r.get("store_line") and not r.get("header_lines") and r.get("head"):
         one += block(r["head"], "header_size", False, "center")  # 兼容旧结构
     one += sep
-    for k, v in r["info"]:
+    for row in r["info"]:
+        k, v = row[0], row[1]
         if not k:  # 【补打】
             one += block([v], "info_size", True, "center")
+        elif len(row) > 2 and row[2] == "big":  # 区域 / 位置（床号）加大加粗，方便找床
+            one += block([f"{k}：{v}"], "area_size", st.get("area_bold", True))
         else:
             one += block([f"{k}：{v}"], "info_size")
     one += sep
