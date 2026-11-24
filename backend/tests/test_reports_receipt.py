@@ -131,6 +131,16 @@ def test_receipt_phone_and_big_area(admin, client, world):
     assert any(row[0] == "电话" for row in pv["info"])
 
 
+def test_receipt_area_style_can_be_saved(admin):
+    """后台改「区域 / 位置」的字号和加粗后要能存下来，重新读取和预览都用新值。"""
+    saved = admin.put("/api/settings/receipt", {"area_size": "m", "area_bold": False})
+    assert saved["area_size"] == "m" and saved["area_bold"] is False
+    got = admin.get("/api/settings/receipt")
+    assert got["area_size"] == "m" and got["area_bold"] is False
+    pv = admin.post("/api/settings/receipt/preview", {})
+    assert pv["style"]["area_size"] == "m" and pv["style"]["area_bold"] is False
+
+
 def test_insights_heat_and_areas(client, admin, world):
     from app import db as dbmod
     w = world

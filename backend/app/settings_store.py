@@ -55,6 +55,7 @@ DEFAULTS: dict[str, dict] = {
         "store_size": "s", "store_bold": False,
         "header_size": "s", "header_align": "center",
         "info_size": "s",
+        "area_size": "l", "area_bold": True,
         "item_size": "s", "item_bold": True,
         "medical_size": "s",
         "total_size": "m", "total_bold": True,
