@@ -387,7 +387,9 @@ const Pos = {
       }
     };
     // 每个商品在购物车里的件数：购物车一变只算一次，不用每张卡片各自去翻购物车
-    const cartQty = computed(() => { const m = new Map(); for (const l of cart.value) m.set(l.sku_id, (m.get(l.sku_id) || 0) + l.qty); return m; });
+    // 数量框删空还没失焦时 l.qty 是空字符串，按现有规则（fix）一律当 1 件算
+    const qtyOf = (l) => Math.max(1, parseInt(l.qty, 10) || 1);
+    const cartQty = computed(() => { const m = new Map(); for (const l of cart.value) m.set(l.sku_id, (m.get(l.sku_id) || 0) + qtyOf(l)); return m; });
     const inCart = (p) => { const m = cartQty.value; if (!m.size) return 0; let n = 0; for (const s of p.skus) n += m.get(s.id) || 0; return n; };
     // 商品多时先画前 36 个，滚到底再接着画，切分类、搜索时回到前 36 个
     const PAGE = 36, limit = ref(PAGE), more = ref(null);
@@ -406,7 +408,7 @@ const Pos = {
     const fix = (i) => { const l = cart.value[i]; l.qty = Math.max(1, parseInt(l.qty) || 1); };
     const resetCart = () => { cart.value = []; remark.value = ''; sel.value = -1; };
     const clear = async () => {
-      const n = cart.value.reduce((a, l) => a + l.qty, 0);
+      const n = cart.value.reduce((a, l) => a + qtyOf(l), 0);
       if (n >= 2) {  // 只有 1 件时直接清，避免多一次点击；2 件以上误触代价大
         try {
           await ElMessageBox.confirm(`购物车里还有 ${n} 件商品，确定清空吗？`, '清空购物车',
@@ -449,8 +451,8 @@ const Pos = {
       held.value.splice(i, 1); saveHeld(); ElMessage.success('挂单已删除');
       if (!held.value.length) heldDlg.value = false;
     };
-    const count = computed(() => cart.value.reduce((a, l) => a + l.qty, 0));
-    const total = computed(() => cart.value.reduce((a, l) => a + l.qty * l.price, 0));
+    const count = computed(() => cart.value.reduce((a, l) => a + qtyOf(l), 0));
+    const total = computed(() => cart.value.reduce((a, l) => a + qtyOf(l) * l.price, 0));
     const lines = computed(() => cart.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })));
     let paying = false;
     const pay = async (p) => {
