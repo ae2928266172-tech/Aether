@@ -1344,8 +1344,8 @@ const App = {
     <div v-if="toasts.length" class="toast-stack">
       <div v-for="t in toasts" :key="t.id" class="new-toast" role="alert">
         <span class="nt-ico"><span class="ico" v-html="icon('bell')"></span></span>
-        <span class="nt-txt"><b>{{t.title}}</b><span class="muted" :class="{bad: t.failed}">{{toastSub(t)}}</span></span>
-        <button type="button" class="nt-go" @click="goOrders">去接单</button>
+        <span class="nt-txt"><b>{{toastTitle(t)}}</b><span class="muted" :class="{bad: t.failed}">{{toastSub(t)}}</span></span>
+        <button v-if="!otherStore(t)" type="button" class="nt-go" @click="goOrders">去接单</button>
         <button type="button" class="nt-x" aria-label="关闭" @click="closeToast(t)"><span class="ico" v-html="icon('x')"></span></button>
       </div>
     </div>
@@ -1369,14 +1369,15 @@ const App = {
     const stockVisible = computed(() => can('inventory') || (can('stock_view') && cur.value.staff_can_view_stock));
     const stockEditable = computed(() => can('inventory') || (can('stock_edit') && cur.value.staff_can_edit_stock));
     let lastId = 0, timer = null, printing = Promise.resolve(), polling = false, primed = false, pollStore = null;
-    // 会话号：登录、切店、退出、登录失效都加一。在途的轮询和排队的打印发现会话号变了就作废，不再弹提醒、不再打印
-    let session = 0;
+    // 会话号：session 在登录、切店、退出、登录失效时加一，在途的轮询发现变了就作废，不再弹提醒。
+    // authSes 只在登录、退出、登录失效时加一：已排队的小票切店后照常打完，退出后不再用旧登录打印
+    let session = 0, authSes = 0;
 
     const poll = async () => {
       if (!storeId.value || !can('orders')) return;
       if (polling) return;  // 上一次还没返回就不再发，避免同一批订单响铃、打印两次
       polling = true;
-      const sid = storeId.value, ses = session;
+      const sid = storeId.value, ses = session, aus = authSes;
       try {
         const r = await api.get('/api/orders/new', { store_id: sid, after_id: lastId });
         if (ses !== session || !user.value || sid !== storeId.value || sid !== pollStore) return;  // 中途退出或切换了门店，丢弃这次结果
@@ -1392,29 +1393,36 @@ const App = {
           const t = showNewToast(fresh, autoPrint);
           if (autoPrint) {
             for (const o of fresh) printing = printing.then(async () => {
-              if (ses !== session || !user.value) return;  // 已退出或换了门店，不再用旧登录打印
-              try { await printOrder(o.id, false); markPrinted(t, true); } catch (e) { markPrinted(t, false); if (ses === session) err(e); }
+              if (aus !== authSes || !user.value) return;  // 已退出，不再用旧登录打印
+              try { await printOrder(o.id, false); markPrinted(t, true); } catch (e) { markPrinted(t, false); }
             });
           }
         }
       } catch (e) {} finally { polling = false; }
     };
-    // 新扫码订单提醒：右上角卡片，点“去接单”到订单页。新订单另起一张，不覆盖还没处理的卡片。
-    // 要自动打印的，打印结果出来后才开始 15 秒倒计时；打印失败的一直留着，直到店员关掉或去接单。
+    // 新扫码订单提醒：右上角卡片，点“去接单”到订单页。新订单另起一张，最新的在最上面。
+    // 要自动打印的，打印结果出来后才开始 15 秒倒计时。正在打印和打印失败的卡片一直留着：
+    // 不会被新订单挤掉，“去接单”、切店也不清，只有店员点 × 或退出登录才关。
     // 桌面软件直接出票，能知道打印成功；网页版只能打开浏览器打印对话框，看不出店员点的是打印还是取消
     const toasts = ref([]); let toastSeq = 0;
     const timers = new Map();
     const where = (o) => ((o.area_name || '') + ' ' + (o.location_note || '')).trim();
+    const busyToast = (t) => t.failed > 0 || (t.toPrint > 0 && t.printed + t.failed < t.toPrint);
     const closeToast = (t) => { clearTimeout(timers.get(t.id)); timers.delete(t.id); toasts.value = toasts.value.filter(x => x.id !== t.id); };
     const hideToast = () => { timers.forEach(clearTimeout); timers.clear(); toasts.value = []; };
+    const closePlainToasts = (pred) => toasts.value.filter(t => !busyToast(t) && (!pred || pred(t))).forEach(closeToast);
     const countdown = (id) => { clearTimeout(timers.get(id)); timers.set(id, setTimeout(() => closeToast({ id }), 15000)); };
+    const MAX_PLAIN = 4;  // 普通提醒最多叠 4 张，多了挤掉最早的普通提醒；打印中、打印失败的不计、不挤
     const showNewToast = (list, printing) => {
       const n = list.reduce((a, o) => a + (o.item_count || 0), 0), amt = list.reduce((a, o) => a + o.payable_amount, 0);
       const t = list.length === 1
         ? { id: ++toastSeq, title: '新扫码订单' + (where(list[0]) ? ' · ' + where(list[0]) : ''), base: n + ' 件 · ¥' + yuan(amt) }
         : { id: ++toastSeq, title: list.length + ' 个新扫码订单', base: list.map(where).filter(Boolean).join('、') + ' · 共 ¥' + yuan(amt) };
-      Object.assign(t, { toPrint: printing ? list.length : 0, printed: 0, failed: 0, browser: !deskInfo });
-      toasts.value = [t, ...toasts.value].slice(0, 4);  // 最新的在最上面，最多叠 4 张
+      Object.assign(t, { toPrint: printing ? list.length : 0, printed: 0, failed: 0, browser: !deskInfo, storeId: storeId.value, storeName: cur.value.name || '' });
+      let plain = 0;
+      const all = [t, ...toasts.value].filter(x => busyToast(x) || ++plain <= MAX_PLAIN);
+      toasts.value.filter(x => !all.includes(x)).forEach(x => { clearTimeout(timers.get(x.id)); timers.delete(x.id); });
+      toasts.value = all;
       if (!t.toPrint) countdown(t.id);
       return t.id;
     };
@@ -1425,9 +1433,11 @@ const App = {
       if (t.printed + t.failed < t.toPrint) return;  // 这批还没打完
       if (t.failed) clearTimeout(timers.get(id)); else countdown(id);  // 打印失败不自动消失
     };
+    const otherStore = (t) => t.storeId !== storeId.value;
+    const toastTitle = (t) => t.title + (otherStore(t) && t.storeName ? '（' + t.storeName + '）' : '');
     const toastSub = (t) => {
       if (!t.toPrint) return t.base;
-      if (t.failed) return t.base + ' · 小票打印失败，请到订单页补打';
+      if (t.failed) return t.base + ' · ' + (t.failed < t.toPrint ? t.failed + ' 张' : '') + '小票打印失败，请到' + (otherStore(t) && t.storeName ? t.storeName : '') + '订单页补打';
       if (t.printed < t.toPrint) return t.base + ' · 正在打印小票…';
       return t.base + (t.browser ? ' · 已打开打印对话框' : ' · 小票已打印');
     };
@@ -1435,19 +1445,20 @@ const App = {
     const dialogOpen = () => [...document.querySelectorAll('.el-overlay')].some(e => getComputedStyle(e).display !== 'none');
     const goOrders = () => {
       if (dialogOpen()) return ElMessage.warning('请先完成或取消当前操作，再去接单');
-      // 普通提醒随之关掉；打印失败的留着，等店员补打后自己关
-      toasts.value.filter(t => !t.failed).forEach(closeToast); tab.value = 'orders';
+      closePlainToasts((t) => !otherStore(t)); tab.value = 'orders';  // 正在打印、打印失败的留着
     };
     const meOpen = ref(false);
-    const startPoll = () => { session++; hideToast(); clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
+    // 切店：上一家店的普通提醒关掉；正在打印、打印失败的留着，并标明原门店
+    const startPoll = () => { session++; closePlainToasts(); clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
     const afterLogin = async () => {
+      authSes++; hideToast();
       stores.value = await api.get('/api/stores');
       const saved = pref('store', null);
       storeId.value = stores.value.find(s => s.id === saved) ? saved : (stores.value[0] || {}).id || null;
       tab.value = can('pos') ? 'pos' : 'orders';
       startPoll();
     };
-    const switchStore = () => { setPref('store', storeId.value); startPoll(); };  // startPoll 会清掉上一家店的提醒
+    const switchStore = () => { setPref('store', storeId.value); startPoll(); };
     // 手动同步：重新拿门店设置、账号权限，并让当前页面重新拉商品 / 订单 / 库存（不清购物车、不退出登录）
     const syncN = ref(0), syncing = ref(false);
     // 页面引用的 js/css 版本号（如 store.js?v=32）；服务器上的版本号变了，说明收银页有更新
@@ -1483,7 +1494,7 @@ const App = {
         await ElMessageBox.confirm('确定退出登录吗？退出后需要重新输入账号密码。', '退出登录',
           { confirmButtonText: '退出', cancelButtonText: '取消', type: 'warning', customClass: 'big-confirm' });
       } catch (e) { return; }
-      api.setToken(''); user.value = null; clearInterval(timer); session++; hideToast();
+      api.setToken(''); user.value = null; clearInterval(timer); session++; authSes++; hideToast();
     };
     // 自己改密码：旧密码 + 两次新密码。忘记密码找管理员在后台“账号与权限”里重置
     const changePw = async () => {
@@ -1498,7 +1509,7 @@ const App = {
       if (n !== n2) return ElMessage.error('两次输入的新密码不一样，没有修改');
       try { const r = await api.post('/api/auth/password', { old_password: o || '', new_password: n }); api.setToken(r.token); ElMessage.success('密码已修改，下次用新密码登录'); } catch (e) { err(e); }
     };
-    window.onUnauthorized = () => { user.value = null; clearInterval(timer); session++; hideToast(); };
+    window.onUnauthorized = () => { user.value = null; clearInterval(timer); session++; authSes++; hideToast(); };
     // Alt+1~5 切换收银 / 订单 / 交班 / 库存 / 要货
     const tabOk = { pos: () => can('pos'), orders: () => can('orders') || can('pos'), shift: () => can('pos'), stock: () => stockVisible.value, req: () => can('requisition') };
     const onKey = (e) => {
@@ -1515,7 +1526,7 @@ const App = {
     const deskDrawer = () => openDrawer(false);
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
-    return { icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing, meOpen, toasts, toastSub, closeToast, goOrders,
+    return { icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing, meOpen, toasts, toastSub, toastTitle, otherStore, closeToast, goOrders,
       desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };
