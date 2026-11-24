@@ -17,6 +17,7 @@ DEFAULT_STYLE = {
     "store_size": "s", "store_bold": False,
     "header_size": "s", "header_align": "center",
     "info_size": "s",
+    "area_size": "l", "area_bold": True,  # 区域 / 位置（床号）加大加粗
     "item_size": "s", "item_bold": True,
     "medical_size": "s",
     "total_size": "m", "total_bold": True,
@@ -79,9 +80,11 @@ def build_receipt(db: Session, o: Order, user: User | None, reprint: bool = Fals
     if cfg.get("show_time"):
         info.append(("时间", o.created_at.strftime("%Y-%m-%d %H:%M:%S")))
     if cfg.get("show_area") and o.area_name:
-        info.append((rules.get("area_label", "区域"), o.area_name))
+        info.append((rules.get("area_label", "区域"), o.area_name, "big"))
         if o.location_note:
-            info.append((rules.get("location_label", "位置"), o.location_note))
+            info.append((rules.get("location_label", "位置"), o.location_note, "big"))
+    if cfg.get("show_phone") and o.contact_phone:
+        info.append(("电话", o.contact_phone))
     if cfg.get("show_cashier") and user:
         info.append(("操作员", user.display_name or user.username))
 
@@ -122,7 +125,7 @@ def build_receipt(db: Session, o: Order, user: User | None, reprint: bool = Fals
     # 纯文本版
     sep = (cfg.get("separator") or "-")[:1] * width
     t = [_center(h, width) for h in head] + [sep]
-    t += [(f"{k}：{v}" if k else v) for k, v in info] + [sep]
+    t += [(f"{row[0]}：{row[1]}" if row[0] else row[1]) for row in info] + [sep]
     for it in items:
         t.append(it["name"])
         left = f"  {it['qty']}{it['unit']}" + (f" × {it['unit_price']}" if it["unit_price"] else "")

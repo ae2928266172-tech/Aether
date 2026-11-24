@@ -40,6 +40,7 @@ DEFAULTS: dict[str, dict] = {
         "show_order_no": True,
         "show_time": True,
         "show_area": True,
+        "show_phone": True,
         "show_cashier": True,
         "show_sku": True,
         "show_unit_price": True,
