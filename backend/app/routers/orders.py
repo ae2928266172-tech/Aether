@@ -165,12 +165,16 @@ class CollectIn(BaseModel):
     payments: list[PayIn]
     discount_rate: int | None = None
     payable: int | None = None
+    request_id: str | None = None
 
 
 @router.post("/orders/{oid}/collect")
 def collect(oid: int, body: CollectIn, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
     o = _load(db, oid, user, lock=True)
-    svc.collect(db, o, user, [p.model_dump() for p in body.payments], body.discount_rate, body.payable)
+    if body.request_id and o.collect_request_id == body.request_id and o.pay_status != "unpaid":
+        # 上一次其实已经收款成功（网络抖动导致前端没拿到响应），同一个请求号重发直接返回原单
+        return order_out(o)
+    svc.collect(db, o, user, [p.model_dump() for p in body.payments], body.discount_rate, body.payable, body.request_id)
     db.commit()
     return order_out(o)
 

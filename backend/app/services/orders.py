@@ -341,7 +341,7 @@ def accept(db: Session, order: Order, user: User) -> Order:
 
 
 def collect(db: Session, order: Order, user: User, payments: list[dict], discount_rate: int | None = None,
-            payable: int | None = None) -> Order:
+            payable: int | None = None, request_id: str | None = None) -> Order:
     if order.pay_status != "unpaid":
         raise HTTPException(409, "订单已收款，不能重复收款")
     if order.status == "cancelled":
@@ -352,6 +352,7 @@ def collect(db: Session, order: Order, user: User, payments: list[dict], discoun
     _record_payments(db, order, payments, user)
     order.status = "completed"
     order.completed_at = now()
+    order.collect_request_id = request_id
     log(db, order, "收款", f"应收 {order.payable_amount / 100:.2f}", user)
     db.flush()
     return order

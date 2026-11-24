@@ -779,11 +779,12 @@ const Orders = {
     const refresh = async () => { cur.value = await api.get('/api/orders/' + cur.value.id); load(); };
     const act = async (a) => { try { await api.post('/api/orders/' + cur.value.id + '/' + a); await refresh(); ElMessage.success('已接单'); } catch (e) { err(e); } };
     const curLines = computed(() => cur.value ? cur.value.items.map(i => ({ sku_id: i.sku_id, qty: i.qty })) : []);
-    let collecting = false;
+    let collecting = false, collectRid = '';
+    watch(payDlg, (v) => { if (v) collectRid = rid(); });  // 每次打开收款框生成新请求号；网络重试沿用同一个
     const collect = async (p) => {
       if (collecting) return;  // 连点只发一次
       collecting = true;
-      try { await api.post('/api/orders/' + cur.value.id + '/collect', { payments: p.payments, discount_rate: p.discount_rate, payable: p.payable }); payDlg.value = false; await refresh(); ElMessage.success('已收款'); }
+      try { await api.post('/api/orders/' + cur.value.id + '/collect', { payments: p.payments, discount_rate: p.discount_rate, payable: p.payable, request_id: collectRid || undefined }); payDlg.value = false; await refresh(); ElMessage.success('已收款'); }
       catch (e) { err(e); } finally { collecting = false; }
     };
     const cancel = async () => {

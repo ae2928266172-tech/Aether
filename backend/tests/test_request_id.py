@@ -1,4 +1,5 @@
 """请求号（防重复提交）只认同一个人、同一家店、同一张单、同样的内容。"""
+from conftest import customer
 
 
 def sale(w, sku, qty=1, rid="r-1", store="s1"):
@@ -39,3 +40,22 @@ def test_stock_doc_request_id_belongs_to_its_content(admin, world):
     assert admin.post("/api/stock-docs", doc)["id"] == first["id"]
     admin.post("/api/stock-docs", {**doc, "lines": [{"stock_item_id": w["cup"]["id"], "qty": 6}]}, expect=409)
     admin.post("/api/stock-docs", {**doc, "to_location_id": w["s1"]["location_id"]}, expect=409)
+
+
+def test_collect_request_id_returns_paid_order(client, world):
+    """线上单收款：网络重试带同一个请求号时返回已收款的原单，不报错、不重复记账。"""
+    w = world
+    o = customer(client).post("/api/customer/orders", {
+        "area_code": w["a1"]["code"], "location_note": "1",
+        "lines": [{"sku_id": w["small"]["id"], "qty": 1}]})
+    body = {"payments": [{"method": "cash", "amount": o["payable_amount"]}], "request_id": "pay-1"}
+    first = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    assert first["pay_status"] == "paid"
+    again = w["clerk"].post(f"/api/orders/{o['id']}/collect", body)
+    assert again["id"] == first["id"] and again["paid_amount"] == first["paid_amount"]
+    pays = [p for p in w["clerk"].get(f"/api/orders/{o['id']}")["payments"] if p["kind"] == "pay"]
+    assert len(pays) == 1, "同一个请求号重发不能重复记一笔收款"
+    r = w["clerk"].post(f"/api/orders/{o['id']}/collect", {**body, "request_id": "pay-2"}, expect=409)
+    assert "已收款" in r["detail"]
+    # 不带请求号时行为不变
+    w["clerk"].post(f"/api/orders/{o['id']}/collect", {"payments": body["payments"]}, expect=409)
