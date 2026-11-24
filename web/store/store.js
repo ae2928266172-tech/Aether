@@ -1341,11 +1341,13 @@ const App = {
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" :sync="syncN" />
       <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" :sync="syncN" />
     </template>
-    <div v-if="newToast" class="new-toast" role="alert">
-      <span class="nt-ico"><span class="ico" v-html="icon('bell')"></span></span>
-      <span class="nt-txt"><b>{{newToast.title}}</b><span class="muted" :class="{bad: newToast.failed}">{{newToastSub}}</span></span>
-      <button type="button" class="nt-go" @click="goOrders">去接单</button>
-      <button type="button" class="nt-x" aria-label="关闭" @click="hideToast"><span class="ico" v-html="icon('x')"></span></button>
+    <div v-if="toasts.length" class="toast-stack">
+      <div v-for="t in toasts" :key="t.id" class="new-toast" role="alert">
+        <span class="nt-ico"><span class="ico" v-html="icon('bell')"></span></span>
+        <span class="nt-txt"><b>{{t.title}}</b><span class="muted" :class="{bad: t.failed}">{{toastSub(t)}}</span></span>
+        <button type="button" class="nt-go" @click="goOrders">去接单</button>
+        <button type="button" class="nt-x" aria-label="关闭" @click="closeToast(t)"><span class="ico" v-html="icon('x')"></span></button>
+      </div>
     </div>
   </div>`,
   setup() {
@@ -1367,15 +1369,17 @@ const App = {
     const stockVisible = computed(() => can('inventory') || (can('stock_view') && cur.value.staff_can_view_stock));
     const stockEditable = computed(() => can('inventory') || (can('stock_edit') && cur.value.staff_can_edit_stock));
     let lastId = 0, timer = null, printing = Promise.resolve(), polling = false, primed = false, pollStore = null;
+    // 会话号：登录、切店、退出、登录失效都加一。在途的轮询和排队的打印发现会话号变了就作废，不再弹提醒、不再打印
+    let session = 0;
 
     const poll = async () => {
       if (!storeId.value || !can('orders')) return;
       if (polling) return;  // 上一次还没返回就不再发，避免同一批订单响铃、打印两次
       polling = true;
-      const sid = storeId.value;
+      const sid = storeId.value, ses = session;
       try {
         const r = await api.get('/api/orders/new', { store_id: sid, after_id: lastId });
-        if (sid !== storeId.value || sid !== pollStore) return;  // 中途切换了门店，丢弃这次结果
+        if (ses !== session || !user.value || sid !== storeId.value || sid !== pollStore) return;  // 中途退出或切换了门店，丢弃这次结果
         pending.value = r.pending_count;
         // 第一次只记下当前最新单号（打开页面之前的订单不重复响铃打印，在“待接单”里处理）
         const fresh = primed ? r.orders.filter(o => o.status !== 'cancelled') : [];
@@ -1388,45 +1392,54 @@ const App = {
           const t = showNewToast(fresh, autoPrint);
           if (autoPrint) {
             for (const o of fresh) printing = printing.then(async () => {
-              try { await printOrder(o.id, false); markPrinted(t, true); } catch (e) { markPrinted(t, false); err(e); }
+              if (ses !== session || !user.value) return;  // 已退出或换了门店，不再用旧登录打印
+              try { await printOrder(o.id, false); markPrinted(t, true); } catch (e) { markPrinted(t, false); if (ses === session) err(e); }
             });
           }
         }
       } catch (e) {} finally { polling = false; }
     };
-    // 新扫码订单提醒：右上角卡片，点“去接单”到订单页；停留 15 秒，再来新单重新计时
-    // 打印状态按实际结果显示：发出前“正在打印”，成功“小票已打印”，失败一直留着提醒去补打
-    const newToast = ref(null); let toastTimer = null, toastSeq = 0;
+    // 新扫码订单提醒：右上角卡片，点“去接单”到订单页。新订单另起一张，不覆盖还没处理的卡片。
+    // 要自动打印的，打印结果出来后才开始 15 秒倒计时；打印失败的一直留着，直到店员关掉或去接单。
+    // 桌面软件直接出票，能知道打印成功；网页版只能打开浏览器打印对话框，看不出店员点的是打印还是取消
+    const toasts = ref([]); let toastSeq = 0;
+    const timers = new Map();
     const where = (o) => ((o.area_name || '') + ' ' + (o.location_note || '')).trim();
-    const hideToast = () => { clearTimeout(toastTimer); newToast.value = null; };
+    const closeToast = (t) => { clearTimeout(timers.get(t.id)); timers.delete(t.id); toasts.value = toasts.value.filter(x => x.id !== t.id); };
+    const hideToast = () => { timers.forEach(clearTimeout); timers.clear(); toasts.value = []; };
+    const countdown = (id) => { clearTimeout(timers.get(id)); timers.set(id, setTimeout(() => closeToast({ id }), 15000)); };
     const showNewToast = (list, printing) => {
       const n = list.reduce((a, o) => a + (o.item_count || 0), 0), amt = list.reduce((a, o) => a + o.payable_amount, 0);
-      newToast.value = list.length === 1
+      const t = list.length === 1
         ? { id: ++toastSeq, title: '新扫码订单' + (where(list[0]) ? ' · ' + where(list[0]) : ''), base: n + ' 件 · ¥' + yuan(amt) }
         : { id: ++toastSeq, title: list.length + ' 个新扫码订单', base: list.map(where).filter(Boolean).join('、') + ' · 共 ¥' + yuan(amt) };
-      Object.assign(newToast.value, { toPrint: printing ? list.length : 0, printed: 0, failed: 0 });
-      clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 15000);
-      return newToast.value.id;
+      Object.assign(t, { toPrint: printing ? list.length : 0, printed: 0, failed: 0, browser: !deskInfo });
+      toasts.value = [t, ...toasts.value].slice(0, 4);  // 最新的在最上面，最多叠 4 张
+      if (!t.toPrint) countdown(t.id);
+      return t.id;
     };
     const markPrinted = (id, ok) => {
-      const t = newToast.value;
-      if (!t || t.id !== id) return;  // 卡片已关掉或换成了更新的一张
-      if (ok) t.printed++; else { t.failed++; clearTimeout(toastTimer); }  // 打印失败不自动消失
+      const t = toasts.value.find(x => x.id === id);
+      if (!t) return;  // 卡片已关掉
+      if (ok) t.printed++; else t.failed++;
+      if (t.printed + t.failed < t.toPrint) return;  // 这批还没打完
+      if (t.failed) clearTimeout(timers.get(id)); else countdown(id);  // 打印失败不自动消失
     };
-    const newToastSub = computed(() => {
-      const t = newToast.value;
-      if (!t || !t.toPrint) return t ? t.base : '';
+    const toastSub = (t) => {
+      if (!t.toPrint) return t.base;
       if (t.failed) return t.base + ' · 小票打印失败，请到订单页补打';
-      return t.base + (t.printed >= t.toPrint ? ' · 小票已打印' : ' · 正在打印小票…');
-    });
+      if (t.printed < t.toPrint) return t.base + ' · 正在打印小票…';
+      return t.base + (t.browser ? ' · 已打开打印对话框' : ' · 小票已打印');
+    };
     // 收款框等弹窗开着时不切页，免得把收银界面卸掉、打断收款
     const dialogOpen = () => [...document.querySelectorAll('.el-overlay')].some(e => getComputedStyle(e).display !== 'none');
     const goOrders = () => {
       if (dialogOpen()) return ElMessage.warning('请先完成或取消当前操作，再去接单');
-      hideToast(); tab.value = 'orders';
+      // 普通提醒随之关掉；打印失败的留着，等店员补打后自己关
+      toasts.value.filter(t => !t.failed).forEach(closeToast); tab.value = 'orders';
     };
     const meOpen = ref(false);
-    const startPoll = () => { hideToast(); clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
+    const startPoll = () => { session++; hideToast(); clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
     const afterLogin = async () => {
       stores.value = await api.get('/api/stores');
       const saved = pref('store', null);
@@ -1470,7 +1483,7 @@ const App = {
         await ElMessageBox.confirm('确定退出登录吗？退出后需要重新输入账号密码。', '退出登录',
           { confirmButtonText: '退出', cancelButtonText: '取消', type: 'warning', customClass: 'big-confirm' });
       } catch (e) { return; }
-      api.setToken(''); user.value = null; clearInterval(timer); hideToast();
+      api.setToken(''); user.value = null; clearInterval(timer); session++; hideToast();
     };
     // 自己改密码：旧密码 + 两次新密码。忘记密码找管理员在后台“账号与权限”里重置
     const changePw = async () => {
@@ -1485,7 +1498,7 @@ const App = {
       if (n !== n2) return ElMessage.error('两次输入的新密码不一样，没有修改');
       try { const r = await api.post('/api/auth/password', { old_password: o || '', new_password: n }); api.setToken(r.token); ElMessage.success('密码已修改，下次用新密码登录'); } catch (e) { err(e); }
     };
-    window.onUnauthorized = () => { user.value = null; clearInterval(timer); hideToast(); };
+    window.onUnauthorized = () => { user.value = null; clearInterval(timer); session++; hideToast(); };
     // Alt+1~5 切换收银 / 订单 / 交班 / 库存 / 要货
     const tabOk = { pos: () => can('pos'), orders: () => can('orders') || can('pos'), shift: () => can('pos'), stock: () => stockVisible.value, req: () => can('requisition') };
     const onKey = (e) => {
@@ -1502,7 +1515,7 @@ const App = {
     const deskDrawer = () => openDrawer(false);
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
-    return { icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing, meOpen, newToast, newToastSub, hideToast, goOrders,
+    return { icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing, meOpen, toasts, toastSub, closeToast, goOrders,
       desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };
