@@ -406,6 +406,7 @@ class Order(Base, TimestampMixin):
     cancel_reason: Mapped[str] = mapped_column(String(200), default="")
     print_count: Mapped[int] = mapped_column(Integer, default=0)
     request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
+    collect_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 收款请求号：网络重试时直接返回已收款结果
     items: Mapped[list["OrderItem"]] = relationship(lazy="selectin", order_by="OrderItem.id")
     payments: Mapped[list["Payment"]] = relationship(lazy="selectin", order_by="Payment.id")
     store: Mapped[Store] = relationship(lazy="joined")

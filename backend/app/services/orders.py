@@ -130,6 +130,13 @@ def discount_limits(user: User) -> tuple[int, int | None]:
     return rate, adj
 
 
+def _discounted(original: int, discount_rate: int | None) -> int:
+    """按折扣算折后金额（四舍五入到分）；None 或 100 表示不打折。"""
+    if discount_rate is None or discount_rate == 100:
+        return original
+    return int((Decimal(original) * discount_rate / 100).quantize(Decimal(1), rounding="ROUND_HALF_UP"))
+
+
 def apply_pricing(order: Order, user: User | None, discount_rate: int | None, payable: int | None):
     """计算本次应收。discount_rate 如 95 表示 9.5 折；payable 为直接改后的应收（分）。"""
     original = sum(i.amount for i in order.items)
@@ -142,7 +149,7 @@ def apply_pricing(order: Order, user: User | None, discount_rate: int | None, pa
         if not (0 <= discount_rate < 100):
             raise HTTPException(400, "折扣须在 0 折到 9.9 折之间")
         order.discount_rate = discount_rate
-        target = int((Decimal(original) * discount_rate / 100).quantize(Decimal(1), rounding="ROUND_HALF_UP"))
+        target = _discounted(original, discount_rate)
     if payable is not None and payable != target:
         if user is None or not has_perm(user, "adjust_amount"):
             raise HTTPException(403, "没有调整应收金额的权限")
@@ -238,6 +245,53 @@ def _record_payments(db: Session, order: Order, payments: list[dict], user: User
     order.paid_amount = total
     order.pay_status = "paid"
     order.paid_at = now()
+
+
+def _payments_sig(payments: list[dict]) -> list[tuple[str, int, int]]:
+    """按 _record_payments 的规则把请求里的付款明细归一成（方式、金额、实收），用于核对重发的请求。"""
+    if not payments:
+        raise HTTPException(400, "请选择收款方式")
+    sig = []
+    for p in payments:
+        method = p.get("method")
+        if method not in PAY_METHODS:
+            raise HTTPException(400, "收款方式错误")
+        amount = int(p["amount"])
+        if amount < 0:
+            raise HTTPException(400, "收款金额不能为负数")
+        received = amount if p.get("received") is None else int(p["received"])
+        if method == "cash" and received < amount:
+            raise HTTPException(400, "现金实收不能少于应收")
+        if method != "cash":
+            received = amount
+        sig.append((method, amount, received))
+    return sig
+
+
+def collect_replay_ok(db: Session, order: Order, user: User, payments: list[dict],
+                      discount_rate: int | None, payable: int | None) -> bool:
+    """同一个收款请求号重发时，核对是不是同一个人、同一批付款明细、同样的折扣和应收。
+    内容变了（例如第一次现金、第二次改成微信）不能当成重复请求返回原单。
+
+    只跟“首次收款”的流水比：换货补差也记成 kind=pay（带 exchange_id），退款另记，都不参与比对，
+    所以订单后来退过款、换过货，原样重试仍能认出来。"""
+    pays = db.scalars(select(Payment).where(Payment.order_id == order.id, Payment.kind == "pay",
+                                            Payment.exchange_id.is_(None))
+                      .order_by(Payment.id)).all()
+    if not pays or any(p.created_by != user.id for p in pays):
+        return False
+    if [(p.method, p.amount, p.received) for p in pays] != _payments_sig(payments):
+        return False
+    # 100 表示不打折，apply_pricing 里会存成 None
+    rate = None if discount_rate == 100 else discount_rate
+    if order.discount_rate != rate:
+        return False
+    # 按这次请求重新算应收，必须等于首次收款的合计。没传 payable 就按原价 / 折后价算，不能因为省略 payable
+    # 就跳过（首次手动改收 9 元，重试不带 payable 时应收是 10 元，属于冲突）。
+    # 原价只算首次收款时的商品：换货换出的新行（exchange_id 不为空）不算。
+    original = sum(i.amount for i in order.items if i.exchange_id is None)
+    expected = payable if payable is not None else _discounted(original, rate)
+    return expected == sum(p.amount for p in pays)
 
 
 def get_order(db: Session, order_id: int, lock: bool = False) -> Order:
@@ -341,7 +395,7 @@ def accept(db: Session, order: Order, user: User) -> Order:
 
 
 def collect(db: Session, order: Order, user: User, payments: list[dict], discount_rate: int | None = None,
-            payable: int | None = None) -> Order:
+            payable: int | None = None, request_id: str | None = None) -> Order:
     if order.pay_status != "unpaid":
         raise HTTPException(409, "订单已收款，不能重复收款")
     if order.status == "cancelled":
@@ -352,6 +406,7 @@ def collect(db: Session, order: Order, user: User, payments: list[dict], discoun
     _record_payments(db, order, payments, user)
     order.status = "completed"
     order.completed_at = now()
+    order.collect_request_id = request_id
     log(db, order, "收款", f"应收 {order.payable_amount / 100:.2f}", user)
     db.flush()
     return order

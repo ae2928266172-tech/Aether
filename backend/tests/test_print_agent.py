@@ -86,6 +86,8 @@ def test_receipt_style(client, admin, world):
     assert data[i - 6:i].endswith(b"\x1d!\x00\x1bE\x01")          # 标题：正常字号、加粗
     j = data.index("杯装水".encode("gb18030"))
     assert b"\x1d!\x11" in data[j - 8:j]                              # 商品名：加大
+    a = data.index("病区：一病区".encode("gb18030"))
+    assert data[a - 6:a].endswith(b"\x1d!\x11\x1bE\x01")             # 区域 / 床号：加大加粗
     k = data.index("谢谢".encode("gb18030"))
     assert b"\x1ba\x02" in data[k - 8:k]                              # 底部文字：右对齐
     assert b"=" * 32 in data and b"\x1b3\x50" in data and b"\x1bd\x06\x1dVB\x00" in data

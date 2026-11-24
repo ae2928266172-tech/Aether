@@ -79,7 +79,11 @@
     if (r.store_line) rows.push(`<div style="${sty('store_size', st.store_bold, st.title_align || 'center')}">${esc(r.store_line)}</div>`);
     (r.header_lines || []).forEach(h => rows.push(`<div style="${sty('header_size', false, st.header_align || 'center')}">${esc(h)}</div>`));
     rows.push(hr);
-    r.info.forEach(([k, v]) => rows.push(k ? `<div style="${sty('info_size')}">${esc(k)}：${esc(v)}</div>` : `<div style="${sty('info_size', true, 'center')}">${esc(v)}</div>`));
+    r.info.forEach((row) => {
+      const [k, v] = row, big = row[2] === 'big';
+      rows.push(k ? `<div style="${sty(big ? 'area_size' : 'info_size', big && st.area_bold !== false)}">${esc(k)}：${esc(v)}</div>`
+        : `<div style="${sty('info_size', true, 'center')}">${esc(v)}</div>`);
+    });
     rows.push(hr);
     r.items.forEach(it => {
       rows.push(`<div style="${sty('item_size', st.item_bold)}">${esc(it.name)}</div>`);
