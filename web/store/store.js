@@ -19,6 +19,10 @@ async function openDrawer(quiet) {
 const editable = (el) => !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
 const msgBoxOpen = () => !!document.querySelector('.el-message-box');
 
+// 门店页自用的几个图标（公共图标表里没有的）
+const EXTRA_ICONS = { bell: '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 8 3 8H3s3-1 3-8"/><path d="M10 20a2 2 0 0 0 4 0"/>', chevronDown: '<path d="m6 9 6 6 6-6"/>' };
+const icon = (n) => EXTRA_ICONS[n] ? Shouyin.icon('').replace('</svg>', EXTRA_ICONS[n] + '</svg>') : Shouyin.icon(n);
+
 const METHODS = { cash: '现金', wechat: '微信', alipay: '支付宝', other: '其他' };
 // 班次时间简写：2026-11-24 14:50:28 → 11-24 14:50；同一天下班只写时分，如 11-24 14:50 – 22:30
 const shortTime = (t) => (t ? String(t).slice(5, 16) : '');
@@ -1053,6 +1057,7 @@ const Orders = {
 // ---------------- 交班汇总 ----------------
 const Shift = {
   props: ['storeId', 'user', 'sync'],
+  emits: ['state'],
   template: `
   <div class="ws-body shiftpage">
     <section class="spane grow">
@@ -1283,6 +1288,7 @@ const App = {
       </div>
       <span class="grow"></span>
       <div class="tools">
+        <button v-if="can('pos') && storeId" type="button" class="shift-st" :class="{on: shiftNow}" title="查看交班" @click="tab='shift'"><i class="dot"></i>{{ shiftNow ? '当班中 · ' + shiftNow.started_at.slice(11, 16) + ' 开班' : '未开班' }}</button>
         <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
         <span class="tb-sep"></span>
         <button type="button" class="tb" :class="{busy: syncing}" :disabled="syncing" title="从服务器获取最新的商品、价格及门店设置" @click="sync"><span class="ico" v-html="icon('refresh')"></span>同步</button>
@@ -1308,19 +1314,29 @@ const App = {
       </el-popover>
         <a v-if="user.is_admin" class="tb" href="/web/admin/" target="_blank"><span class="ico" v-html="icon('sliders')"></span>后台管理</a>
         <span class="tb-sep"></span>
-        <div class="who"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span>{{user.display_name || user.username}}</span></div>
-        <button type="button" class="tb" @click="changePw"><span class="ico" v-html="icon('lock')"></span>修改密码</button>
-        <button type="button" class="tb" @click="logout"><span class="ico" v-html="icon('logout')"></span>退出</button>
+        <el-popover v-model:visible="meOpen" placement="bottom-end" :width="200" trigger="click" popper-class="mepop">
+          <template #reference><button type="button" class="who"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span class="nm">{{user.display_name || user.username}}</span><span class="ico caret" v-html="icon('chevronDown')"></span></button></template>
+          <div class="me-menu">
+            <button type="button" @click="meOpen = false; changePw()"><span class="ico" v-html="icon('lock')"></span>修改密码</button>
+            <button type="button" class="dng" @click="meOpen = false; logout()"><span class="ico" v-html="icon('logout')"></span>退出登录</button>
+          </div>
+        </el-popover>
       </div>
     </div>
     <el-empty v-if="!storeId" description="账号还没有分配门店，请联系后台" />
     <template v-else>
       <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" :sync="syncN" />
       <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store="cur" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
-      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" :sync="syncN" />
+      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" :sync="syncN" @state="v => shiftNow = v" />
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" :sync="syncN" />
       <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" :sync="syncN" />
     </template>
+    <div v-if="newToast" class="new-toast" role="alert">
+      <span class="nt-ico"><span class="ico" v-html="icon('bell')"></span></span>
+      <span class="nt-txt"><b>{{newToast.title}}</b><span class="muted">{{newToast.sub}}</span></span>
+      <button type="button" class="nt-go" @click="goOrders">去接单</button>
+      <button type="button" class="nt-x" aria-label="关闭" @click="newToast = null"><span class="ico" v-html="icon('x')"></span></button>
+    </div>
   </div>`,
   setup() {
     const user = ref(null), lf = reactive({ username: '', password: '' }), busy = ref(false), stores = ref([]), storeId = ref(null), tab = ref('pos');
@@ -1358,12 +1374,31 @@ const App = {
         if (fresh.length) {
           tick.value++;
           if (settings.sound) { beep(3); speak('您有' + fresh.length + '个新订单'); }
-          ElementPlus.ElNotification({ title: '新订单', message: fresh.map(o => (o.area_name + ' ' + o.location_note).trim() + ' ¥' + yuan(o.payable_amount)).join('\n'), type: 'warning', duration: 8000 });
-          if (settings.autoPrintOnline && cur.value.print_mode !== 'agent' && canPrintHere()) {
+          const autoPrint = settings.autoPrintOnline && cur.value.print_mode !== 'agent' && canPrintHere();
+          showNewToast(fresh, autoPrint);
+          if (autoPrint) {
             for (const o of fresh) printing = printing.then(async () => { try { await printOrder(o.id, false); } catch (e) { err(e); } });
           }
         }
       } catch (e) {} finally { polling = false; }
+    };
+    // 新扫码订单提醒：右上角卡片，点“去接单”到订单页；停留 15 秒，再来新单重新计时
+    const newToast = ref(null); let toastTimer = null;
+    const where = (o) => ((o.area_name || '') + ' ' + (o.location_note || '')).trim();
+    const showNewToast = (list, printed) => {
+      const n = list.reduce((a, o) => a + (o.item_count || 0), 0), amt = list.reduce((a, o) => a + o.payable_amount, 0);
+      newToast.value = list.length === 1
+        ? { title: '新扫码订单' + (where(list[0]) ? ' · ' + where(list[0]) : ''), sub: n + ' 件 · ¥' + yuan(amt) + (printed ? ' · 已自动打印小票' : '') }
+        : { title: list.length + ' 个新扫码订单', sub: list.map(where).filter(Boolean).join('、') + ' · 共 ¥' + yuan(amt) };
+      clearTimeout(toastTimer); toastTimer = setTimeout(() => { newToast.value = null; }, 15000);
+    };
+    const goOrders = () => { newToast.value = null; tab.value = 'orders'; };
+    // 顶栏当班状态：登录、切门店、同步时取一次；在交班页开班 / 交班时由交班页直接报上来
+    const shiftNow = ref(null), meOpen = ref(false);
+    const loadShift = async () => {
+      if (!storeId.value || !can('pos')) { shiftNow.value = null; return; }
+      const sid = storeId.value;
+      try { const r = await api.get('/api/shifts/current', { store_id: sid }); if (sid === storeId.value) shiftNow.value = r.shift; } catch (e) {}
     };
     const startPoll = () => { clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
     const afterLogin = async () => {
@@ -1376,6 +1411,7 @@ const App = {
     const switchStore = () => { setPref('store', storeId.value); startPoll(); };
     // 手动同步：重新拿门店设置、账号权限，并让当前页面重新拉商品 / 订单 / 库存（不清购物车、不退出登录）
     const syncN = ref(0), syncing = ref(false);
+    watch([storeId, syncN], loadShift);
     // 页面引用的 js/css 版本号（如 store.js?v=32）；服务器上的版本号变了，说明收银页有更新
     const assetVers = (html) => (html.match(/[\w.-]+\.(?:js|css)\?v=\d+/g) || []).sort().join(',');
     const sync = async () => {
@@ -1401,7 +1437,7 @@ const App = {
       busy.value = true;
       try {
         const r = await api.post('/api/auth/login', lf); api.setToken(r.token); user.value = r.user; await afterLogin();
-        if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，请点右上角“修改密码”修改' });
+        if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，请点右上角头像，选“修改密码”' });
       } catch (e) { err(e); } finally { busy.value = false; }
     };
     const logout = () => { api.setToken(''); user.value = null; clearInterval(timer); };
@@ -1435,7 +1471,7 @@ const App = {
     const deskDrawer = () => openDrawer(false);
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
-    return { icon: Shouyin.icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing,
+    return { icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing, shiftNow, meOpen, newToast, goOrders,
       desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };
