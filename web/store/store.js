@@ -96,7 +96,7 @@ const PayDialog = {
   props: ['modelValue', 'user', 'lines', 'title', 'onPay'],
   emits: ['update:modelValue'],
   template: `
-  <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="900px" class="paybox" @open="reset" @opened="focusReceived">
+  <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="min(900px, 96vw)" class="paybox" @open="reset" @opened="focusReceived">
     <div class="pay-grid">
       <div class="pay-l">
         <div class="total">

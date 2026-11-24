@@ -121,8 +121,10 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .done-btns .el-button { flex: 1; height: 56px; font-size: 17px; margin: 0; }
 .done-btns .el-button--primary { flex: 1.4; }
 
-/* 收款框：左边金额和优惠，右边实收和数字键盘 */
-.paybox .el-dialog__body { padding-top: 4px; }
+/* 收款框：左边金额和优惠，右边实收和数字键盘。窄屏 / 矮屏时整体收窄、内容区滚动，保证底部按钮不被裁掉 */
+.paybox.el-dialog { display: flex; flex-direction: column; max-height: 92vh; max-height: 92dvh; margin-top: 4vh; margin-bottom: 0; }
+.paybox .el-dialog__header, .paybox .el-dialog__footer { flex-shrink: 0; }
+.paybox .el-dialog__body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-top: 4px; }
 .pay-grid { display: flex; gap: 20px; }
 .pay-l { flex: 1; min-width: 0; }
 .pay-r { width: 320px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px; }
