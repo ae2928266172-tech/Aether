@@ -1057,7 +1057,6 @@ const Orders = {
 // ---------------- 交班汇总 ----------------
 const Shift = {
   props: ['storeId', 'user', 'sync'],
-  emits: ['state'],
   template: `
   <div class="ws-body shiftpage">
     <section class="spane grow">
@@ -1120,7 +1119,7 @@ const Shift = {
       </template>
     </section>
   </div>`,
-  setup(props, { emit }) {
+  setup(props) {
     const cur = ref(null), loaded = ref(false), opening = ref(''), counted = ref(''), remark = ref(''), busy = ref(false), last = ref(null), history = ref([]);
     const parse = (v) => Shouyin.parseMoney(v);
     const diff = computed(() => { if (!cur.value || String(counted.value).trim() === '') return null; const c = parse(counted.value); return c === null ? null : c - cur.value.expected_cash; });
@@ -1146,7 +1145,6 @@ const Shift = {
     onMounted(() => { loadCur(); loadHistory(); });
     watch(() => props.sync, () => { loadCur(); loadHistory(); });
     const cashOf = (k) => ((cur.value && cur.value.methods.cash) || {})[k] || 0;
-    watch(cur, (v) => { if (loaded.value) emit('state', v); });  // 开班、交班后顶栏的当班状态跟着变
     return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, cashOf, shortTime, timeRange, PAD, padNext, yuan };
   },
 };
@@ -1288,7 +1286,6 @@ const App = {
       </div>
       <span class="grow"></span>
       <div class="tools">
-        <button v-if="can('pos') && storeId" type="button" class="shift-st" :class="{on: shiftNow}" title="查看交班" @click="tab='shift'"><i class="dot"></i>{{ shiftNow ? '当班中 · ' + shiftNow.started_at.slice(11, 16) + ' 开班' : '未开班' }}</button>
         <span class="clock"><span class="ico" v-html="icon('clock')"></span>{{clock}}</span>
         <span class="tb-sep"></span>
         <button type="button" class="tb" :class="{busy: syncing}" :disabled="syncing" title="从服务器获取最新的商品、价格及门店设置" @click="sync"><span class="ico" v-html="icon('refresh')"></span>同步</button>
@@ -1327,15 +1324,15 @@ const App = {
     <template v-else>
       <pos v-if="tab==='pos'" :key="'p'+storeId" :user="user" :store-id="storeId" :settings="settings" :agent="cur.print_mode === 'agent'" :sync="syncN" />
       <orders v-if="tab==='orders'" :key="'o'+storeId" :user="user" :store="cur" :store-id="storeId" :settings="settings" :pending-count="pending" :tick="tick" :agent="cur.print_mode === 'agent'" />
-      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" :sync="syncN" @state="v => shiftNow = v" />
+      <shift v-if="tab==='shift'" :key="'s'+storeId" :store-id="storeId" :user="user" :sync="syncN" />
       <stock v-if="tab==='stock'" :key="'k'+storeId" :store-id="storeId" :can-edit="stockEditable" :sync="syncN" />
       <requisitions v-if="tab==='req'" :key="'r'+storeId" :store-id="storeId" :stock-visible="stockVisible" :sync="syncN" />
     </template>
     <div v-if="newToast" class="new-toast" role="alert">
       <span class="nt-ico"><span class="ico" v-html="icon('bell')"></span></span>
-      <span class="nt-txt"><b>{{newToast.title}}</b><span class="muted">{{newToast.sub}}</span></span>
+      <span class="nt-txt"><b>{{newToast.title}}</b><span class="muted" :class="{bad: newToast.failed}">{{newToastSub}}</span></span>
       <button type="button" class="nt-go" @click="goOrders">去接单</button>
-      <button type="button" class="nt-x" aria-label="关闭" @click="newToast = null"><span class="ico" v-html="icon('x')"></span></button>
+      <button type="button" class="nt-x" aria-label="关闭" @click="hideToast"><span class="ico" v-html="icon('x')"></span></button>
     </div>
   </div>`,
   setup() {
@@ -1375,32 +1372,48 @@ const App = {
           tick.value++;
           if (settings.sound) { beep(3); speak('您有' + fresh.length + '个新订单'); }
           const autoPrint = settings.autoPrintOnline && cur.value.print_mode !== 'agent' && canPrintHere();
-          showNewToast(fresh, autoPrint);
+          const t = showNewToast(fresh, autoPrint);
           if (autoPrint) {
-            for (const o of fresh) printing = printing.then(async () => { try { await printOrder(o.id, false); } catch (e) { err(e); } });
+            for (const o of fresh) printing = printing.then(async () => {
+              try { await printOrder(o.id, false); markPrinted(t, true); } catch (e) { markPrinted(t, false); err(e); }
+            });
           }
         }
       } catch (e) {} finally { polling = false; }
     };
     // 新扫码订单提醒：右上角卡片，点“去接单”到订单页；停留 15 秒，再来新单重新计时
-    const newToast = ref(null); let toastTimer = null;
+    // 打印状态按实际结果显示：发出前“正在打印”，成功“小票已打印”，失败一直留着提醒去补打
+    const newToast = ref(null); let toastTimer = null, toastSeq = 0;
     const where = (o) => ((o.area_name || '') + ' ' + (o.location_note || '')).trim();
-    const showNewToast = (list, printed) => {
+    const hideToast = () => { clearTimeout(toastTimer); newToast.value = null; };
+    const showNewToast = (list, printing) => {
       const n = list.reduce((a, o) => a + (o.item_count || 0), 0), amt = list.reduce((a, o) => a + o.payable_amount, 0);
       newToast.value = list.length === 1
-        ? { title: '新扫码订单' + (where(list[0]) ? ' · ' + where(list[0]) : ''), sub: n + ' 件 · ¥' + yuan(amt) + (printed ? ' · 已自动打印小票' : '') }
-        : { title: list.length + ' 个新扫码订单', sub: list.map(where).filter(Boolean).join('、') + ' · 共 ¥' + yuan(amt) };
-      clearTimeout(toastTimer); toastTimer = setTimeout(() => { newToast.value = null; }, 15000);
+        ? { id: ++toastSeq, title: '新扫码订单' + (where(list[0]) ? ' · ' + where(list[0]) : ''), base: n + ' 件 · ¥' + yuan(amt) }
+        : { id: ++toastSeq, title: list.length + ' 个新扫码订单', base: list.map(where).filter(Boolean).join('、') + ' · 共 ¥' + yuan(amt) };
+      Object.assign(newToast.value, { toPrint: printing ? list.length : 0, printed: 0, failed: 0 });
+      clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 15000);
+      return newToast.value.id;
     };
-    const goOrders = () => { newToast.value = null; tab.value = 'orders'; };
-    // 顶栏当班状态：登录、切门店、同步时取一次；在交班页开班 / 交班时由交班页直接报上来
-    const shiftNow = ref(null), meOpen = ref(false);
-    const loadShift = async () => {
-      if (!storeId.value || !can('pos')) { shiftNow.value = null; return; }
-      const sid = storeId.value;
-      try { const r = await api.get('/api/shifts/current', { store_id: sid }); if (sid === storeId.value) shiftNow.value = r.shift; } catch (e) {}
+    const markPrinted = (id, ok) => {
+      const t = newToast.value;
+      if (!t || t.id !== id) return;  // 卡片已关掉或换成了更新的一张
+      if (ok) t.printed++; else { t.failed++; clearTimeout(toastTimer); }  // 打印失败不自动消失
     };
-    const startPoll = () => { clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
+    const newToastSub = computed(() => {
+      const t = newToast.value;
+      if (!t || !t.toPrint) return t ? t.base : '';
+      if (t.failed) return t.base + ' · 小票打印失败，请到订单页补打';
+      return t.base + (t.printed >= t.toPrint ? ' · 小票已打印' : ' · 正在打印小票…');
+    });
+    // 收款框等弹窗开着时不切页，免得把收银界面卸掉、打断收款
+    const dialogOpen = () => [...document.querySelectorAll('.el-overlay')].some(e => getComputedStyle(e).display !== 'none');
+    const goOrders = () => {
+      if (dialogOpen()) return ElMessage.warning('请先完成或取消当前操作，再去接单');
+      hideToast(); tab.value = 'orders';
+    };
+    const meOpen = ref(false);
+    const startPoll = () => { hideToast(); clearInterval(timer); lastId = 0; primed = false; pollStore = storeId.value; poll(); timer = setInterval(poll, 5000); };
     const afterLogin = async () => {
       stores.value = await api.get('/api/stores');
       const saved = pref('store', null);
@@ -1408,10 +1421,9 @@ const App = {
       tab.value = can('pos') ? 'pos' : 'orders';
       startPoll();
     };
-    const switchStore = () => { setPref('store', storeId.value); startPoll(); };
+    const switchStore = () => { setPref('store', storeId.value); startPoll(); };  // startPoll 会清掉上一家店的提醒
     // 手动同步：重新拿门店设置、账号权限，并让当前页面重新拉商品 / 订单 / 库存（不清购物车、不退出登录）
     const syncN = ref(0), syncing = ref(false);
-    watch([storeId, syncN], loadShift);
     // 页面引用的 js/css 版本号（如 store.js?v=32）；服务器上的版本号变了，说明收银页有更新
     const assetVers = (html) => (html.match(/[\w.-]+\.(?:js|css)\?v=\d+/g) || []).sort().join(',');
     const sync = async () => {
@@ -1440,7 +1452,7 @@ const App = {
         if (r.weak_password) ElMessage({ type: 'warning', duration: 8000, showClose: true, message: '这个账号还在用默认或过于简单的密码，请点右上角头像，选“修改密码”' });
       } catch (e) { err(e); } finally { busy.value = false; }
     };
-    const logout = () => { api.setToken(''); user.value = null; clearInterval(timer); };
+    const logout = () => { api.setToken(''); user.value = null; clearInterval(timer); hideToast(); };
     // 自己改密码：旧密码 + 两次新密码。忘记密码找管理员在后台“账号与权限”里重置
     const changePw = async () => {
       let o, n, n2;
@@ -1454,7 +1466,7 @@ const App = {
       if (n !== n2) return ElMessage.error('两次输入的新密码不一样，没有修改');
       try { const r = await api.post('/api/auth/password', { old_password: o || '', new_password: n }); api.setToken(r.token); ElMessage.success('密码已修改，下次用新密码登录'); } catch (e) { err(e); }
     };
-    window.onUnauthorized = () => { user.value = null; clearInterval(timer); };
+    window.onUnauthorized = () => { user.value = null; clearInterval(timer); hideToast(); };
     // Alt+1~5 切换收银 / 订单 / 交班 / 库存 / 要货
     const tabOk = { pos: () => can('pos'), orders: () => can('orders') || can('pos'), shift: () => can('pos'), stock: () => stockVisible.value, req: () => can('requisition') };
     const onKey = (e) => {
@@ -1471,7 +1483,7 @@ const App = {
     const deskDrawer = () => openDrawer(false);
     onMounted(async () => { if (api.token()) { try { user.value = await api.get('/api/auth/me'); await afterLogin(); } catch (e) {} } });
     onUnmounted(() => { clearInterval(timer); clearInterval(clockTimer); window.removeEventListener('keydown', onKey); });
-    return { icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing, shiftNow, meOpen, newToast, goOrders,
+    return { icon, user, lf, busy, stores, storeId, storeName, cur, tab, pending, tick, clock, settings, can, stockVisible, stockEditable, login, logout, changePw, switchStore, sync, syncN, syncing, meOpen, newToast, newToastSub, hideToast, goOrders,
       desk: deskInfo, openDeskSettings, deskTest, deskDrawer, tabKeys: K.TAB_KEYS, toggleOsk };
   },
 };

@@ -46,17 +46,14 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .me-menu button .ico svg { width: 18px; height: 18px; }
 .me-menu button:active { background: var(--hover); }
 .me-menu button.dng { color: #CB2634; }
-/* 顶栏当班状态：绿点当班中，灰点未开班；点一下到交班页 */
-.ws-top .shift-st { display: inline-flex; align-items: center; gap: 6px; height: 40px; padding: 0 8px; border: 0; background: transparent; color: var(--navy-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
-.ws-top .shift-st .dot { width: 8px; height: 8px; border-radius: 50%; background: #86909C; }
-.ws-top .shift-st.on .dot { background: #23C343; }
-/* 新扫码订单提醒卡片（右上角） */
-.new-toast { position: fixed; top: 76px; right: 16px; z-index: 2100; width: 440px; max-width: calc(100vw - 32px); box-sizing: border-box; background: #fff; border-radius: 14px; box-shadow: 0 12px 32px rgba(16, 33, 63, .18); padding: 14px 12px 14px 16px; display: flex; align-items: center; gap: 12px; }
+/* 新扫码订单提醒卡片（右上角）；层级低于 Element 弹窗（2000 起），收款框等弹窗的遮罩会盖住它 */
+.new-toast { position: fixed; top: 76px; right: 16px; z-index: 1900; width: 440px; max-width: calc(100vw - 32px); box-sizing: border-box; background: #fff; border-radius: 14px; box-shadow: 0 12px 32px rgba(16, 33, 63, .18); padding: 14px 12px 14px 16px; display: flex; align-items: center; gap: 12px; }
 .new-toast .nt-ico { width: 42px; height: 42px; border-radius: 12px; background: #FFECE8; color: #CB2634; display: flex; align-items: center; justify-content: center; flex: none; }
 .new-toast .nt-ico svg { width: 22px; height: 22px; }
 .new-toast .nt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
 .new-toast .nt-txt b, .new-toast .nt-txt .muted { overflow-wrap: anywhere; }
 .new-toast .nt-txt .muted { font-size: 13px; }
+.new-toast .nt-txt .muted.bad { color: #CB2634; }
 .new-toast .nt-go { height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--primary); color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; flex: none; }
 .new-toast .nt-x { width: 36px; height: 44px; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none; padding: 0; }
 .new-toast .nt-x svg { width: 18px; height: 18px; }
@@ -233,7 +230,7 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 @media (max-width: 900px) {
   .ws-body { flex-direction: column; overflow: auto; }
   .pos-right, .olist-pane, .spane.side { width: 100%; }
-  .ws-top .clock, .ws-top .clock + .tb-sep, .ws-top .who .nm, .ws-top .shift-st { display: none; }
+  .ws-top .clock, .ws-top .clock + .tb-sep, .ws-top .who .nm { display: none; }
 }
 .held-dlg .el-dialog__body { padding-top: 4px; }
 .held-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
