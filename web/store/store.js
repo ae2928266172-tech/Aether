@@ -607,6 +607,7 @@ const Orders = {
         <el-table :data="cur.items" class="od-items">
           <el-table-column label="商品" min-width="180"><template #default="{row}"><b>{{row.product_name}}</b><el-tag v-if="row.added_at" size="small" type="info" style="margin-left:4px">换货</el-tag><div v-if="row.sku_name!=='默认'" class="muted">{{row.sku_name}}</div></template></el-table-column>
           <el-table-column prop="qty" label="数量" width="70" align="right" />
+          <el-table-column label="单价" width="100" align="right"><template #default="{row}">¥{{yuan(row.unit_price)}}</template></el-table-column>
           <el-table-column label="金额" width="100" align="right"><template #default="{row}">¥{{yuan(row.amount)}}</template></el-table-column>
           <el-table-column label="已退换" width="80" align="right"><template #default="{row}"><span v-if="row.refunded_qty">{{row.refunded_qty}}</span><span v-else class="muted">—</span></template></el-table-column>
         </el-table>
