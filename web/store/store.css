@@ -37,7 +37,27 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
   color: #fff; font: inherit; font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer; text-decoration: none; white-space: nowrap; }
 .ws-top .tb:disabled { cursor: default; }
 .ws-top .tb.busy .ico svg { animation: spin 0.8s linear infinite; }
-.ws-top .who { display: flex; align-items: center; gap: 8px; color: #fff; font-size: 14px; font-weight: 500; padding: 0 8px 0 4px; white-space: nowrap; }
+.ws-top .who { display: flex; align-items: center; gap: 8px; height: 44px; color: #fff; font: inherit; font-size: 14px; font-weight: 500; padding: 0 8px 0 4px; white-space: nowrap; background: transparent; border: 0; border-radius: 10px; cursor: pointer; }
+.ws-top .who .caret svg { width: 16px; height: 16px; color: var(--navy-muted); }
+/* 头像菜单：修改密码、退出登录 */
+.mepop.el-popover { padding: 6px; }
+.me-menu { display: flex; flex-direction: column; gap: 2px; }
+.me-menu button { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; font: inherit; font-size: 15px; color: var(--text); cursor: pointer; text-align: left; }
+.me-menu button .ico svg { width: 18px; height: 18px; }
+.me-menu button:active { background: var(--hover); }
+.me-menu button.dng { color: #CB2634; }
+/* 新扫码订单提醒卡片（右上角）；层级低于 Element 弹窗（2000 起），收款框等弹窗的遮罩会盖住它 */
+.toast-stack { position: fixed; top: 76px; right: 16px; z-index: 1900; width: 440px; max-width: calc(100vw - 32px); max-height: calc(100vh - 92px); overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 10px; padding-bottom: 4px; }
+.new-toast { box-sizing: border-box; background: #fff; border-radius: 14px; box-shadow: 0 12px 32px rgba(16, 33, 63, .18); padding: 14px 12px 14px 16px; display: flex; align-items: center; gap: 12px; }
+.new-toast .nt-ico { width: 42px; height: 42px; border-radius: 12px; background: #FFECE8; color: #CB2634; display: flex; align-items: center; justify-content: center; flex: none; }
+.new-toast .nt-ico svg { width: 22px; height: 22px; }
+.new-toast .nt-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; font-size: 15px; }
+.new-toast .nt-txt b, .new-toast .nt-txt .muted { overflow-wrap: anywhere; }
+.new-toast .nt-txt .muted { font-size: 13px; }
+.new-toast .nt-txt .muted.bad { color: #CB2634; }
+.new-toast .nt-go { height: 44px; padding: 0 16px; border: 0; border-radius: 10px; background: var(--primary); color: #fff; font: inherit; font-size: 15px; font-weight: 600; cursor: pointer; flex: none; }
+.new-toast .nt-x { width: 36px; height: 44px; border: 0; background: transparent; color: var(--muted); cursor: pointer; display: flex; align-items: center; justify-content: center; flex: none; padding: 0; }
+.new-toast .nt-x svg { width: 18px; height: 18px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .ws-body { flex: 1; overflow: hidden; display: flex; }
 .ws-top .who .avatar { width: 32px; height: 32px; border-radius: 50%; background: var(--navy-line); color: #fff; display: flex; align-items: center; justify-content: center; font-weight: 600; }
@@ -213,7 +233,7 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 @media (max-width: 900px) {
   .ws-body { flex-direction: column; overflow: auto; }
   .pos-right, .olist-pane, .spane.side { width: 100%; }
-  .ws-top .clock, .ws-top .clock + .tb-sep, .ws-top .who span:last-child { display: none; }
+  .ws-top .clock, .ws-top .clock + .tb-sep, .ws-top .who .nm { display: none; }
 }
 .held-dlg .el-dialog__body { padding-top: 4px; }
 .held-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); gap: 14px; }
@@ -258,6 +278,7 @@ button, .card, .rc, .chip, .pk, .kb-k, .fb, .el-button { touch-action: manipulat
 .bigfield i { font-style: normal; }
 .bigfield .el-input__wrapper { box-shadow: none !important; padding: 0; }
 .bigfield .el-input__inner { font-size: 28px; font-weight: 700; text-align: right; height: 56px; }
+.bigfield .el-input__inner::placeholder { font-size: 18px; font-weight: 400; }
 .diffbox { display: flex; justify-content: space-between; align-items: baseline; background: #E8FFEA; color: #00754A; border-radius: 12px; padding: 12px 16px; }
 .diffbox b { font-size: 22px; }
 .diffbox.bad { background: #FFECE8; color: #CB2634; }
