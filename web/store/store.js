@@ -20,6 +20,13 @@ const editable = (el) => !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXT
 const msgBoxOpen = () => !!document.querySelector('.el-message-box');
 
 const METHODS = { cash: '现金', wechat: '微信', alipay: '支付宝', other: '其他' };
+// 班次时间简写：2026-11-24 14:50:28 → 11-24 14:50；同一天下班只写时分，如 11-24 14:50 – 22:30
+const shortTime = (t) => (t ? String(t).slice(5, 16) : '');
+const timeRange = (r) => {
+  if (!r.ended_at) return shortTime(r.started_at) + ' 起 · 当班中';
+  const same = String(r.ended_at).slice(0, 10) === String(r.started_at).slice(0, 10);
+  return shortTime(r.started_at) + ' – ' + (same ? String(r.ended_at).slice(11, 16) : shortTime(r.ended_at));
+};
 const PAD = ['7', '8', '9', 'back', '4', '5', '6', 'clear', '1', '2', '3', 'ok', '00', '0', '.'];
 // 数字键盘输入金额：返回按下 k 之后的值，最多两位小数（ok 由各处自己处理）
 const padNext = (v, k) => {
@@ -1050,7 +1057,7 @@ const Shift = {
   <div class="ws-body shiftpage">
     <section class="spane grow">
       <template v-if="cur">
-        <div class="sp-head"><div><h2>当班中 · {{cur.cashier}}</h2><div class="muted">{{cur.started_at}} 开班 · 备用金 ¥{{yuan(cur.opening_cash)}}</div></div><el-button size="large" @click="loadCur">刷新</el-button></div>
+        <div class="sp-head"><div><h2>当班中 · {{cur.cashier}}</h2><div class="muted">{{shortTime(cur.started_at)}} 开班 · 备用金 ¥{{yuan(cur.opening_cash)}}</div></div><el-button size="large" @click="loadCur">刷新</el-button></div>
         <div class="kpis">
           <div><span>本班单数</span><b>{{cur.orders}}</b></div>
           <div><span>本班净收</span><b>¥{{yuan(cur.net)}}</b></div>
@@ -1066,7 +1073,7 @@ const Shift = {
         </el-table>
       </template>
       <template v-else-if="last">
-        <div class="sp-head"><div><h2>交班完成</h2><div class="muted">{{last.started_at}} — {{last.ended_at}}</div></div></div>
+        <div class="sp-head"><div><h2>交班完成</h2><div class="muted">{{timeRange(last)}}</div></div></div>
         <div class="kpis">
           <div><span>单数</span><b>{{last.orders}}</b></div><div><span>净收</span><b>¥{{yuan(last.net)}}</b></div>
           <div v-if="last.exchange_pay || last.exchange_refund"><span>换货补差 / 退差</span><b class="sm">¥{{yuan(last.exchange_pay)}} / ¥{{yuan(last.exchange_refund)}}</b></div>
@@ -1076,7 +1083,7 @@ const Shift = {
       </template>
       <div class="sp-sec">我的交班记录</div>
       <el-table :data="history">
-        <el-table-column label="时间" min-width="200"><template #default="{row}">{{row.started_at}}<br><span class="muted">{{row.ended_at || '当班中'}}</span></template></el-table-column>
+        <el-table-column label="时间" min-width="200"><template #default="{row}">{{timeRange(row)}}</template></el-table-column>
         <el-table-column prop="orders" label="单数" width="70" align="right" />
         <el-table-column label="净收" width="110" align="right"><template #default="{row}">¥{{yuan(row.net)}}</template></el-table-column>
         <el-table-column label="备用金" width="100" align="right"><template #default="{row}">¥{{yuan(row.opening_cash)}}</template></el-table-column>
@@ -1108,7 +1115,7 @@ const Shift = {
       </template>
     </section>
   </div>`,
-  setup(props) {
+  setup(props, { emit }) {
     const cur = ref(null), loaded = ref(false), opening = ref(''), counted = ref(''), remark = ref(''), busy = ref(false), last = ref(null), history = ref([]);
     const parse = (v) => Shouyin.parseMoney(v);
     const diff = computed(() => { if (!cur.value || String(counted.value).trim() === '') return null; const c = parse(counted.value); return c === null ? null : c - cur.value.expected_cash; });
@@ -1134,7 +1141,8 @@ const Shift = {
     onMounted(() => { loadCur(); loadHistory(); });
     watch(() => props.sync, () => { loadCur(); loadHistory(); });
     const cashOf = (k) => ((cur.value && cur.value.methods.cash) || {})[k] || 0;
-    return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, cashOf, PAD, padNext, yuan };
+    watch(cur, (v) => { if (loaded.value) emit('state', v); });  // 开班、交班后顶栏的当班状态跟着变
+    return { cur, loaded, opening, counted, remark, busy, last, history, diff, loadCur, openShift, closeShift, cashOf, shortTime, timeRange, PAD, padNext, yuan };
   },
 };
 
