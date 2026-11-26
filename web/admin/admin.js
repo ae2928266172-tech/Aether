@@ -105,7 +105,7 @@ const Products = {
         </el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
 
-        <div class="form-section">规格（每个规格可以绑定库存品和扣减量，不同商品可以绑定同一个库存品；图片可拖进格子，不传就用商品图片）</div>
+        <div class="form-section">规格</div>
         <el-table :data="form.skus" border size="small">
           <el-table-column label="图片" width="76"><template #default="{row}"><image-drop v-model="row.image" :size="52" style="margin:0 auto" /></template></el-table-column>
           <el-table-column label="规格名称" min-width="110"><template #default="{row}"><el-input v-model="row.name" size="small" /></template></el-table-column>
@@ -121,7 +121,7 @@ const Products = {
         </el-table>
         <el-button style="margin-top:8px" @click="addSku">添加规格</el-button>
 
-        <div class="form-section">医疗器械等详细资料（可选择打印在小票上）</div>
+        <div class="form-section">详细资料</div>
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="注册证号"><el-input v-model="form.reg_cert_no" /></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="生产许可证号"><el-input v-model="form.production_license_no" /></el-form-item></el-col>
@@ -476,7 +476,6 @@ const DlgPage = {
   emits: ['update:modelValue'],
   template: `
   <div v-if="inline" class="panel">
-    <div v-if="title" class="panel-title" style="margin-bottom:14px">{{title}}</div>
     <slot />
     <div v-if="$slots.footer" class="page-foot"><slot name="footer" /></div>
   </div>
@@ -490,21 +489,21 @@ const Inventory = {
   components: { DlgPage },
   template: `
   <div>
-  <div v-if="view === 'inventory'" class="panel" style="padding-bottom:0">
-    <div class="toolbar" style="margin-bottom:6px"><span class="muted">地点</span><span class="grow"></span>
-      <el-button type="primary" @click="go('stockIn')">入库</el-button><el-button @click="go('stockIn', 'out')">出库</el-button>
-      <el-button @click="go('stockCount')">盘点</el-button><el-button @click="go('requests')">调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button></div>
-    <div class="segs" style="margin-bottom:0;border-bottom:0">
+  <div v-if="view === 'inventory'" class="panel inv-head">
+    <div class="segs">
       <div v-for="l in locations" :key="l.id" class="seg" :class="{on: loc === l.id}" @click="loc = l.id; load()">
         {{l.name}}<span class="n">{{l.kind_text}}</span></div>
       <span class="seg" style="color:var(--primary)" @click="newWarehouse">＋ 新增仓库</span>
     </div>
+    <div class="inv-btns">
+      <el-button type="primary" @click="go('stockIn')">入库</el-button><el-button @click="go('stockIn', 'out')">出库</el-button>
+      <el-button @click="go('stockCount')">盘点</el-button><el-button @click="go('requests')">调拨到门店<span v-if="reqPending" class="badge-n">{{reqPending}}</span></el-button></div>
   </div>
   <template v-if="view === 'inventory'">
     <div class="stats">
       <div class="stat"><div class="k">库存品</div><div class="v">{{rows.length}}</div></div>
       <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div></div>
-      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--warn)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '点击看全部' : '点击只看这些' }}</div></div>
+      <div class="stat clickable" :class="{on: onlyLow}" :title="onlyLow ? '点击看全部' : '点击只看这些'" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--warn)' : ''">{{alertCount}}</div></div>
     </div>
     <div class="panel">
     <div class="toolbar">
@@ -547,15 +546,14 @@ const Inventory = {
   </template>
 
     <dlg-page v-model="dDlg" :inline="docInline" :title="docInline ? '' : docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
-      <div v-if="view === 'stockIn'" class="toolbar"><div class="segs mini"><div class="seg" :class="{on: doc.kind === 'in'}" @click="openDoc('in')">入库</div><div class="seg" :class="{on: doc.kind === 'out'}" @click="openDoc('out')">出库</div></div></div>
-      <el-form label-width="80px" inline>
+      <div v-if="view === 'stockIn'" class="segs" style="margin-bottom:16px"><div class="seg" :class="{on: doc.kind === 'in'}" @click="openDoc('in')">入库</div><div class="seg" :class="{on: doc.kind === 'out'}" @click="openDoc('out')">出库</div></div>
+      <el-form label-width="auto" inline>
         <el-form-item v-if="doc.kind==='out' || doc.kind==='transfer'" label="调出"><el-select v-model="doc.from" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind!=='out'" :label="doc.kind==='transfer' ? '调入' : (doc.kind==='adjust' ? '盘点地点' : '入库到')"><el-select v-model="doc.to" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind==='out'" label="出库原因"><el-select v-model="doc.reason" clearable placeholder="选填" style="width:170px"><el-option v-for="r in outReasons" :key="r" :label="r" :value="r" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind==='in' || (doc.kind==='out' && doc.reason==='退供应商')" label="供应商"><el-select v-model="doc.supplier_id" clearable filterable style="width:170px"><el-option v-for="s in meta.suppliers" :key="s.id" :label="s.name" :value="s.id" /></el-select></el-form-item>
         <el-form-item label="备注"><el-input v-model="doc.remark" style="width:170px" /></el-form-item>
       </el-form>
-      <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '留空表示不盘该项。' : '留空或 0 表示不处理。' }}</div>
       <div class="toolbar" style="margin-bottom:6px">
         <el-input ref="dqInput" v-model="dq" placeholder="搜索名称或编码，空格分隔多个词" clearable style="width:280px" @keyup.enter="dqEnter" />
         <el-checkbox v-model="dFilled">只看已填（{{ filledCount }}）</el-checkbox>
@@ -566,7 +564,7 @@ const Inventory = {
         <el-table-column prop="name" label="库存品" />
         <el-table-column prop="unit" label="单位" width="60" />
         <el-table-column label="来源现有" width="90"><template #default="{row}">{{ stockAt(doc.kind==='in' || doc.kind==='adjust' ? doc.to : doc.from, row.id) }}</template></el-table-column>
-        <el-table-column :label="doc.kind==='adjust' ? '实盘数' : '数量'" width="110"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
+        <el-table-column :label="doc.kind==='adjust' ? '实盘数' : '数量'" width="110"><template #default="{row}"><el-input v-model="row.qty" size="small" :placeholder="doc.kind==='adjust' ? '不盘' : '不处理'" /></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="批号" width="110"><template #default="{row}"><el-input v-model="row.batch_no" size="small" /></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="生产日期" width="140"><template #default="{row}"><el-date-picker v-model="row.production_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
         <el-table-column v-if="doc.kind==='in'" label="有效期至" width="140"><template #default="{row}"><el-date-picker v-model="row.expiry_date" type="date" value-format="YYYY-MM-DD" size="small" style="width:124px" placeholder="选填" /></template></el-table-column>
@@ -1298,7 +1296,7 @@ const ReceiptSettings = {
       <el-form-item label="底部走纸"><el-input-number v-model="f.bottom_blank" :min="0" :max="10" /> <span class="muted">&nbsp;行</span></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button><el-button @click="testPrint">打印测试页</el-button></el-form-item>
     </el-form>
-    <div><div class="muted" style="margin-bottom:6px">预览（示例订单）</div><div class="receipt-preview"><iframe :srcdoc="html"></iframe></div></div>
+    <div><div class="muted" style="margin-bottom:6px">预览</div><div class="receipt-preview"><iframe :srcdoc="html"></iframe></div></div>
   </div>`,
   setup() {
     const f = reactive({ medical_fields: [] }), html = ref(''), last = ref(null);
@@ -1445,7 +1443,7 @@ const Rules = {
       <el-form-item label="区域叫法"><el-input v-model="f.area_label" placeholder="如：病区、楼层" /></el-form-item>
       <el-form-item label="位置叫法"><el-input v-model="f.location_label" placeholder="如：床号、桌号" /></el-form-item>
       <el-form-item label="小程序下单必须填位置"><el-switch v-model="f.online_location_required" /></el-form-item>
-      <el-form-item label="退款期限">收款后 <el-input-number v-model="f.refund_days" :min="0" :max="3650" style="margin:0 8px" /> 天内门店可以退货退款<span class="muted" style="margin-left:8px">0 表示不限；管理员不受此限制</span></el-form-item>
+      <el-form-item label="退款期限">收款后 <el-input-number v-model="f.refund_days" :min="0" :max="3650" style="margin:0 8px" /> 天内可退<span class="muted" style="margin-left:8px">0 为不限，管理员不受限</span></el-form-item>
       <el-form-item label="临期提醒"><el-input-number v-model="f.expiry_alert_days" :min="0" :max="3650" /><span style="margin-left:8px">天内到期</span></el-form-item>
       <el-form-item label="顾客访问网址"><el-input v-model="f.public_url" placeholder="如 https://shop.example.com，上线后填正式域名" />
         <div class="hint" style="margin-top:2px">区域二维码用这个网址生成。留空时用当前打开后台的地址，那样生成的码顾客在外面扫不开。</div></el-form-item>
@@ -1602,7 +1600,7 @@ const Dashboard = {
     </div>
     <div class="dash-row">
       <div class="panel">
-        <div class="panel-title">下单时段</div>
+        <div class="panel-title" style="margin-bottom:14px">下单时段</div>
         <heat-map v-if="heat" :heat="heat" />
       </div>
       <div class="panel">
@@ -1613,7 +1611,7 @@ const Dashboard = {
     </div>
     <div class="dash-row">
       <div class="panel">
-        <div class="panel-title">今日各门店</div>
+        <div class="panel-title" style="margin-bottom:14px">今日各门店</div>
         <el-table v-if="byStore.length" :data="byStore">
           <el-table-column prop="store_name" label="门店" min-width="160" />
           <el-table-column prop="orders" label="单数" width="80" align="right" />
