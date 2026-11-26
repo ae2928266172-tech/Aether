@@ -14,7 +14,8 @@ from sqlalchemy.exc import IntegrityError
 
 from . import db as dbmod
 from . import media
-from .routers import auth, catalog, customer, orders, print_agent, reports, requisitions, settings, shifts, stores
+from .routers import (auth, catalog, customer, orders, pay, print_agent, reports, requisitions, settings, shifts,
+                      stores)
 from .seed import init_db
 
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")
@@ -52,7 +53,7 @@ class MarkWrites:
 app.add_middleware(MarkWrites)
 app.include_router(media.router)  # 缩略图要排在 /media 静态目录前面
 
-for r in (auth, catalog, stores, orders, customer, reports, settings, print_agent, requisitions, shifts):
+for r in (auth, catalog, stores, orders, customer, reports, settings, print_agent, requisitions, shifts, pay):
     app.include_router(r.router)
 
 
