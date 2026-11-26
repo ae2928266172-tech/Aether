@@ -502,20 +502,37 @@ const Inventory = {
   </div>
   <template v-if="view === 'inventory'">
     <div class="stats">
-      <div class="stat"><div class="k">库存品</div><div class="v">{{rows.length}}</div><div class="s">本地点有记录的</div></div>
-      <div class="stat"><div class="k">期间入库 + 调入</div><div class="v">{{fmtN(sumOf('in') + sumOf('transfer_in'))}}</div></div>
-      <div class="stat"><div class="k">期间销售</div><div class="v">{{fmtN(sumOf('sale') - sumOf('sale_return'))}}</div><div class="s">已扣除退货回补</div></div>
-      <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div><div class="s">需要补货或核对</div></div>
-      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--warn)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '只看预警中 · 点击看全部' : '在“库存品”里设预警量 · 点击只看这些' }}</div></div>
+      <div class="stat"><div class="k">库存品</div><div class="v">{{rows.length}}</div></div>
+      <div class="stat"><div class="k">库存为 0 或负数</div><div class="v" :style="lowCount ? 'color:var(--danger)' : ''">{{lowCount}}</div></div>
+      <div class="stat clickable" @click="onlyLow = !onlyLow"><div class="k">低于预警量</div><div class="v" :style="alertCount ? 'color:var(--warn)' : ''">{{alertCount}}</div><div class="s">{{ onlyLow ? '点击看全部' : '点击只看这些' }}</div></div>
     </div>
     <div class="panel">
     <div class="toolbar">
+      <el-input v-model="kw" placeholder="搜索名称或编码" clearable style="width:220px" />
+      <el-button @click="load">刷新</el-button>
+      <span class="grow"></span>
+      <span class="link-more" @click="go('docs', 'ledger')">库存台账 ›</span>
+    </div>
+    <el-table :data="shownRows" :row-class-name="({row}) => row.current <= 0 || row.low ? 'row-low' : ''">
+      <el-table-column label="库存品" min-width="150"><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag><el-tag v-if="nearExp(row.earliest_expiry)" type="warning" size="small" style="margin-left:6px">{{ expText(row.earliest_expiry) }}</el-tag></div><div class="c-sub">{{row.unit}}<span v-if="row.earliest_expiry"> · 最早到期 {{row.earliest_expiry}}</span></div></template></el-table-column>
+      <el-table-column label="预警量" min-width="90" align="right"><template #default="{row}">{{ row.alert_qty == null ? '–' : fmtN(row.alert_qty) }}</template></el-table-column>
+      <el-table-column label="当前库存" min-width="110" align="right"><template #default="{row}">
+        <b class="money" :style="row.current <= 0 ? 'color:var(--danger)' : ''">{{fmtN(row.current)}}</b></template></el-table-column>
+    </el-table>
+    </div>
+  </template>
+  <div v-if="view === 'docs'" class="segs" style="margin-bottom:12px">
+    <div class="seg" :class="{on: docTab === 'ledger'}" @click="openLedger">库存台账</div>
+    <div class="seg" :class="{on: docTab === 'docs'}" @click="docTab = 'docs'; openDocs()">出入库单据</div>
+  </div>
+  <template v-if="view === 'docs' && docTab === 'ledger'">
+    <div class="panel">
+    <div class="toolbar">
+      <el-select v-model="loc" style="width:150px" @change="load"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
       <el-input v-model="kw" placeholder="搜索名称或编码" clearable style="width:200px" />
       <el-date-picker v-model="range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
       <el-button type="primary" @click="load">查询</el-button>
       <el-button @click="expLedger">导出</el-button>
-      <span class="grow"></span>
-      <span class="link-more" @click="go('docs')">单据与台账 ›</span>
     </div>
     <el-table :data="shownRows" show-summary :summary-method="summary" :row-class-name="({row}) => row.current <= 0 || row.low ? 'row-low' : ''">
       <el-table-column label="库存品" min-width="150" fixed><template #default="{row}"><div class="c-main">{{row.name}}<el-tag v-if="row.low" type="danger" size="small" style="margin-left:6px">低于预警 {{row.alert_qty}}</el-tag><el-tag v-if="nearExp(row.earliest_expiry)" type="warning" size="small" style="margin-left:6px">{{ expText(row.earliest_expiry) }}</el-tag></div><div class="c-sub">{{row.unit}}<span v-if="row.earliest_expiry"> · 最早到期 {{row.earliest_expiry}}</span></div></template></el-table-column>
@@ -602,7 +619,7 @@ const Inventory = {
         <el-table-column label="剩余" width="90" align="right"><template #default="{row}"><b>{{row.qty}}</b> {{row.unit}}</template></el-table-column>
       </el-table>
     </dlg-page>
-    <dlg-page v-model="lDlg" :inline="view === 'docs'" title="出入库单据" width="980px" top="4vh">
+    <dlg-page v-if="view !== 'docs' || docTab === 'docs'" v-model="lDlg" :inline="view === 'docs'" :title="view === 'docs' ? '' : '出入库单据'" width="980px" top="4vh">
       <div class="toolbar">
         <el-select v-model="lq.kind" placeholder="全部类型" clearable style="width:110px" @change="loadDocs"><el-option v-for="(t, k) in kindText" :key="k" :label="t" :value="k" /></el-select>
         <el-select v-model="lq.location_id" placeholder="全部地点" clearable style="width:140px" @change="loadDocs"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
@@ -712,6 +729,8 @@ const Inventory = {
     const docParams = () => ({ kind: lq.kind || undefined, location_id: lq.location_id || undefined, begin: (lq.range || [])[0], end: (lq.range || [])[1], keyword: lq.keyword });
     const loadDocs = async () => { try { docs.value = await api.get('/api/stock-docs', docParams()); } catch (e) { err(e); } };
     const openDocs = () => { lq.location_id = loc.value; lDlg.value = true; loadDocs(); };
+    const docTab = ref('ledger');
+    const openLedger = () => { docTab.value = 'ledger'; load(); };
     const expDocs = async () => { try { await api.download('/api/stock-docs', docParams()); } catch (e) { err(e); } };
     const expLedger = async () => { try { await api.download('/api/stock-ledger', { location_id: loc.value, begin: (range.value || [])[0], end: (range.value || [])[1], keyword: kw.value }); } catch (e) { err(e); } };
     const voidDoc = async (row) => {
@@ -809,11 +828,11 @@ const Inventory = {
       else if (props.view === 'stockCount') openDoc('adjust');
       else if (props.view === 'requests') openReqs();
       else if (props.view === 'batches') openBatches();
-      else if (props.view === 'docs') openDocs();
+      else if (props.view === 'docs') { let k = ''; try { k = sessionStorage.getItem('stockKind'); } catch (e) {} if (k === 'docs') { docTab.value = 'docs'; openDocs(); } else openLedger(); }
       try { sessionStorage.removeItem('stockKind'); } catch (e) {}
     });
     return { reqPending, rqDlg, reqs, rq, ffDlg, ff, loadReqs, openReqs, openFulfill, submitFulfill, rejectReq, fetchBal, expiryDays, bDlg, batches, bq, nearExp, expText, loadBatches, openBatches, splitLine, outReasons, kindText, lineAmt, docAmt, diffOf, lDlg, docs, lq, loadDocs, openDocs, expDocs, expLedger, voidDoc, yuan,
-      docInline, locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, dq, dFilled, dPage, dSize, dLoading, dTable, dqInput, filledCount, docMatched, docShown, dqEnter, mDlg, moves, mTitle, showMoves, newWarehouse };
+      docTab, openLedger, docInline, locations, loc, range, kw, rows, cols, load, summary, fmtN, sumOf, lowCount, onlyLow, alertCount, shownRows, dDlg, saving, doc, docTitle, openDoc, submitDoc, stockAt, dq, dFilled, dPage, dSize, dLoading, dTable, dqInput, filledCount, docMatched, docShown, dqEnter, mDlg, moves, mTitle, showMoves, newWarehouse };
   },
 };
 
@@ -1694,12 +1713,12 @@ const MENU = [
   ['revenue', '营收报表', 'reports', Revenue, '经营', 'chart', '按门店、日 / 周 / 月统计，可导出'],
   ['shifts', '交班记录', 'reports', Shifts, '经营', 'clock', '每个收银员每一班的收款、备用金、现金差额'],
   ['productSales', '商品销售核对', 'reports', ProductSales, '经营', 'check', '按商品或按分类查卖了多少，展开看逐单明细'],
-  ['inventory', '库存总览', 'inventory', Inventory, '库存', 'warehouse', '仓库和各门店的库存、期间进出与预警'],
+  ['inventory', '库存总览', 'inventory', Inventory, '库存', 'warehouse', '仓库和各门店的实时库存与预警'],
   ['stockIn', '入库 / 出库', 'inventory', Inventory, '库存', 'box', '采购到货登记入库；出库用于报损、领用等'],
   ['stockCount', '盘点', 'inventory', Inventory, '库存', 'scan', '按实点数量调整库存，差额记入台账'],
   ['requests', '要货与调拨', 'inventory', Inventory, '库存', 'refresh', '处理门店要货申请，仓库调拨到门店'],
   ['batches', '批次 / 有效期', 'inventory', Inventory, '库存', 'clock', '按批次查看生产日期、有效期和剩余数量'],
-  ['docs', '单据与台账', 'inventory', Inventory, '库存', 'inbox', '入库、出库、盘点、调拨单据和库存流水'],
+  ['docs', '单据与台账', 'inventory', Inventory, '库存', 'inbox', '库存台账（期间进出）、入库、出库、盘点、调拨单据和库存流水'],
   ['stores', '门店与区域', 'stores', Stores, '门店', 'store', '门店设置、区域二维码、出票方式'],
   ['receipt', '小票设置', 'receipt_config', ReceiptSettings, '门店', 'printer', '小票文字、字段、排版、底部图片'],
   ['rules', '业务规则', 'stores', Rules, '门店', 'sliders', '扣库存时机、库存不够能否卖'],
