@@ -756,7 +756,7 @@ const Orders = {
       </el-table>
       <el-form label-width="100px" style="margin-top:12px">
         <el-form-item label="退款方式"><el-select v-model="rf.method" style="width:140px"><el-option v-for="(t,k) in methods" :key="k" :label="t" :value="k" /></el-select></el-form-item>
-        <el-form-item label="退回库存"><el-checkbox v-model="rf.restock">退回本店库存</el-checkbox></el-form-item>
+        <el-form-item label="退回库存"><el-switch v-model="rf.restock" /></el-form-item>
         <el-form-item label="原因"><el-input v-model="rf.reason" /></el-form-item>
       </el-form>
       <template #footer><el-button link type="primary" style="float:left" @click="refundAll">全部退</el-button><el-button @click="rDlg=false">取消</el-button><el-button type="warning" :loading="rBusy" @click="doRefund">确认退款</el-button></template>
@@ -1174,10 +1174,10 @@ const Stock = {
       <el-table-column label="库存" width="100" align="right"><template #default="{row}"><b :style="{color: row.qty <= 0 ? '#CB2634' : (row.low ? '#86501A' : '')}">{{row.qty}}</b></template></el-table-column>
       <el-table-column label="最早到期" width="130"><template #default="{row}">{{row.earliest_expiry || '—'}}</template></el-table-column>
       <el-table-column label="状态" width="110"><template #default="{row}"><el-tag v-if="row.qty <= 0" type="danger" round>缺货</el-tag><el-tag v-else-if="row.low" type="warning" round>该补货了</el-tag></template></el-table-column>
-      <el-table-column v-if="adjusting" label="实盘数" width="150"><template #default="{row}"><el-input v-model="row.real" inputmode="decimal" size="large" /></template></el-table-column>
+      <el-table-column v-if="adjusting" label="实盘数" width="150"><template #default="{row}"><el-input v-model="row.real" inputmode="decimal" size="large" placeholder="不盘" /></template></el-table-column>
     </el-table>
     <div v-if="adjusting" class="sp-foot"><button type="button" class="bigbtn" @click="adjusting=false">取消</button><button type="button" class="bigbtn pri" @click="submit">提交盘点</button></div>
-    <div class="note">没填实盘数的库存品保持不变。</div>
+    
   </section></div>`,
   setup(props) {
     const kw = ref(''), rows = ref([]), adjusting = ref(false), onlyLow = ref(false); let reqId = '';
