@@ -91,7 +91,7 @@ def on_paid(db: Session, txn: PayTxn):
     ctx = txn.context or {}
     if ctx.get("kind") != "online" or not txn.order_id:
         return
-    order = db.scalar(select(Order).where(Order.id == txn.order_id).with_for_update())
+    order = svc.get_order(db, txn.order_id, lock=True)
     if order.status != "awaiting_pay" or order.pay_status != "unpaid":
         # 单子已取消（超时）或已经用别的交易付过：这笔钱原路退回
         try:
