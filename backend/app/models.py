@@ -374,6 +374,7 @@ class Order(Base, TimestampMixin):
     """订单。门店收银单和小程序订单都在这里，用 source 区分。
 
     status：pending 待接单 → accepted 已接单 → completed 已完成；cancelled 已取消
+           扫码点单开通在线付款后，下单先是 awaiting_pay 待付款（门店看不到），付成功才进入 pending / accepted
     pay_status：unpaid 未收款 / paid 已收款 / partial_refunded 部分退款 / refunded 已全额退款
     """
     __tablename__ = "orders"
@@ -407,6 +408,9 @@ class Order(Base, TimestampMixin):
     print_count: Mapped[int] = mapped_column(Integer, default=0)
     request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     collect_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 收款请求号：网络重试时直接返回已收款结果
+    # 门店看到这单的先后号（新订单提醒按它取）。待付款的单付成功才编号，所以晚付的单不会被提醒漏掉
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    pay_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # 待付款的最晚付款时间
     items: Mapped[list["OrderItem"]] = relationship(lazy="selectin", order_by="OrderItem.id")
     payments: Mapped[list["Payment"]] = relationship(lazy="selectin", order_by="Payment.id")
     store: Mapped[Store] = relationship(lazy="joined")
@@ -454,7 +458,7 @@ class OrderItem(Base):
 class Payment(Base):
     """收款 / 退款记录。method：cash 现金、wechat 微信、alipay 支付宝、other 其他。
 
-    注意：这里只是“店员确认已收款”的记账，不代表接入了在线支付。
+    pay_txn_id 为空的是店员确认后记账；不为空的是微信支付 / 支付宝在线收款，钱以支付平台为准。
     """
     __tablename__ = "payments"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -468,6 +472,7 @@ class Payment(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     refund_id: Mapped[int | None] = mapped_column(ForeignKey("refunds.id"), nullable=True)
     exchange_id: Mapped[int | None] = mapped_column(ForeignKey("exchanges.id"), nullable=True)  # 换货补差 / 退差
+    pay_txn_id: Mapped[int | None] = mapped_column(ForeignKey("pay_txns.id"), nullable=True)  # 在线收款的交易
 
 
 class Refund(Base):
@@ -563,3 +568,50 @@ class Setting(Base):
     __tablename__ = "settings"
     key: Mapped[str] = mapped_column(String(50), primary_key=True)
     value: Mapped[dict] = mapped_column(JSON)
+
+
+# ---------------- 在线收款（微信支付 / 支付宝） ----------------
+
+class PayTxn(Base):
+    """一笔发到微信支付 / 支付宝的收款交易。
+
+    out_no 是我们给支付平台的商户单号，全局唯一；同一订单换方式、重扫付款码都会新建一笔。
+    status：pending 等待付款（含顾客正在输密码）/ paid 已付 / failed 失败 / closed 已关闭（超时或撤销）。
+    钱以支付平台为准：只有验签通过的回调或主动查单结果才能把它改成 paid。
+    """
+    __tablename__ = "pay_txns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    out_no: Mapped[str] = mapped_column(String(32), unique=True)
+    provider: Mapped[str] = mapped_column(String(10))  # wechat / alipay
+    scene: Mapped[str] = mapped_column(String(10))  # micropay 扫付款码 / native 出码 / jsapi 微信内网页 / wap 手机网站
+    order_id: Mapped[int | None] = mapped_column(ForeignKey("orders.id"), nullable=True, index=True)
+    amount: Mapped[int] = mapped_column(Integer)  # 分
+    subject: Mapped[str] = mapped_column(String(100), default="")
+    status: Mapped[str] = mapped_column(String(10), default="pending", index=True)
+    trade_no: Mapped[str] = mapped_column(String(64), default="")  # 支付平台交易号
+    payer: Mapped[str] = mapped_column(String(64), default="")  # 微信 openid / 支付宝买家 ID
+    message: Mapped[str] = mapped_column(String(200), default="")  # 失败原因等
+    refunded: Mapped[int] = mapped_column(Integer, default=0)  # 已成功退款金额（分）
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+    paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)  # 收银端请求号，防重复发起
+    # 付款成功后要做的事：收银时是 {"kind": "pos", 门店、商品、折扣……}，付成功再开单扣库存
+    context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+
+class PayRefundTxn(Base):
+    """一笔原路退款。status：processing 退款中 / success 已到账 / failed 失败。"""
+    __tablename__ = "pay_refund_txns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    out_refund_no: Mapped[str] = mapped_column(String(32), unique=True)
+    txn_id: Mapped[int] = mapped_column(ForeignKey("pay_txns.id"), index=True)
+    refund_id: Mapped[int | None] = mapped_column(ForeignKey("refunds.id"), nullable=True)  # 对应的退货退款单
+    amount: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(12), default="processing", index=True)
+    refund_no: Mapped[str] = mapped_column(String(64), default="")  # 支付平台退款单号
+    message: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)

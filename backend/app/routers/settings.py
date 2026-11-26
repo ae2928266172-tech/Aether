@@ -97,6 +97,13 @@ def put_rules(body: dict, db: Session = Depends(get_db), user: User = Depends(re
         body["public_url"] = str(body["public_url"] or "").strip().rstrip("/")
         if body["public_url"] and not body["public_url"].startswith(("http://", "https://")):
             raise HTTPException(400, "顾客访问网址要以 http:// 或 https:// 开头")
+    for k in ("license_no", "service_phone"):
+        if k in body:
+            body[k] = str(body[k] or "").strip()[:60]
+    if "license_image" in body:
+        body["license_image"] = str(body["license_image"] or "").strip()
+        if body["license_image"] and not body["license_image"].startswith("/media/"):
+            raise HTTPException(400, "备案凭证图片请重新上传")
     from .. import audit
     before = dict(get_setting(db, "rules"))
     v = set_setting(db, "rules", body)

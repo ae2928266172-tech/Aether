@@ -472,3 +472,13 @@ body:not(.show-keys) kbd, body:not(.show-keys) .keys, body:not(.show-keys) .keyh
   @keyframes done-pop { from { opacity: 0; } }
   @keyframes osk-in { from { opacity: 0; } }
 }
+/* 在线收款（微信 / 支付宝） */
+.paybox .olpay { display: flex; flex-direction: column; align-items: stretch; gap: 12px; background: #F7F8FA; border-radius: 14px; padding: 18px; text-align: center; }
+.olpay .ol-t { font-size: 18px; font-weight: 600; color: var(--text); }
+.olpay .ol-s { display: flex; align-items: center; justify-content: center; gap: 8px; font-size: 15px; color: var(--text-2); }
+.olpay .ol-or { font-size: 13px; color: var(--text-3, #86909C); }
+.olpay .ol-err { color: #F53F3F; font-size: 14px; line-height: 1.6; }
+.olpay .ol-qr { width: 220px; height: 220px; margin: 0 auto; image-rendering: pixelated; background: #fff; padding: 8px; border-radius: 8px; }
+.olpay .el-button + .el-button { margin-left: 0; }
+.olpay .spin { width: 14px; height: 14px; border: 2px solid var(--primary); border-right-color: transparent; border-radius: 50%; animation: olspin .8s linear infinite; }
+@keyframes olspin { to { transform: rotate(360deg); } }

@@ -12,7 +12,7 @@ from datetime import timedelta
 from decimal import Decimal
 
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import event, func, inspect, select
 from sqlalchemy.orm import Session
 
 from ..db import now
@@ -24,7 +24,7 @@ from .inventory import change_stock, defective_location, find_batch, lock_balanc
 from .printq import auto_enqueue
 
 PAY_METHODS = {"cash": "现金", "wechat": "微信", "alipay": "支付宝", "other": "其他"}
-STATUS_TEXT = {"pending": "待接单", "accepted": "已接单", "completed": "已完成", "cancelled": "已取消"}
+STATUS_TEXT = {"awaiting_pay": "待付款", "pending": "待接单", "accepted": "已接单", "completed": "已完成", "cancelled": "已取消"}
 PAY_STATUS_TEXT = {"unpaid": "未收款", "paid": "已收款", "partial_refunded": "部分退款", "refunded": "已退款"}
 
 
@@ -53,6 +53,28 @@ def order_no(db: Session, channel: str = "pos") -> str:
     row.seq = (row.seq or 0) + 1
     db.flush()
     return f"{NO_PREFIX[channel]}{day}{row.seq:04d}"
+
+
+def _next_seq(db: Session) -> int:
+    row = db.get(OrderNoCounter, {"kind": "seq", "day": "-"}, with_for_update=db.get_bind().dialect.name != "sqlite")
+    if row is None:
+        # 第一次用：从现有订单的最大号接着数（老订单没有 seq，按 id 算）
+        start = db.scalar(select(func.max(func.coalesce(Order.seq, Order.id)))) or 0
+        row = OrderNoCounter(kind="seq", day="-", seq=start)
+        db.add(row)
+    row.seq += 1
+    return row.seq
+
+
+@event.listens_for(Session, "before_flush")
+def _assign_seq(session, _ctx, _inst):
+    """新订单、待付款刚付成功的订单，给一个门店可见先后号。"""
+    with session.no_autoflush:
+        for obj in list(session.new) + list(session.dirty):
+            if not isinstance(obj, Order) or obj.seq is not None or obj.status == "awaiting_pay":
+                continue
+            if obj in session.new or "awaiting_pay" in (inspect(obj).attrs.status.history.deleted or ()):
+                obj.seq = _next_seq(session)
 
 
 def log(db: Session, order: Order, action: str, detail: str = "", user: User | None = None):
@@ -361,20 +383,42 @@ def online_create(db: Session, customer_id: int, area: Area, lines: list[dict], 
     check_order(db, area, order.items)
     order.store = store
     apply_pricing(order, None, None, None)
+    pay_first = online_pay_required(db)
+    if pay_first:  # 必须在线付款：先待付款，付成功才给门店（扫码点单规则，2026-11-26 Aether 定）
+        order.status = "awaiting_pay"
+        order.pay_deadline = now() + timedelta(minutes=PAY_MINUTES)
     db.add(order)
     db.flush()
-    if rules["online_deduct_on"] == "create":
+    if rules["online_deduct_on"] == "create" or pay_first:  # 待付款也先占库存，超时取消时回补
         deduct_stock(db, order, rules["online_allow_negative"], None)
     log(db, order, "下单", f"{area.name} {location_note}")
+    if pay_first:
+        return order
+    release_online(db, order, rules)
+    return order
+
+
+PAY_MINUTES = 15
+
+
+def online_pay_required(db: Session) -> bool:
+    from .pay.online import h5_providers
+    return bool(h5_providers())
+
+
+def release_online(db: Session, order: Order, rules: dict | None = None):
+    """扫码订单交给门店：自动接单（按设置）并按门店设置出票。下单时（不用在线付）或付款成功后调用。"""
+    rules = rules or get_setting(db, "rules")
     if rules.get("online_auto_accept", True):  # 默认直接接单，不用店员手动点
         if not order.stock_deducted:
             deduct_stock(db, order, rules["online_allow_negative"], None)
         order.status = "accepted"
         order.accepted_at = now()
         log(db, order, "接单", "自动接单")
+    else:
+        order.status = "pending"
     db.flush()
     auto_enqueue(db, order)
-    return order
 
 
 def accept(db: Session, order: Order, user: User) -> Order:
@@ -417,9 +461,9 @@ def cancel(db: Session, order: Order, user: User | None, reason: str = "", by_cu
         return order
     if order.pay_status != "unpaid":
         raise HTTPException(409, "订单已收款，请走退货退款")
-    if by_customer and order.status != "pending":
+    if by_customer and order.status not in ("pending", "awaiting_pay"):
         raise HTTPException(409, "门店已接单，请联系门店取消")
-    if order.status not in ("pending", "accepted"):
+    if order.status not in ("pending", "accepted", "awaiting_pay"):
         raise HTTPException(409, f"订单{STATUS_TEXT[order.status]}，不能取消")
     restore_stock(db, order, {i.id: i.qty for i in order.items}, user)
     order.stock_deducted = False

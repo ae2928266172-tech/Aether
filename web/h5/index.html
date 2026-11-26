@@ -140,6 +140,18 @@
     .ord .h b { font-size: 16px; }
     .ord .g { color: var(--ink-2); font-size: 14px; line-height: 1.5; }
     .ord .f { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+    .lic { padding: 18px 4px 28px; font-size: 12px; line-height: 1.8; color: var(--ink-2); }
+    .lic a { color: inherit; text-decoration: underline; margin-left: 6px; }
+    .item .d.med, .spec-top .d.med { font-size: 12px; }
+    .medwarn { font-size: 12px; line-height: 1.6; color: var(--ink-2); margin: 4px 2px 12px; }
+    .ord .f .acts { display: flex; gap: 8px; }
+    .link.pay { background: var(--accent); color: var(--ink); }
+    .paysum { text-align: center; padding: 8px 0 18px; }
+    .paysum .money { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .paysum .muted { margin-top: 6px; font-size: 14px; }
+    .payway { margin-top: 12px; color: #fff; }
+    .payway.wechat { background: #07C160; }
+    .payway.alipay { background: #1677FF; }
     .ord .f .money { font-size: 17px; font-weight: 700; font-variant-numeric: tabular-nums; }
     .link { color: #d4553a; font-size: 14px; height: 32px; padding: 0 14px; border-radius: 16px; background: rgba(212,85,58,.1); font-weight: 600; }
     .muted { color: var(--ink-2); font-size: 12px; }
@@ -220,6 +232,7 @@
                 <div class="n">{{p.name}}</div>
                 <div class="tags" v-if="p.min_qty > 1 || p.max_qty || p.skus.length > 1"><span v-if="p.min_qty > 1" class="tag">{{p.min_qty}} 件起</span><span v-if="p.max_qty" class="tag">每单限 {{p.max_qty}} 件</span><span v-if="p.skus.length > 1" class="tag gray">{{p.skus.length}} 种规格</span></div>
                 <div class="d" v-if="p.description">{{p.description}}</div>
+                <div class="d med" v-if="p.reg_cert_no">注册证/备案编号：{{p.reg_cert_no}}</div>
                 <div class="foot">
                   <div class="price"><small>¥</small>{{yuan(minPrice(p))}}<em v-if="p.skus.length > 1">起</em></div>
                   <button v-if="p.skus.length > 1" class="cta" @click="spec=p">选规格<i v-if="pTotal(p)">{{pTotal(p)}}</i></button>
@@ -227,6 +240,11 @@
                 </div>
               </div>
             </div>
+          </div>
+          <div v-if="!kw && (area.license_no || area.service_phone)" class="lic">
+            <div v-if="area.license_no">第二类医疗器械经营备案编号：{{area.license_no}}<a v-if="area.license_image" :href="area.license_image" target="_blank">查看凭证</a></div>
+            <div v-if="area.service_phone">售后与投诉电话：<a :href="'tel:' + area.service_phone">{{area.service_phone}}</a></div>
+            <div v-if="hasMed">购买和使用前请仔细阅读产品说明书或者在医务人员的指导下购买和使用</div>
           </div>
         </div>
       </div>
@@ -241,7 +259,7 @@
     <transition name="sheet"><div v-if="spec" class="mask" @click.self="spec=null"><div class="sheet" v-drag-close="() => spec = null">
       <div class="grab"><h3>选规格</h3><button class="x" aria-label="关闭" @click="spec=null"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
       <div class="body">
-        <div class="spec-top"><div class="img" :style="pimg(spec) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(spec), 240)) + ')'} : {}"><template v-if="!pimg(spec)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div><div><div class="n">{{spec.name}}</div><div class="d" v-if="spec.description || limText(spec)">{{[limText(spec), spec.description].filter(Boolean).join(' · ')}}</div></div></div>
+        <div class="spec-top"><div class="img" :style="pimg(spec) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(spec), 240)) + ')'} : {}"><template v-if="!pimg(spec)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div><div><div class="n">{{spec.name}}</div><div class="d" v-if="spec.description || limText(spec)">{{[limText(spec), spec.description].filter(Boolean).join(' · ')}}</div><div class="d med" v-if="spec.reg_cert_no">注册证/备案编号：{{spec.reg_cert_no}}<br>购买和使用前请仔细阅读产品说明书或者在医务人员的指导下购买和使用</div></div></div>
         <div v-for="s in spec.skus" :key="s.id" class="spec" :class="{has: qty[s.id]}">
           <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg"><span><div class="sk">{{s.name}}</div><div class="pr">¥{{yuan(s.price)}}</div></span></span>
           <span class="qty"><template v-if="qty[s.id]"><button class="minus" aria-label="减少" @click="dec(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><span :key="qty[s.id]" class="num">{{qty[s.id]}}</span></template><button aria-label="增加" @click="inc(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
@@ -263,7 +281,18 @@
           <div class="field"><label>联系电话</label><input v-model="phone" type="tel" inputmode="tel" maxlength="20" placeholder="选填"></div>
           <div class="field"><label>备注</label><textarea v-model="remark" rows="1" placeholder="选填"></textarea></div>
         </div>
-        <button class="btn block" :disabled="busy" @click="submit">{{busy ? '正在提交…' : '提交订单'}}</button>
+        <div v-if="cartMed" class="medwarn">购买和使用前请仔细阅读产品说明书或者在医务人员的指导下购买和使用</div>
+        <button class="btn block" :disabled="busy" @click="submit">{{busy ? '正在提交…' : (payOn ? '提交订单并付款' : '提交订单')}}</button>
+      </div>
+    </div></div></transition>
+    <transition name="sheet"><div v-if="payOrder" class="mask" @click.self="closePay"><div class="sheet" v-drag-close="closePay">
+      <div class="grab"><h3>付款</h3><button class="x" aria-label="关闭" @click="closePay"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
+      <div class="body">
+        <div class="paysum"><div class="money">¥{{yuan(payOrder.payable_amount)}}</div><div class="muted">{{left > 0 ? '请在 ' + mmss(left) + ' 内付款，超时订单自动取消' : '已超过付款时间，请重新下单'}}</div></div>
+        <template v-if="left > 0">
+          <button v-for="p in payWays" :key="p" class="btn block payway" :class="p" :disabled="!!paying" @click="doPay(p)">{{paying === p ? '正在打开…' : (p === 'wechat' ? '微信支付' : '支付宝付款')}}</button>
+          <div v-if="!payWays.length" class="empty-t">请用微信或支付宝扫码打开本页付款</div>
+        </template>
       </div>
     </div></div></transition>
     <transition name="sheet"><div v-if="ordersOpen" class="mask" @click.self="ordersOpen=false"><div class="sheet" v-drag-close="() => ordersOpen = false">
@@ -273,7 +302,7 @@
         <div v-for="o in orders" :key="o.id" class="ord">
           <div class="h"><b>{{o.status_text}}</b><span class="muted">{{o.created_at}}</span></div>
           <div class="g">{{o.items.map(i => i.product_name + (i.sku_name!=='默认' ? '('+i.sku_name+')' : '') + ' × ' + i.qty).join('，')}}</div>
-          <div class="f"><span><span class="money">¥{{yuan(o.payable_amount)}}</span>　<span class="muted">{{o.pay_status_text}}</span></span><button v-if="o.status==='pending'" class="link" @click="cancel(o)">取消订单</button></div>
+          <div class="f"><span><span class="money">¥{{yuan(o.payable_amount)}}</span>　<span class="muted">{{o.pay_status_text}}</span></span><span class="acts"><button v-if="o.status==='awaiting_pay'" class="link pay" @click="openPay(o)">去付款</button><button v-if="o.status==='pending' || o.status==='awaiting_pay'" class="link" @click="cancel(o)">取消订单</button></span></div>
         </div>
       </div>
     </div></div></transition>
@@ -297,6 +326,9 @@ const app = createApp({
     const topCats = computed(() => cats.value.filter(c => !c.parent_id && products.value.some(p => inCat(p, c.id))));
     const shown = computed(() => cat.value ? products.value.filter(p => inCat(p, cat.value)) : products.value);
     const skuMap = computed(() => { const m = {}; products.value.forEach(p => p.skus.forEach(s => m[s.id] = { name: p.name + (s.name !== '默认' ? '(' + s.name + ')' : ''), price: s.price })); return m; });
+    const hasMed = computed(() => products.value.some(p => p.reg_cert_no));
+    const medSku = computed(() => { const m = {}; products.value.forEach(p => { if (p.reg_cert_no) p.skus.forEach(s => m[s.id] = 1); }); return m; });
+    const cartMed = computed(() => lines.value.some(l => medSku.value[l.sku_id]));
     const lines = computed(() => Object.entries(qty).filter(([, q]) => q > 0).map(([id, q]) => ({ sku_id: +id, qty: q, ...skuMap.value[id] })));
     const count = computed(() => lines.value.reduce((a, l) => a + l.qty, 0));
     const total = computed(() => lines.value.reduce((a, l) => a + l.qty * l.price, 0));
@@ -325,6 +357,46 @@ const app = createApp({
       }
       return '';
     };
+    // ---------- 在线付款 ----------
+    const ua = navigator.userAgent;
+    const inWx = /MicroMessenger/i.test(ua), inAli = /AlipayClient/i.test(ua);
+    const payOn = computed(() => !!(area.value && area.value.pay && area.value.pay.providers.length));
+    const payOrder = ref(null), paying = ref(''), clock = ref(Date.now());
+    setInterval(() => { clock.value = Date.now(); }, 1000);
+    let payT0 = 0;  // 拿到订单的时刻：剩余时间按服务器给的秒数倒数，不受手机时间不准影响
+    const left = computed(() => payOrder.value && payOrder.value.pay_left != null ? Math.max(0, payOrder.value.pay_left - Math.floor((clock.value - payT0) / 1000)) : 0);
+    const mmss = (s) => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+    // 微信里只能用微信支付；支付宝和其它浏览器用支付宝（模拟通道下都显示，方便试用）
+    const payWays = computed(() => {
+      const ps = (area.value && area.value.pay && area.value.pay.providers) || [];
+      if (area.value.pay.mock) return ps;
+      return ps.filter(p => (inWx ? p === 'wechat' : p === 'alipay'));
+    });
+    const openPay = (o) => { payT0 = Date.now(); payOrder.value = o; ordersOpen.value = false; };
+    const closePay = () => { payOrder.value = null; showOrders(); };
+    const checkPaid = async (id, tries = 3) => {
+      for (let i = 0; i < tries; i++) {
+        const o = await api.post('/api/customer/orders/' + id + '/check');
+        if (o.pay_status === 'paid') { payOrder.value = null; toast('付款成功，门店会尽快处理'); showOrders(); return true; }
+        if (o.status === 'cancelled') { payOrder.value = null; alert('订单已取消'); showOrders(); return false; }
+        await new Promise(r => setTimeout(r, 1500));
+      }
+      toast('还没收到付款结果，稍后可在“我的订单”里查看'); return false;
+    };
+    const doPay = async (p) => {
+      const o = payOrder.value; if (!o || paying.value) return;
+      paying.value = p;
+      try {
+        const r = await api.post('/api/customer/orders/' + o.id + '/pay', { provider: p, return_url: '/web/h5/?area=' + encodeURIComponent(code) + '&paid=' + o.id });
+        if (r.paid) return await checkPaid(o.id, 1);
+        if (r.mock) { if (confirm('模拟通道：确定模拟付款 ¥' + yuan(o.payable_amount) + '？')) { await api.post('/api/customer/orders/' + o.id + '/mock-pay'); await checkPaid(o.id); } return; }
+        if (p === 'alipay') { location.href = r.url; return; }
+        const call = () => WeixinJSBridge.invoke('getBrandWCPayRequest', r.jsapi, (res) => {
+          if (res.err_msg === 'get_brand_wcpay_request:ok') checkPaid(o.id, 5); else if (res.err_msg !== 'get_brand_wcpay_request:cancel') alert('付款没有完成：' + res.err_msg);
+        });
+        if (typeof WeixinJSBridge === 'undefined') document.addEventListener('WeixinJSBridgeReady', call, { once: true }); else call();
+      } catch (e) { alert(e.message); } finally { paying.value = ''; }
+    };
     const ensureLogin = async () => {
       if (api.token()) return;
       // 小程序上线前的网页版：用本机随机标识免注册登录；小程序里改为 wx.login 的 code
@@ -339,8 +411,10 @@ const app = createApp({
       busy.value = true;
       try {
         await ensureLogin();
-        await api.post('/api/customer/orders', { area_code: code, lines: lines.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })), location_note: loc.value, contact_phone: phone.value, remark: remark.value, request_id: reqId });
-        reqId = rid(); Object.keys(qty).forEach(k => delete qty[k]); sheet.value = false; alert('下单成功，门店会尽快处理'); showOrders();
+        const o = await api.post('/api/customer/orders', { area_code: code, lines: lines.value.map(l => ({ sku_id: l.sku_id, qty: l.qty })), location_note: loc.value, contact_phone: phone.value, remark: remark.value, request_id: reqId });
+        reqId = rid(); Object.keys(qty).forEach(k => delete qty[k]); sheet.value = false;
+        if (o.status === 'awaiting_pay') { openPay(o); return; }
+        alert('下单成功，门店会尽快处理'); showOrders();
       } catch (e) { alert(e.message); } finally { busy.value = false; }
     };
     const showOrders = async () => { try { await ensureLogin(); orders.value = await api.get('/api/customer/orders'); ordersOpen.value = true; } catch (e) { alert(e.message); } };
@@ -386,10 +460,20 @@ const app = createApp({
     const minPrice = (p) => Math.min(...p.skus.map(s => s.price));
     onMounted(async () => {
       if (!code) { error.value = '请扫描区域二维码进入'; return; }
-      try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code)); const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; nextTick(() => { active.value = sections.value[0] && sections.value[0].id; }); document.title = area.value.store_name; }
+      // 微信授权回来：地址里带着登录凭证
+      const h = location.hash.match(/token=([^&]+)/);
+      if (h) { api.setToken(decodeURIComponent(h[1])); try { localStorage.setItem('shouyin_wx', '1'); } catch (e) {} history.replaceState(null, '', location.pathname + location.search); }
+      try { area.value = await api.get('/api/customer/area/' + encodeURIComponent(code));
+        // 微信里付款要用服务号下的身份：没授权过就先静默授权一次（不弹窗）
+        let wxDone = false; try { wxDone = localStorage.getItem('shouyin_wx') === '1'; } catch (e) {}
+        if (inWx && area.value.pay && area.value.pay.wx_oauth && !(wxDone && api.token())) {
+          location.replace('/api/customer/wx-oauth?back=' + encodeURIComponent(location.pathname + location.search)); return;
+        }
+        const paidId = new URLSearchParams(location.search).get('paid');
+        if (paidId && api.token()) { history.replaceState(null, '', location.pathname + '?area=' + encodeURIComponent(code)); checkPaid(paidId).catch(() => {}); } const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; nextTick(() => { active.value = sections.value[0] && sections.value[0].id; }); document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, showTop, toTop, kw, searchOpen, kwEl, openSearch, found, spec, pimg, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, showTop, toTop, kw, searchOpen, kwEl, openSearch, found, spec, pimg, hasMed, cartMed, payOn, payOrder, paying, left, mmss, payWays, openPay, closePay, doPay, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 });
 // 底部弹层：按住顶部抓手往下拉，手指在哪弹层就在哪（1:1 跟手）；松手时按速度预测落点，过半或快速下滑就关闭，否则弹回

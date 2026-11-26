@@ -104,10 +104,11 @@ const PickDialog = {
 
 // 优惠（打折 / 调低应收）+ 收款，收银和订单收款共用
 const PayDialog = {
-  props: ['modelValue', 'user', 'lines', 'title', 'onPay'],
+  // storeId + onOnline：收银时传，微信 / 支付宝开通后走在线收款（付成功才开单），onOnline 收到开好的订单
+  props: ['modelValue', 'user', 'lines', 'title', 'onPay', 'storeId', 'onOnline', 'remark'],
   emits: ['update:modelValue'],
   template: `
-  <el-dialog :model-value="modelValue" @update:model-value="v => $emit('update:modelValue', v)" :title="title || '收款'" width="min(900px, 96vw)" class="paybox" @open="reset" @opened="focusReceived">
+  <el-dialog :model-value="modelValue" @update:model-value="v => v ? $emit('update:modelValue', v) : closeDlg()" :title="title || '收款'" width="min(900px, 96vw)" class="paybox" @open="reset" @opened="focusReceived">
     <div class="pay-grid">
       <div class="pay-l">
         <div class="total">
@@ -131,19 +132,91 @@ const PayDialog = {
           <div class="quickcash"><button v-for="v in quick" :key="v" type="button" class="chip" @click="received = v; field = 'received'">¥{{v}}</button></div>
           <div class="change"><span>找零</span><b class="money">¥{{change}}</b></div>
         </template>
+        <div v-else-if="online" class="olpay">
+          <template v-if="!ol.txn">
+            <div class="ol-t">扫顾客付款码</div>
+            <el-input ref="codeRef" v-model="ol.code" data-no-osk size="large" placeholder="用扫码枪扫顾客手机上的付款码" @keydown.enter.prevent.stop="startOnline('code')" />
+            <div class="ol-or">或</div>
+            <el-button size="large" :loading="ol.busy" @click="startOnline('qr')">出{{methods[method]}}收款码，顾客扫码付</el-button>
+            <div v-if="ol.msg" class="ol-err">{{ol.msg}}</div>
+          </template>
+          <template v-else>
+            <img v-if="ol.qr" :src="ol.qr" class="ol-qr" alt="收款码">
+            <div class="ol-t">{{ol.qr ? '请顾客用' + methods[ol.txn.provider] + '扫码付款' : '等待顾客在手机上确认付款'}}</div>
+            <div class="ol-s"><span class="spin"></span>¥{{yuan(ol.txn.amount)}}　正在等待付款结果</div>
+            <el-button size="large" @click="cancelOnline">不收了</el-button>
+            <el-button v-if="chan[ol.txn.provider] && chan[ol.txn.provider].mode === 'mock'" size="large" text @click="mockPay">模拟顾客付款</el-button>
+          </template>
+        </div>
         <div v-else class="nocash">请确认顾客已通过<b>{{methods[method]}}</b>付款，再点“确认收款”。<br>目前是店员确认后记账，不是在线支付。</div>
-        <div class="pad">
+        <div v-if="!online" class="pad">
           <button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" :data-k="k" @pointerdown.prevent @mousedown.prevent @click="padPress(k)">{{ {back: '⌫', clear: '清空', ok: field === 'received' ? '收款' : '确定'}[k] || k }}</button>
         </div>
       </div>
     </div>
-    <template #footer><span class="muted keyhint"><kbd>Enter</kbd> 确认收款　<kbd>Esc</kbd> 取消</span><el-button size="large" class="pay-cancel" @click="$emit('update:modelValue', false)">取消</el-button>
-      <el-button size="large" type="primary" class="pay-ok" :loading="busy || quoting > 0" :disabled="!!qErr" @click="submit">确认收款 ¥{{yuan(q.payable_amount)}}</el-button></template>
+    <template #footer><span class="muted keyhint"><kbd>Enter</kbd> 确认收款　<kbd>Esc</kbd> 取消</span><el-button size="large" class="pay-cancel" @click="closeDlg">取消</el-button>
+      <el-button v-if="!online" size="large" type="primary" class="pay-ok" :loading="busy || quoting > 0" :disabled="!!qErr" @click="submit">确认收款 ¥{{yuan(q.payable_amount)}}</el-button></template>
   </el-dialog>`,
   setup(props, { emit }) {
     const q = reactive({ original_amount: 0, payable_amount: 0, discount_amount: 0 }), qErr = ref('');
     const rate = ref(null), rateInput = ref(''), payableInput = ref(''), method = ref('cash'), received = ref(''), busy = ref(false);
-    const receivedRef = ref(null), rateRef = ref(null), payableRef = ref(null);
+    const receivedRef = ref(null), rateRef = ref(null), payableRef = ref(null), codeRef = ref(null);
+    // ----- 在线收款 -----
+    const chan = ref({});
+    if (props.storeId !== undefined) api.get('/api/pay/channels').then(r => { chan.value = r; }).catch(() => {});
+    const online = computed(() => !!props.onOnline && ['wechat', 'alipay'].includes(method.value)
+      && Object.values(chan.value).some(c => c.mode !== 'off' && c.scenes.includes('micropay')));
+    const ol = reactive({ txn: null, code: '', qr: '', msg: '', busy: false });
+    let polling = 0;
+    const olReset = () => { polling++; Object.assign(ol, { txn: null, code: '', qr: '', msg: '', busy: false }); };
+    const focusCode = () => setTimeout(() => { if (codeRef.value) codeRef.value.focus(); }, 30);
+    const olDone = async (t) => {
+      polling++;
+      if (t.status === 'paid') {
+        if (!t.order) { ol.msg = t.message || '已收款但开单失败，请联系管理员'; ol.txn = null; return ElMessage.error({ message: ol.msg, duration: 0, showClose: true }); }
+        const p = { payments: [{ method: t.provider, amount: t.amount }], change: 0, received: t.amount };
+        olReset();
+        return props.onOnline(t.order, p);
+      }
+      ol.msg = (t.status === 'closed' ? '交易已关闭' : '付款失败') + (t.message ? '：' + t.message : '') + '，可以重扫或换方式';
+      ol.txn = null; ol.qr = ''; ol.code = ''; focusCode();
+    };
+    const poll = async (my) => {
+      const until = Date.now() + 180000;
+      while (my === polling && ol.txn && Date.now() < until) {
+        await new Promise(r => setTimeout(r, 2000));
+        if (my !== polling || !ol.txn) return;
+        try { const t = await api.get('/api/pay/pos/txns/' + ol.txn.id); if (t.status !== 'pending') return olDone(t); } catch (e) { /* 网络抖一下接着查 */ }
+      }
+      if (my === polling && ol.txn) ol.msg = '顾客一直没有付款，可以点“不收了”';
+    };
+    const startOnline = async (kind) => {
+      if (ol.busy || ol.txn) return;
+      const code = String(ol.code || '').trim();
+      if (kind === 'code' && !code) return focusCode();
+      ol.busy = true; ol.msg = '';
+      try {
+        if (!(await settle())) { ol.msg = qErr.value || '金额还没算好，请稍等'; return; }
+        const t = await api.post('/api/pay/pos/start', { store_id: props.storeId, lines: props.lines, discount_rate: q.discount_rate, payable: q.payable_amount, remark: props.remark || '',
+          auth_code: kind === 'code' ? code : '', provider: kind === 'qr' ? method.value : '', request_id: rid() });
+        if (t.status !== 'pending') return olDone(t);
+        ol.txn = t;
+        if (t.code_url) { const qr = qrcode(0, 'M'); qr.addData(t.code_url); qr.make(); ol.qr = qr.createDataURL(6, 8); }
+        poll(++polling);
+      } catch (e) { ol.msg = e.message || String(e); ol.code = ''; focusCode(); }
+      finally { ol.busy = false; }
+    };
+    const cancelOnline = async () => {
+      if (!ol.txn) return true;
+      try {
+        const t = await api.post('/api/pay/pos/txns/' + ol.txn.id + '/close');
+        if (t.status === 'paid') { await olDone(t); return false; }
+        olReset(); focusCode(); return true;
+      } catch (e) { err(e); return false; }
+    };
+    const mockPay = () => api.post('/api/pay/mock/' + ol.txn.out_no + '/pay').catch(err);
+    const closeDlg = async () => { if (await cancelOnline()) { olReset(); emit('update:modelValue', false); } };
+    watch(method, () => { olReset(); if (online.value) focusCode(); });
     const field = ref('received');  // 数字键盘当前输入到哪个框
     const focusReceived = () => setTimeout(() => { field.value = 'received'; if (method.value === 'cash' && receivedRef.value) receivedRef.value.focus(); }, 30);
     const pickField = (f) => { field.value = f; const r = { received: receivedRef, rate: rateRef, payable: payableRef }[f]; if (r && r.value) r.value.focus(); };
@@ -205,7 +278,7 @@ const PayDialog = {
       }
       m.value = padNext(m.value, k);
     };
-    const reset = () => { field.value = 'received'; rate.value = null; rateInput.value = ''; payableInput.value = ''; method.value = 'cash'; received.value = ''; quote(); };
+    const reset = () => { olReset(); field.value = 'received'; rate.value = null; rateInput.value = ''; payableInput.value = ''; method.value = 'cash'; received.value = ''; quote(); };
     const roundDown = async (unit) => { payableInput.value = yuan(Math.floor(q.payable_amount / unit) * unit + (payableInput.value === '' ? 0 : 0)); await quote(); };
     const change = computed(() => { const r = Shouyin.parseMoney(received.value); return r !== null && r >= q.payable_amount ? yuan(r - q.payable_amount) : '0.00'; });
     const quick = computed(() => { const p = q.payable_amount / 100; return [...new Set([p, Math.ceil(p / 10) * 10, Math.ceil(p / 50) * 50, Math.ceil(p / 100) * 100])].map(v => v.toFixed(2)).slice(0, 4); });
@@ -232,7 +305,9 @@ const PayDialog = {
       if (!props.modelValue || e.isComposing || msgBoxOpen()) return;
       const c = K.combo(e);
       const m = { F1: 'cash', F2: 'wechat', F3: 'alipay', F4: 'other' }[c];
-      if (m) { e.preventDefault(); method.value = m; focusReceived(); return; }
+      if (m) { e.preventDefault(); if (ol.txn) return; method.value = m; focusReceived(); return; }
+      if (c === 'Escape' && ol.txn) { e.preventDefault(); e.stopPropagation(); cancelOnline(); return; }
+      if (c === 'Enter' && online.value) return;
       if (c === 'Enter') {
         const own = (r) => r.value && r.value.input === e.target;
         if (own(rateRef) || own(payableRef)) return;
@@ -242,7 +317,8 @@ const PayDialog = {
     onMounted(() => window.addEventListener('keydown', onKey, true));
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
     return { q, qErr, rate, rateInput, payableInput, method, received, busy, canDiscount, canAdjust, limitText, quote, reset, roundDown, change, quick, submit, yuan, methods: METHODS,
-      receivedRef, rateRef, payableRef, focusReceived, quoting, field, pickField, applyRate, PAD, padPress };
+      receivedRef, rateRef, payableRef, focusReceived, quoting, field, pickField, applyRate, PAD, padPress,
+      chan, online, ol, codeRef, startOnline, cancelOnline, mockPay, closeDlg };
   },
 };
 
@@ -309,7 +385,7 @@ const Pos = {
       <div class="chips"><button v-for="t in ['送到病房', '自取', '加急', '已电话确认']" :key="t" type="button" class="chip" @click="remark = remark ? remark + '，' + t : t">{{t}}</button></div>
       <template #footer><el-button size="large" @click="remark = ''; remarkDlg = false">清除备注</el-button><el-button size="large" type="primary" @click="remarkDlg = false">完成</el-button></template>
     </el-dialog>
-    <pay-dialog v-model="payDlg" :user="user" :lines="lines" @pay="pay" />
+    <pay-dialog v-model="payDlg" :user="user" :lines="lines" :store-id="storeId" :remark="remark" @pay="pay" @online="paidOnline" />
     <pick-dialog v-model="scanDlg" :matches="scanMatches" shortcuts @pick="add" />
     <el-dialog v-model="heldDlg" width="min(960px, 94vw)" class="held-dlg">
       <template #header><span class="pick-title">挂单</span><span class="muted pick-tip">共 {{held.length}} 单</span></template>
@@ -477,6 +553,11 @@ const Pos = {
         o = await api.post('/api/pos/checkout', { store_id: props.storeId, lines: lines.value, payments: p.payments, discount_rate: p.discount_rate,
           payable: p.payable, remark: remark.value, request_id: reqId });
       } catch (e) { return err(e); }
+      return afterPaid(o, p);
+    };
+    // 微信 / 支付宝在线收款成功，订单已由服务端开好
+    const paidOnline = (o, p) => afterPaid(o, p);
+    const afterPaid = async (o, p) => {
       // 到这里收款已经成功。后面的提示音、打印出错都不能让店员误以为没收到钱
       reqId = rid(); last.value = o; lastChange.value = p.change; lastReceived.value = p.received != null ? p.received : o.payable_amount; payDlg.value = false; resetCart();
       // 收款成功只在顶部提示，不弹框、不用点；现金有找零时提示停留久一点（要补打小票点右侧“补打小票”或按 F8）
@@ -580,7 +661,7 @@ const Pos = {
     onMounted(() => { load(); setTimeout(() => scan.value && scan.value.focus(), 300); window.addEventListener('keydown', onKey, true); });
     watch(() => props.sync, load);  // 顶部“同步”：重新拉商品、价格、分类，购物车里已加的不动
     onUnmounted(() => window.removeEventListener('keydown', onKey, true));
-    return { products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
+    return { paidOnline, products, cats, cat, topCats, shown, scanText, cart, remark, payDlg, skuDlg, skuProduct, doneDlg, last, lastChange, lastReceived, scan,
       scanDlg, scanMatches, priceText, add, pick, tap, onScan, held, heldDlg, hold, takeHeld, dropHeld, askDropHeld, dropDlg, dropTarget, heldPg, heldPages, heldPage, inCart, dec, fix, clear, count, total, lines, pay, reprint, yuan,
       visible, more, thumb: Shouyin.thumb, sel, qtyEls, remarkRef, remarkDlg, openRemark, drawer, remove, icon: Shouyin.icon, posKeys: K.POS_KEYS, kbPress,
       noteQty: (l, i) => { qtyBefore = l.qty; sel.value = i; } };

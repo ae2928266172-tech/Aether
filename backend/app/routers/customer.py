@@ -1,11 +1,15 @@
 """小程序顾客端接口：扫区域码 → 免注册登录 → 选商品规格 → 下单 → 查看 / 取消订单。
 
-顾客订单为“到店 / 门店收款”方式：下单不付款，门店接单后线下收款记账。尚未接入微信在线支付。
+开通在线付款后（微信支付 JSAPI 或支付宝手机网站支付），下单先“待付款”，付成功才交给门店；
+没开通时照旧：下单不付款，门店接单后线下收款记账。
 """
 import os
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from urllib.parse import quote, urlencode
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -15,6 +19,8 @@ from ..models import Area, Category, Customer, Order, Product
 from ..security import current_customer, make_token
 from ..serialize import order_out, product_out
 from ..services import orders as svc
+from ..services.pay import mode as pay_mode
+from ..services.pay import online as online_pay
 from ..settings_store import get_setting
 from ..startup_check import web_login_allowed
 
@@ -29,8 +35,9 @@ def _openid(code: str) -> str:
     appid, secret = os.environ.get("WECHAT_APPID"), os.environ.get("WECHAT_SECRET")
     if not appid or not secret:
         # 没有小程序账号时，网页版用本机随机标识登录。只在明确设了 SHOUYIN_ENV=dev/test 时开放，
-        # 部署时漏设环境变量也不会打开（以前是没设 production 就打开）
-        if not web_login_allowed():
+        # 部署时漏设环境变量也不会打开（以前是没设 production 就打开）。
+        # 开通在线付款后也开放：没付款的单门店看不到，随便下单不会打扰门店
+        if not web_login_allowed() and not online_pay.h5_providers():
             raise HTTPException(503, "小程序尚未配置 AppID")
         return "dev_" + code
     r = httpx.get("https://api.weixin.qq.com/sns/jscode2session", timeout=10, params={
@@ -64,7 +71,55 @@ def area_info(code: str, db: Session = Depends(get_db)):
     rules = get_setting(db, "rules")
     return {"area_id": a.id, "area_name": a.name, "store_id": a.store_id, "store_name": a.store.name,
             "accept_online_orders": a.store.accept_online_orders, "area_label": rules["area_label"],
-            "location_label": rules["location_label"], "location_required": rules["online_location_required"]}
+            "location_label": rules["location_label"], "location_required": rules["online_location_required"],
+            "license_no": rules.get("license_no", ""), "license_image": rules.get("license_image", ""),
+            "service_phone": rules.get("service_phone", "") or a.store.phone or "",
+            "pay": {"providers": online_pay.h5_providers(), "minutes": svc.PAY_MINUTES,
+                    "wx_oauth": online_pay.wx_oauth_ready() and pay_mode("wechat") != "mock",
+                    "mock": "mock" in (pay_mode("wechat"), pay_mode("alipay"))}}
+
+
+# ---------- 微信服务号网页授权：微信里付款要用服务号下的 openid ----------
+
+def _base(db: Session, request: Request) -> str:
+    return (get_setting(db, "rules").get("public_url") or str(request.base_url)).rstrip("/")
+
+
+def _safe_back(back: str) -> str:
+    # 只许跳回本站的点单页，防止被拿去做跳转到别的网站
+    return back if back.startswith("/web/h5/") and "//" not in back and "\\" not in back else "/web/h5/"
+
+
+@router.get("/wx-oauth")
+def wx_oauth(back: str, request: Request, db: Session = Depends(get_db)):
+    if not online_pay.wx_oauth_ready():
+        raise HTTPException(404)
+    cb = f"{_base(db, request)}/api/customer/wx-oauth/callback?" + urlencode({"back": _safe_back(back)})
+    url = ("https://open.weixin.qq.com/connect/oauth2/authorize?" + urlencode(
+        {"appid": os.environ["WXMP_APPID"], "redirect_uri": cb, "response_type": "code", "scope": "snsapi_base",
+         "state": "1"}) + "#wechat_redirect")
+    return RedirectResponse(url)
+
+
+@router.get("/wx-oauth/callback")
+def wx_oauth_callback(code: str, back: str = "/web/h5/", db: Session = Depends(get_db)):
+    if not online_pay.wx_oauth_ready():
+        raise HTTPException(404)
+    try:
+        r = httpx.get("https://api.weixin.qq.com/sns/oauth2/access_token", timeout=10, params={
+            "appid": os.environ["WXMP_APPID"], "secret": os.environ["WXMP_SECRET"], "code": code,
+            "grant_type": "authorization_code"}).json()
+    except (httpx.HTTPError, ValueError):
+        r = {}
+    if not r.get("openid"):
+        raise HTTPException(400, "微信授权失败，请关闭页面重新扫码")
+    c = db.scalar(select(Customer).where(Customer.openid == r["openid"]))
+    if not c:
+        c = Customer(openid=r["openid"])
+        db.add(c)
+        db.commit()
+    token = make_token(str(c.id), "customer", hours=24 * 30)
+    return RedirectResponse(_safe_back(back) + "#token=" + quote(token))
 
 
 @router.get("/menu/{code}")
@@ -128,11 +183,57 @@ def my_orders(db: Session = Depends(get_db), c: Customer = Depends(current_custo
                                            .order_by(Order.id.desc()).limit(50))]
 
 
-@router.post("/orders/{oid}/cancel")
-def cancel(oid: int, db: Session = Depends(get_db), c: Customer = Depends(current_customer)):
-    o = svc.get_order(db, oid, lock=True)
+def _mine(db: Session, oid: int, c: Customer, lock: bool = False) -> Order:
+    o = svc.get_order(db, oid, lock=lock)
     if o.customer_id != c.id:
         raise HTTPException(404, "订单不存在")
+    return o
+
+
+@router.post("/orders/{oid}/cancel")
+def cancel(oid: int, db: Session = Depends(get_db), c: Customer = Depends(current_customer)):
+    o = _mine(db, oid, c, lock=True)
+    if o.status == "awaiting_pay" and online_pay._close_pending(db, o):
+        db.commit()
+        raise HTTPException(409, "这单已经付款成功，门店会尽快处理")
     svc.cancel(db, o, None, "", by_customer=True)
     db.commit()
     return _public(o)
+
+
+class PayIn(BaseModel):
+    provider: str
+    return_url: str = "/web/h5/"
+
+
+@router.post("/orders/{oid}/pay")
+def pay(oid: int, body: PayIn, request: Request, db: Session = Depends(get_db), c: Customer = Depends(current_customer)):
+    """发起付款。微信返回调起支付的参数，支付宝返回跳转地址。"""
+    o = _mine(db, oid, c, lock=True)
+    base = _base(db, request)
+    r = online_pay.start(db, o, c, body.provider, base, base + _safe_back(body.return_url))
+    db.commit()
+    return r
+
+
+@router.post("/orders/{oid}/check")
+def check(oid: int, db: Session = Depends(get_db), c: Customer = Depends(current_customer)):
+    """付完回来查一次结果。"""
+    o = _mine(db, oid, c, lock=True)
+    online_pay.check(db, o)
+    db.commit()
+    db.refresh(o)
+    return _public(o)
+
+
+@router.post("/orders/{oid}/mock-pay")
+def mock_pay(oid: int, db: Session = Depends(get_db), c: Customer = Depends(current_customer)):
+    """模拟通道下模拟顾客付款（开发 / 测试用）。"""
+    from ..models import PayTxn
+    from ..services.pay import gateway
+    o = _mine(db, oid, c)
+    t = db.scalar(select(PayTxn).where(PayTxn.order_id == o.id, PayTxn.status == "pending").order_by(PayTxn.id.desc()))
+    if not t or pay_mode(t.provider) != "mock":
+        raise HTTPException(404)
+    gateway(t.provider).mock_pay(t.out_no)
+    return {"ok": True}

@@ -7,10 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db, now
-from ..models import Order, Refund, Store, User
+from ..models import Order, Payment, PayRefundTxn, Refund, Store, User
 from ..security import check_store_access, current_user, has_perm, require
 from ..serialize import order_out, refund_out
 from ..services import orders as svc
+from ..services.pay import service as pay_service
 from ..services.receipt import build_receipt
 
 router = APIRouter(prefix="/api", tags=["收银与订单"])
@@ -101,6 +102,9 @@ def list_orders(store_id: int | None = None, status: str | None = None, source: 
     if keyword:
         q = q.where(Order.no.contains(keyword) | Order.location_note.contains(keyword)
                     | Order.contact_phone.contains(keyword))
+    # 待付款的扫码单还不算订单，门店看不到；明确按“待付款”筛选时才列出
+    if not (status and "awaiting_pay" in status.split(",")):
+        q = q.where(Order.status != "awaiting_pay")
     # 各状态数量（不受状态筛选影响，用于页面上的快捷筛选）
     base = q.subquery()
     counts = {"all": 0, "pending": 0, "unpaid": 0, "completed": 0, "cancelled": 0, "refund": 0}
@@ -132,10 +136,12 @@ def list_orders(store_id: int | None = None, status: str | None = None, source: 
 def new_orders(store_id: int, after_id: int = 0, db: Session = Depends(get_db), user: User = Depends(require("orders"))):
     """门店工作台轮询：返回 after_id 之后到达的小程序订单，用于提示音和自动打印。"""
     check_store_access(user, store_id)
+    # 按门店可见先后号取：待付款的单付成功时才编号，晚付的单也不会漏提醒。老订单没有编号，按 id
+    vis = func.coalesce(Order.seq, Order.id)
     rows = db.scalars(select(Order).where(Order.store_id == store_id, Order.source == "online",
-                                          Order.id > after_id).order_by(Order.id)).all()
+                                          Order.status != "awaiting_pay", vis > after_id).order_by(vis)).all()
     pending = db.scalar(select(func.count()).where(Order.store_id == store_id, Order.status == "pending"))
-    last = db.scalar(select(func.max(Order.id)).where(Order.store_id == store_id)) or 0
+    last = db.scalar(select(func.max(vis)).where(Order.store_id == store_id, Order.status != "awaiting_pay")) or 0
     return {"orders": [order_out(o) for o in rows], "pending_count": pending, "last_id": max(last, after_id)}
 
 
@@ -289,9 +295,17 @@ class RefundIn(BaseModel):
 
 @router.post("/orders/{oid}/refund")
 def refund(oid: int, body: RefundIn, db: Session = Depends(get_db), user: User = Depends(require("refund"))):
-    rf = svc.once(db, lambda: svc.refund(
-        db, _load(db, oid, user, lock=True), user, [l.model_dump() for l in body.lines], body.restock, body.method,
-        body.reason, body.amount, body.request_id))
+    def run():
+        o = _load(db, oid, user, lock=True)
+        rf = svc.refund(db, o, user, [l.model_dump() for l in body.lines], body.restock, body.method,
+                        body.reason, body.amount, body.request_id)
+        # 当初是微信 / 支付宝在线收的，选同一方式退款就原路退回（重发的请求不再退第二次）
+        method = db.scalar(select(Payment.method).where(Payment.refund_id == rf.id).limit(1))
+        if method in pay_service.PROVIDERS and not db.scalar(
+                select(PayRefundTxn.id).where(PayRefundTxn.refund_id == rf.id).limit(1)):
+            pay_service.refund_order(db, o, method, rf.amount, body.reason, user, rf.id)
+        return rf
+    rf = svc.once(db, run)
     o = _load(db, oid, user)
     db.refresh(o)
     return {"refund": refund_out(rf), "order": order_out(o)}

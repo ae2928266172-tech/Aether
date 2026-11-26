@@ -1,6 +1,7 @@
 """把数据库对象转成接口返回的字典。金额单位：分；数量：数字。"""
 from decimal import Decimal
 
+from .db import now
 from .models import Area, Order, Product, Refund, Sku, StockItem, Store, User
 from .services.orders import PAY_METHODS, PAY_STATUS_TEXT, STATUS_TEXT
 
@@ -92,6 +93,8 @@ def order_out(o: Order, detail: bool = True) -> dict:
          "location_note": o.location_note, "contact_phone": o.contact_phone, "remark": o.remark,
          "status": o.status, "status_text": STATUS_TEXT[o.status], "pay_status": o.pay_status,
          "pay_status_text": PAY_STATUS_TEXT[o.pay_status], "original_amount": o.original_amount,
+         "pay_deadline": dt(o.pay_deadline),  # 剩余秒数按服务器时间算，顾客手机时间不准也不影响
+         "pay_left": max(0, int((o.pay_deadline - now()).total_seconds())) if o.pay_deadline else None,
          "discount_rate": o.discount_rate, "discount_amount": o.discount_amount,
          "payable_amount": o.payable_amount, "paid_amount": o.paid_amount, "refunded_amount": o.refunded_amount,
          "item_count": sum(i.qty for i in o.items if i.added_at is None), "created_at": dt(o.created_at), "paid_at": dt(o.paid_at),
@@ -104,7 +107,7 @@ def order_out(o: Order, detail: bool = True) -> dict:
                        "added_at": dt(i.added_at), "medical_info": i.medical_info or {}} for i in o.items]
         d["payments"] = [{"id": p.id, "kind": p.kind, "method": p.method, "method_text": PAY_METHODS[p.method],
                           "amount": p.amount, "received": p.received, "change": p.change,
-                          "created_at": dt(p.created_at)} for p in o.payments]
+                          "online": p.pay_txn_id is not None, "created_at": dt(p.created_at)} for p in o.payments]
     return d
 
 
