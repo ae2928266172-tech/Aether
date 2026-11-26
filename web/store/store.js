@@ -674,14 +674,14 @@ const Orders = {
     <el-dialog v-model="xDlg" title="售后换货" width="min(900px, 96vw)" top="4vh" class="xd"
       :show-close="!xBusy" :close-on-press-escape="!xBusy" :close-on-click-modal="false">
       <fieldset class="x-content" :disabled="xBusy">
-      <div class="x-sec">退回商品 <span class="muted">按原单实收计价（已扣除优惠）</span></div>
+      <div class="x-sec">退回商品</div>
       <div v-for="row in xBack" :key="row.id" class="x-row">
         <div class="x-name">{{row.name}}<span class="muted">可退换 {{row.max}} 件</span></div>
         <div class="qty"><button type="button" aria-label="减少退回数量" @click="row.qty = Math.max(0, (parseInt(row.qty) || 0) - 1)">−</button>
           <input v-model.number="row.qty" data-no-osk aria-label="退回数量" inputmode="none" @change="row.qty = Math.min(row.max, Math.max(0, parseInt(row.qty) || 0))" />
           <button type="button" aria-label="增加退回数量" @click="row.qty = Math.min(row.max, (parseInt(row.qty) || 0) + 1)">＋</button></div>
       </div>
-      <div class="x-sec">换成商品 <span class="muted">按现价计价，可换其他商品，也可一件换多件</span></div>
+      <div class="x-sec">更换产品</div>
       <div v-if="xAlternatives.length" class="x-grid">
         <button v-for="({product, sku}) in xAlternatives" :key="sku.id" type="button" class="x-card" @click="xAddLine(product, sku)">
           <span class="muted">{{product.name}}</span><strong>{{sku.name}}</strong><span>¥{{yuan(sku.price)}}</span>
@@ -708,18 +708,18 @@ const Orders = {
       </div>
       <div class="x-sec">退回商品状态</div>
       <div class="x-opts two">
-        <button type="button" class="m" :class="{on: x.condition === 'good'}" :aria-pressed="x.condition === 'good'" @click="x.condition = 'good'">完好，可再次销售<small>回到本店可售库存</small></button>
-        <button type="button" class="m" :class="{on: x.condition === 'defective'}" :aria-pressed="x.condition === 'defective'" @click="x.condition = 'defective'">已拆封或破损<small>进残次品库，不再销售</small></button>
+        <button type="button" class="m" :class="{on: x.condition === 'good'}" :aria-pressed="x.condition === 'good'" @click="x.condition = 'good'">完好，可再次销售</button>
+        <button type="button" class="m" :class="{on: x.condition === 'defective'}" :aria-pressed="x.condition === 'defective'" @click="x.condition = 'defective'">已拆封或破损</button>
       </div>
       <template v-if="xQ && xQ.diff">
-        <div class="x-sec">{{xQ.diff > 0 ? '补收方式' : '退款方式'}} <span v-if="xQ.diff < 0" class="muted">默认退回原支付方式</span></div>
+        <div class="x-sec">{{xQ.diff > 0 ? '补收方式' : '退款方式'}}</div>
         <div class="x-opts"><button v-for="(t,k) in methods" :key="k" type="button" class="m" :class="{on: x.method === k}" :aria-pressed="x.method === k" @click="x.method = k">{{t}}</button></div>
       </template>
       <template v-if="can('adjust_amount') && xBody.items.length">
-        <div class="x-sec">换出商品金额 <span class="muted">不填按现价 ¥{{yuan(xOriginal)}}，只能调低</span></div>
-        <el-button size="large" class="x-amt" aria-label="换出商品金额" :aria-expanded="xAmountOpen" @click="xToggleAmount">{{x.amount || '现价 ' + yuan(xOriginal)}} 元</el-button>
+        <div class="x-sec">更换产品金额</div>
+        <el-button size="large" class="x-amt" aria-label="更换产品金额" :aria-expanded="xAmountOpen" @click="xToggleAmount">{{x.amount || '现价 ' + yuan(xOriginal)}} 元</el-button>
         <div v-if="xAmountOpen" ref="xPad" class="x-amount-panel">
-          <el-input v-model="xAmountDraft" data-no-osk inputmode="none" size="large" aria-label="输入换出商品金额" :placeholder="'现价 ' + yuan(xOriginal)" @keydown.enter.prevent="xAmountKey('ok')"><template #append>元</template></el-input>
+          <el-input v-model="xAmountDraft" data-no-osk inputmode="none" size="large" aria-label="输入更换产品金额" :placeholder="'现价 ' + yuan(xOriginal)" @keydown.enter.prevent="xAmountKey('ok')"><template #append>元</template></el-input>
           <div class="pad">
             <button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" :data-k="k" @pointerdown.prevent @mousedown.prevent @click="xAmountKey(k)">{{ {back: '⌫', clear: '清空', ok: '确定'}[k] || k }}</button>
           </div>
@@ -740,7 +740,7 @@ const Orders = {
             <template v-else-if="xQ.diff < 0">需退还 <b>¥{{yuan(-xQ.diff)}}</b></template>
             <b v-else>无需补收或退还</b>
           </span>
-          <span v-else class="muted" role="status">{{xErr || (xBody.returns.length && xBody.items.length ? '正在计算差价…' : '请选择退回商品和换出商品')}}</span>
+          <span v-else class="muted" role="status">{{xErr || (xBody.returns.length && xBody.items.length ? '正在计算差价…' : '请选择退回商品和更换产品')}}</span>
           <span class="x-btns">
             <el-button size="large" :disabled="xBusy" @click="xDlg=false">取消</el-button>
             <el-button size="large" type="primary" :loading="xBusy" :disabled="!xQ || xAmountOpen || xScanning > 0" @click="doExchange">确认换货</el-button>
