@@ -83,7 +83,7 @@ const PickDialog = {
   template: `
     <el-dialog :model-value="modelValue" @update:model-value="$emit('update:modelValue', $event)"
       :title="matches ? '这个条码对应多个规格，请选择' : undefined" :width="width" class="pick-dlg">
-      <template v-if="!matches" #header><span class="pick-title">{{product && product.name}}</span><span class="muted pick-tip">点选规格</span></template>
+      <template v-if="!matches" #header><span class="pick-title">{{product && product.name}}</span></template>
       <div class="pick-grid">
         <button v-for="({product: p, sku: s}, i) in options" :key="s.id" type="button" class="pick" @click="$emit('pick', p, s); $emit('update:modelValue', false)">
           <kbd v-if="shortcuts && i < 9" class="no">{{i + 1}}</kbd>
@@ -121,7 +121,7 @@ const PayDialog = {
         <div v-if="canAdjust" class="opt"><div class="ol">改应收</div>
           <div class="chips"><button type="button" class="chip" @click="roundDown(100)">抹零头</button><button type="button" class="chip" @click="roundDown(1000)">抹到十元</button>
             <span class="field sm" :class="{on: field==='payable'}" @click="pickField('payable')"><el-input ref="payableRef" v-model="payableInput" data-no-osk inputmode="decimal" placeholder="不改" @focus="field='payable'" @change="quote" /><i>元</i></span></div></div>
-        <div v-if="limitText" class="hint" style="margin-top:2px">{{limitText}}；只影响本单，不改商品价格</div>
+        <div v-if="limitText" class="hint" style="margin-top:2px">{{limitText}}</div>
         <div class="methods"><button v-for="(t,k,i) in methods" :key="k" type="button" class="m" :class="{on: method===k}" @click="method=k; field='received'">{{t}}<kbd>F{{i+1}}</kbd></button></div>
       </div>
       <div class="pay-r">
@@ -654,7 +654,6 @@ const Orders = {
     </div>
     <pay-dialog v-model="payDlg" :user="user" :lines="curLines" title="订单收款" @pay="collect" />
     <el-dialog v-model="mDlg" title="修改订单" width="640px" top="6vh">
-      <div class="muted" style="margin-bottom:10px">可以改规格、改数量、去掉或添加商品，保存后库存和应收自动调整，不用取消重下。数量改成 0 即去掉该商品。</div>
       <el-table :data="mLines" border size="small">
         <el-table-column label="商品"><template #default="{row}">{{row.name}}</template></el-table-column>
         <el-table-column label="规格" width="190"><template #default="{row}">
@@ -674,14 +673,14 @@ const Orders = {
     <el-dialog v-model="xDlg" title="售后换货" width="min(900px, 96vw)" top="4vh" class="xd"
       :show-close="!xBusy" :close-on-press-escape="!xBusy" :close-on-click-modal="false">
       <fieldset class="x-content" :disabled="xBusy">
-      <div class="x-sec">退回商品 <span class="muted">按原单实收计价（已扣除优惠）</span></div>
+      <div class="x-sec">退回商品</div>
       <div v-for="row in xBack" :key="row.id" class="x-row">
         <div class="x-name">{{row.name}}<span class="muted">可退换 {{row.max}} 件</span></div>
         <div class="qty"><button type="button" aria-label="减少退回数量" @click="row.qty = Math.max(0, (parseInt(row.qty) || 0) - 1)">−</button>
           <input v-model.number="row.qty" data-no-osk aria-label="退回数量" inputmode="none" @change="row.qty = Math.min(row.max, Math.max(0, parseInt(row.qty) || 0))" />
           <button type="button" aria-label="增加退回数量" @click="row.qty = Math.min(row.max, (parseInt(row.qty) || 0) + 1)">＋</button></div>
       </div>
-      <div class="x-sec">换成商品 <span class="muted">按现价计价，可换其他商品，也可一件换多件</span></div>
+      <div class="x-sec">更换产品</div>
       <div v-if="xAlternatives.length" class="x-grid">
         <button v-for="({product, sku}) in xAlternatives" :key="sku.id" type="button" class="x-card" @click="xAddLine(product, sku)">
           <span class="muted">{{product.name}}</span><strong>{{sku.name}}</strong><span>¥{{yuan(sku.price)}}</span>
@@ -708,18 +707,18 @@ const Orders = {
       </div>
       <div class="x-sec">退回商品状态</div>
       <div class="x-opts two">
-        <button type="button" class="m" :class="{on: x.condition === 'good'}" :aria-pressed="x.condition === 'good'" @click="x.condition = 'good'">完好，可再次销售<small>回到本店可售库存</small></button>
-        <button type="button" class="m" :class="{on: x.condition === 'defective'}" :aria-pressed="x.condition === 'defective'" @click="x.condition = 'defective'">已拆封或破损<small>进残次品库，不再销售</small></button>
+        <button type="button" class="m" :class="{on: x.condition === 'good'}" :aria-pressed="x.condition === 'good'" @click="x.condition = 'good'">完好，可再次销售</button>
+        <button type="button" class="m" :class="{on: x.condition === 'defective'}" :aria-pressed="x.condition === 'defective'" @click="x.condition = 'defective'">已拆封或破损</button>
       </div>
       <template v-if="xQ && xQ.diff">
-        <div class="x-sec">{{xQ.diff > 0 ? '补收方式' : '退款方式'}} <span v-if="xQ.diff < 0" class="muted">默认退回原支付方式</span></div>
+        <div class="x-sec">{{xQ.diff > 0 ? '补收方式' : '退款方式'}}</div>
         <div class="x-opts"><button v-for="(t,k) in methods" :key="k" type="button" class="m" :class="{on: x.method === k}" :aria-pressed="x.method === k" @click="x.method = k">{{t}}</button></div>
       </template>
       <template v-if="can('adjust_amount') && xBody.items.length">
-        <div class="x-sec">换出商品金额 <span class="muted">不填按现价 ¥{{yuan(xOriginal)}}，只能调低</span></div>
-        <el-button size="large" class="x-amt" aria-label="换出商品金额" :aria-expanded="xAmountOpen" @click="xToggleAmount">{{x.amount || '现价 ' + yuan(xOriginal)}} 元</el-button>
+        <div class="x-sec">更换产品金额</div>
+        <el-button size="large" class="x-amt" aria-label="更换产品金额" :aria-expanded="xAmountOpen" @click="xToggleAmount">{{x.amount || '现价 ' + yuan(xOriginal)}} 元</el-button>
         <div v-if="xAmountOpen" ref="xPad" class="x-amount-panel">
-          <el-input v-model="xAmountDraft" data-no-osk inputmode="none" size="large" aria-label="输入换出商品金额" :placeholder="'现价 ' + yuan(xOriginal)" @keydown.enter.prevent="xAmountKey('ok')"><template #append>元</template></el-input>
+          <el-input v-model="xAmountDraft" data-no-osk inputmode="none" size="large" aria-label="输入更换产品金额" :placeholder="'现价 ' + yuan(xOriginal)" @keydown.enter.prevent="xAmountKey('ok')"><template #append>元</template></el-input>
           <div class="pad">
             <button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" :data-k="k" @pointerdown.prevent @mousedown.prevent @click="xAmountKey(k)">{{ {back: '⌫', clear: '清空', ok: '确定'}[k] || k }}</button>
           </div>
@@ -740,7 +739,7 @@ const Orders = {
             <template v-else-if="xQ.diff < 0">需退还 <b>¥{{yuan(-xQ.diff)}}</b></template>
             <b v-else>无需补收或退还</b>
           </span>
-          <span v-else class="muted" role="status">{{xErr || (xBody.returns.length && xBody.items.length ? '正在计算差价…' : '请选择退回商品和换出商品')}}</span>
+          <span v-else class="muted" role="status">{{xErr || (xBody.returns.length && xBody.items.length ? '正在计算差价…' : '请选择退回商品和更换产品')}}</span>
           <span class="x-btns">
             <el-button size="large" :disabled="xBusy" @click="xDlg=false">取消</el-button>
             <el-button size="large" type="primary" :loading="xBusy" :disabled="!xQ || xAmountOpen || xScanning > 0" @click="doExchange">确认换货</el-button>
@@ -757,10 +756,9 @@ const Orders = {
       </el-table>
       <el-form label-width="100px" style="margin-top:12px">
         <el-form-item label="退款方式"><el-select v-model="rf.method" style="width:140px"><el-option v-for="(t,k) in methods" :key="k" :label="t" :value="k" /></el-select></el-form-item>
-        <el-form-item label="退回库存"><el-checkbox v-model="rf.restock">商品退回本店库存（损坏品请取消勾选）</el-checkbox></el-form-item>
+        <el-form-item label="退回库存"><el-checkbox v-model="rf.restock">退回本店库存</el-checkbox></el-form-item>
         <el-form-item label="原因"><el-input v-model="rf.reason" /></el-form-item>
       </el-form>
-      <div class="muted">退款金额按本单实收（含优惠分摊）自动计算。目前是记账，需线下把钱退给顾客。</div>
       <template #footer><el-button link type="primary" style="float:left" @click="refundAll">全部退</el-button><el-button @click="rDlg=false">取消</el-button><el-button type="warning" :loading="rBusy" @click="doRefund">确认退款</el-button></template>
     </el-dialog>
   </div>`,
@@ -1121,14 +1119,11 @@ const Shift = {
         <div v-if="diff !== null" class="diffbox" :class="{bad: diff !== 0}"><span>差额</span><b>{{ diff === 0 ? '¥0.00 · 刚好' : (diff > 0 ? '长款 ¥' + yuan(diff) : '短款 ¥' + yuan(-diff)) }}</b></div>
         <el-input v-model="remark" size="large" placeholder="备注：差额原因等，选填" />
         <div class="pad"><button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" @pointerdown.prevent @mousedown.prevent @click="k === 'ok' ? closeShift() : (counted = padNext(counted, k))">{{ {back: '⌫', clear: '清空', ok: '交班'}[k] || k }}</button></div>
-        <div class="note">交班后，下一位收银员点清备用金后开班。不开班也能收银，但不能按收银员算现金差额。</div>
       </template>
       <template v-else>
         <h2>开班</h2>
-        <div class="muted">点清钱箱里的备用金（找零用的钱）后开班，交班时按这一班的收款核对现金。</div>
         <label class="bigfield"><span>备用金</span><el-input v-model="opening" data-no-osk inputmode="decimal" placeholder="0" /><i>元</i></label>
         <div class="pad"><button v-for="k in PAD" :key="k" type="button" tabindex="-1" class="pk" :class="'pk-' + ({back: 'fn', clear: 'fn', ok: 'ok'}[k] || 'n')" @pointerdown.prevent @mousedown.prevent @click="k === 'ok' ? openShift() : (opening = padNext(opening, k))">{{ {back: '⌫', clear: '清空', ok: '开班'}[k] || k }}</button></div>
-        <div class="note">不开班也能收银；开班后才能按收银员交班、算现金差额。</div>
       </template>
     </section>
   </div>`,
@@ -1182,7 +1177,7 @@ const Stock = {
       <el-table-column v-if="adjusting" label="实盘数" width="150"><template #default="{row}"><el-input v-model="row.real" inputmode="decimal" size="large" /></template></el-table-column>
     </el-table>
     <div v-if="adjusting" class="sp-foot"><button type="button" class="bigbtn" @click="adjusting=false">取消</button><button type="button" class="bigbtn pri" @click="submit">提交盘点</button></div>
-    <div class="note">盘点时只填数过的库存品，没填的保持不变。店员能否看、能否改本店库存，在后台“门店与区域”里设置。</div>
+    <div class="note">没填实盘数的库存品保持不变。</div>
   </section></div>`,
   setup(props) {
     const kw = ref(''), rows = ref([]), adjusting = ref(false), onlyLow = ref(false); let reqId = '';
@@ -1308,7 +1303,7 @@ const App = {
         <div><el-checkbox v-model="settings.keyHints">显示键盘快捷键提示</el-checkbox></div>
         <div class="osk-set"><span>屏幕键盘</span><el-radio-group v-model="settings.osk">
           <el-radio-button value="auto">触摸时弹出</el-radio-button><el-radio-button value="always">总是弹出</el-radio-button><el-radio-button value="off">关闭</el-radio-button></el-radio-group></div>
-        <div v-if="cur.print_mode === 'agent'" class="hint" style="margin:0 0 6px">本店小票由接小票机那台电脑上的“打印小助手”出票（后台设置），下面两项打印选项在本机不起作用。</div>
+        <div v-if="cur.print_mode === 'agent'" class="hint" style="margin:0 0 6px">本店由“打印小助手”出票，下面两项在本机不起作用。</div>
         <div v-else-if="desk && desk.printMode === 'off'" class="hint" style="margin:0 0 6px">这台电脑设置为不出票，下面两项不起作用。</div>
         <div><el-checkbox v-model="settings.autoPrintOnline">新订单自动打印小票</el-checkbox></div>
         <div><el-checkbox v-model="settings.autoPrintPos">收银后自动打印小票</el-checkbox></div>
@@ -1316,11 +1311,10 @@ const App = {
           <div class="desk-box">
             <div>小票机：<b>{{desk.printer || '未选择'}}</b><span class="muted">　{{ {raw: '直接出票', driver: '驱动出票', off: '不出票'}[desk.printMode] }}</span></div>
             <div class="desk-btns"><el-button @click="deskTest">打印测试页</el-button><el-button @click="deskDrawer">开钱箱</el-button><el-button type="primary" plain @click="openDeskSettings">桌面软件设置</el-button></div>
-            <div class="muted" style="font-size:12px;margin-top:6px">桌面版 {{desk.version}} · <kbd>F11</kbd> 全屏 · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 设置 · <kbd>Ctrl</kbd>+<kbd>+</kbd>/<kbd>−</kbd> 缩放</div>
+            <div class="muted" style="font-size:12px;margin-top:6px">桌面版 {{desk.version}}<template v-if="settings.keyHints"> · <kbd>F11</kbd> 全屏 · <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd> 设置 · <kbd>Ctrl</kbd>+<kbd>+</kbd>/<kbd>−</kbd> 缩放</template></div>
           </div>
         </template>
-        <div v-else class="muted" style="font-size:12px;margin-top:6px">本设置只对这台电脑生效。建议安装“收银系统”桌面软件，小票直接出、不弹打印框。</div>
-        <div class="muted" style="font-size:12px;margin-top:6px">切换页面：<span v-for="k in tabKeys" :key="k[0]" style="margin-right:6px"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
+        <div v-if="settings.keyHints" class="muted" style="font-size:12px;margin-top:6px">切换页面：<span v-for="k in tabKeys" :key="k[0]" style="margin-right:6px"><kbd>{{k[0]}}</kbd>{{k[1]}}</span></div>
       </el-popover>
         <a v-if="user.is_admin" class="tb" href="/web/admin/" target="_blank"><span class="ico" v-html="icon('sliders')"></span>后台管理</a>
         <span class="tb-sep"></span>
