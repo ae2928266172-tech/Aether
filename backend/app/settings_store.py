@@ -29,6 +29,11 @@ DEFAULTS: dict[str, dict] = {
         # 顾客扫码打开的正式网址（如 https://shop.example.com）。留空时用当前打开后台的地址，
         # 那样在本机或内网地址下生成的二维码，顾客在外面扫不开
         "public_url": "",
+        # 扫码点单首页的经营资质（《医疗器械网络销售质量管理规范》第 11、13、20 条）：
+        # 第二类医疗器械经营备案编号（文字显示）、备案凭证图片、售后与投诉电话
+        "license_no": "",
+        "license_image": "",
+        "service_phone": "",
     },
     "receipt": {
         "paper_width": 58,

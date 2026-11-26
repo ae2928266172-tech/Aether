@@ -1447,6 +1447,13 @@ const Rules = {
       <el-form-item label="小程序下单必须填位置"><el-switch v-model="f.online_location_required" /></el-form-item>
       <el-form-item label="退款期限">收款后 <el-input-number v-model="f.refund_days" :min="0" :max="3650" style="margin:0 8px" /> 天内门店可以退货退款<span class="muted" style="margin-left:8px">0 表示不限；管理员不受此限制</span></el-form-item>
       <el-form-item label="临期提醒"><el-input-number v-model="f.expiry_alert_days" :min="0" :max="3650" /><span style="margin-left:8px">天内到期</span></el-form-item>
+      <el-form-item label="医疗器械经营备案编号"><el-input v-model="f.license_no" placeholder="第二类医疗器械经营备案编号" /></el-form-item>
+      <el-form-item label="备案凭证图片">
+        <el-image v-if="f.license_image" :src="f.license_image" style="width:90px;height:90px;margin-right:10px" fit="contain" />
+        <input type="file" accept="image/*" @change="upLicense" />
+        <el-button v-if="f.license_image" link @click="f.license_image=''">移除</el-button>
+      </el-form-item>
+      <el-form-item label="售后与投诉电话"><el-input v-model="f.service_phone" placeholder="留空时用门店电话" /></el-form-item>
       <el-form-item label="顾客访问网址"><el-input v-model="f.public_url" placeholder="如 https://shop.example.com，上线后填正式域名" />
         <div class="hint" style="margin-top:2px">区域二维码用这个网址生成。留空时用当前打开后台的地址，那样生成的码顾客在外面扫不开。</div></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button></el-form-item>
@@ -1456,7 +1463,8 @@ const Rules = {
     const f = reactive({});
     onMounted(async () => { try { Object.assign(f, await api.get('/api/settings/rules')); } catch (e) { err(e); } });
     const save = async () => { try { await api.put('/api/settings/rules', { ...f }); ok(); } catch (e) { err(e); } };
-    return { f, save };
+    const upLicense = async (ev) => { const file = ev.target.files[0]; if (!file) return; try { f.license_image = (await api.upload(file)).url; } catch (e) { err(e); } ev.target.value = ''; };
+    return { f, save, upLicense };
   },
 };
 

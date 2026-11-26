@@ -172,3 +172,12 @@ def test_wx_oauth_back_is_safe():
     assert _safe_back("/web/h5/?area=abc") == "/web/h5/?area=abc"
     assert _safe_back("https://evil.com/") == "/web/h5/"
     assert _safe_back("/web/h5//evil.com") == "/web/h5/"
+
+
+def test_license_info_on_h5(client, admin, world):
+    admin.put("/api/settings/rules", {"license_no": " 苏宁药监械经营备20250849号 ", "service_phone": "025-12345678"})
+    info = client.get(f"/api/customer/area/{world['a1']['code']}").json()
+    assert (info["license_no"], info["service_phone"]) == ("苏宁药监械经营备20250849号", "025-12345678")
+    admin.req("PUT", "/api/settings/rules", 400, json={"license_image": "https://evil.com/a.png"})
+    menu = client.get(f"/api/customer/menu/{world['a1']['code']}").json()
+    assert any(p.get("reg_cert_no") == "苏械备20230001" for p in menu["products"])

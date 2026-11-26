@@ -140,6 +140,10 @@
     .ord .h b { font-size: 16px; }
     .ord .g { color: var(--ink-2); font-size: 14px; line-height: 1.5; }
     .ord .f { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; }
+    .lic { padding: 18px 4px 28px; font-size: 12px; line-height: 1.8; color: var(--ink-2); }
+    .lic a { color: inherit; text-decoration: underline; margin-left: 6px; }
+    .item .d.med, .spec-top .d.med { font-size: 12px; }
+    .medwarn { font-size: 12px; line-height: 1.6; color: var(--ink-2); margin: 4px 2px 12px; }
     .ord .f .acts { display: flex; gap: 8px; }
     .link.pay { background: var(--accent); color: var(--ink); }
     .paysum { text-align: center; padding: 8px 0 18px; }
@@ -228,6 +232,7 @@
                 <div class="n">{{p.name}}</div>
                 <div class="tags" v-if="p.min_qty > 1 || p.max_qty || p.skus.length > 1"><span v-if="p.min_qty > 1" class="tag">{{p.min_qty}} 件起</span><span v-if="p.max_qty" class="tag">每单限 {{p.max_qty}} 件</span><span v-if="p.skus.length > 1" class="tag gray">{{p.skus.length}} 种规格</span></div>
                 <div class="d" v-if="p.description">{{p.description}}</div>
+                <div class="d med" v-if="p.reg_cert_no">注册证/备案编号：{{p.reg_cert_no}}</div>
                 <div class="foot">
                   <div class="price"><small>¥</small>{{yuan(minPrice(p))}}<em v-if="p.skus.length > 1">起</em></div>
                   <button v-if="p.skus.length > 1" class="cta" @click="spec=p">选规格<i v-if="pTotal(p)">{{pTotal(p)}}</i></button>
@@ -235,6 +240,11 @@
                 </div>
               </div>
             </div>
+          </div>
+          <div v-if="!kw && (area.license_no || area.service_phone)" class="lic">
+            <div v-if="area.license_no">第二类医疗器械经营备案编号：{{area.license_no}}<a v-if="area.license_image" :href="area.license_image" target="_blank">查看凭证</a></div>
+            <div v-if="area.service_phone">售后与投诉电话：<a :href="'tel:' + area.service_phone">{{area.service_phone}}</a></div>
+            <div v-if="hasMed">购买和使用前请仔细阅读产品说明书或者在医务人员的指导下购买和使用</div>
           </div>
         </div>
       </div>
@@ -249,7 +259,7 @@
     <transition name="sheet"><div v-if="spec" class="mask" @click.self="spec=null"><div class="sheet" v-drag-close="() => spec = null">
       <div class="grab"><h3>选规格</h3><button class="x" aria-label="关闭" @click="spec=null"><svg viewBox="0 0 12 12"><path d="M2 2l8 8M10 2l-8 8" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button></div>
       <div class="body">
-        <div class="spec-top"><div class="img" :style="pimg(spec) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(spec), 240)) + ')'} : {}"><template v-if="!pimg(spec)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div><div><div class="n">{{spec.name}}</div><div class="d" v-if="spec.description || limText(spec)">{{[limText(spec), spec.description].filter(Boolean).join(' · ')}}</div></div></div>
+        <div class="spec-top"><div class="img" :style="pimg(spec) ? {backgroundImage:'url(' + JSON.stringify(thumb(pimg(spec), 240)) + ')'} : {}"><template v-if="!pimg(spec)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l-1 13H7L6 7z"/><path d="M9 7a3 3 0 0 1 6 0"/></svg></template></div><div><div class="n">{{spec.name}}</div><div class="d" v-if="spec.description || limText(spec)">{{[limText(spec), spec.description].filter(Boolean).join(' · ')}}</div><div class="d med" v-if="spec.reg_cert_no">注册证/备案编号：{{spec.reg_cert_no}}<br>购买和使用前请仔细阅读产品说明书或者在医务人员的指导下购买和使用</div></div></div>
         <div v-for="s in spec.skus" :key="s.id" class="spec" :class="{has: qty[s.id]}">
           <span class="sn"><img v-if="s.image" :src="thumb(s.image, 160)" class="simg"><span><div class="sk">{{s.name}}</div><div class="pr">¥{{yuan(s.price)}}</div></span></span>
           <span class="qty"><template v-if="qty[s.id]"><button class="minus" aria-label="减少" @click="dec(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button><span :key="qty[s.id]" class="num">{{qty[s.id]}}</span></template><button aria-label="增加" @click="inc(spec, s.id)"><svg viewBox="0 0 16 16"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg></button></span>
@@ -271,6 +281,7 @@
           <div class="field"><label>联系电话</label><input v-model="phone" type="tel" inputmode="tel" maxlength="20" placeholder="选填"></div>
           <div class="field"><label>备注</label><textarea v-model="remark" rows="1" placeholder="选填"></textarea></div>
         </div>
+        <div v-if="cartMed" class="medwarn">购买和使用前请仔细阅读产品说明书或者在医务人员的指导下购买和使用</div>
         <button class="btn block" :disabled="busy" @click="submit">{{busy ? '正在提交…' : (payOn ? '提交订单并付款' : '提交订单')}}</button>
       </div>
     </div></div></transition>
@@ -315,6 +326,9 @@ const app = createApp({
     const topCats = computed(() => cats.value.filter(c => !c.parent_id && products.value.some(p => inCat(p, c.id))));
     const shown = computed(() => cat.value ? products.value.filter(p => inCat(p, cat.value)) : products.value);
     const skuMap = computed(() => { const m = {}; products.value.forEach(p => p.skus.forEach(s => m[s.id] = { name: p.name + (s.name !== '默认' ? '(' + s.name + ')' : ''), price: s.price })); return m; });
+    const hasMed = computed(() => products.value.some(p => p.reg_cert_no));
+    const medSku = computed(() => { const m = {}; products.value.forEach(p => { if (p.reg_cert_no) p.skus.forEach(s => m[s.id] = 1); }); return m; });
+    const cartMed = computed(() => lines.value.some(l => medSku.value[l.sku_id]));
     const lines = computed(() => Object.entries(qty).filter(([, q]) => q > 0).map(([id, q]) => ({ sku_id: +id, qty: q, ...skuMap.value[id] })));
     const count = computed(() => lines.value.reduce((a, l) => a + l.qty, 0));
     const total = computed(() => lines.value.reduce((a, l) => a + l.qty * l.price, 0));
@@ -459,7 +473,7 @@ const app = createApp({
         if (paidId && api.token()) { history.replaceState(null, '', location.pathname + '?area=' + encodeURIComponent(code)); checkPaid(paidId).catch(() => {}); } const m = await api.get('/api/customer/menu/' + encodeURIComponent(code)); cats.value = m.categories; products.value = m.products; nextTick(() => { active.value = sections.value[0] && sections.value[0].id; }); document.title = area.value.store_name; }
       catch (e) { error.value = e.message; }
     });
-    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, showTop, toTop, kw, searchOpen, kwEl, openSearch, found, spec, pimg, payOn, payOrder, paying, left, mmss, payWays, openPay, closePay, doPay, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
+    return { indStyle, sections, active, activeName, secCount, jump, spy, listEl, showTop, toTop, kw, searchOpen, kwEl, openSearch, found, spec, pimg, hasMed, cartMed, payOn, payOrder, paying, left, mmss, payWays, openPay, closePay, doPay, minPrice, pTotal, tip, limText, area, error, cats, cat, topCats, shown, qty, inc, dec, lines, count, total, sheet, loc, phone, remark, busy, submit, ordersOpen, orders, showOrders, cancel, yuan };
   },
 });
 // 底部弹层：按住顶部抓手往下拉，手指在哪弹层就在哪（1:1 跟手）；松手时按速度预测落点，过半或快速下滑就关闭，否则弹回

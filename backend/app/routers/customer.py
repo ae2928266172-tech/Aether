@@ -72,6 +72,8 @@ def area_info(code: str, db: Session = Depends(get_db)):
     return {"area_id": a.id, "area_name": a.name, "store_id": a.store_id, "store_name": a.store.name,
             "accept_online_orders": a.store.accept_online_orders, "area_label": rules["area_label"],
             "location_label": rules["location_label"], "location_required": rules["online_location_required"],
+            "license_no": rules.get("license_no", ""), "license_image": rules.get("license_image", ""),
+            "service_phone": rules.get("service_phone", "") or a.store.phone or "",
             "pay": {"providers": online_pay.h5_providers(), "minutes": svc.PAY_MINUTES,
                     "wx_oauth": online_pay.wx_oauth_ready() and pay_mode("wechat") != "mock",
                     "mock": "mock" in (pay_mode("wechat"), pay_mode("alipay"))}}
