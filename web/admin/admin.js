@@ -102,7 +102,6 @@ const Products = {
         </el-row>
         <el-form-item label="图片">
           <image-drop v-model="form.image" :size="110" hint="拖入商品图片" />
-          <span class="muted" style="margin-left:14px;font-size:12px;line-height:1.7">把图片从电脑文件夹拖到框里即可，<br>也可以点框选择，或复制图片后点框按 Ctrl+V。</span>
         </el-form-item>
         <el-form-item label="描述"><el-input v-model="form.description" type="textarea" :rows="2" /></el-form-item>
 
@@ -130,7 +129,7 @@ const Products = {
           <el-col :span="12"><el-form-item label="生产地址"><el-input v-model="form.production_address" /></el-form-item></el-col>
         </el-row>
 
-        <div class="form-section">扫码点单<small>只限制顾客扫码点单，门店收银不受限；每个区域还可以在“门店与区域 → 点单规则”里单独设置</small></div>
+        <div class="form-section">扫码点单</div>
         <el-row :gutter="12">
           <el-col :span="12"><el-form-item label="每单起订量"><el-input v-model="form.min_qty" placeholder="不限" style="width:140px"><template #append>件</template></el-input></el-form-item></el-col>
           <el-col :span="12"><el-form-item label="每单限购量"><el-input v-model="form.max_qty" placeholder="不限" style="width:140px"><template #append>件</template></el-input></el-form-item></el-col>
@@ -278,7 +277,7 @@ function simpleCrud({ title, desc, url, fields, columns, after, order }) {
 }
 
 const Categories = simpleCrud({
-  title: '分类', desc: '先建大类，再在大类下建小类；一个商品可以同时放进多个分类。', url: '/api/categories',
+  title: '分类', url: '/api/categories',
   fields: [{ prop: 'name', label: '名称' }, { prop: 'parent_id', label: '上级大类', type: 'select', default: null,
     options: (m, f) => m.categories.filter(c => !c.parent_id && c.id !== f.id) }, { prop: 'sort', label: '排序', type: 'int', default: 0 }, { prop: 'active', label: '启用', type: 'bool' }],
   columns: [{ prop: 'name', label: '分类', width: 260, indent: r => !!r.parent_id, sub: (r, m) => r.parent_id ? '' : (m.categories.filter(c => c.parent_id === r.id).length ? m.categories.filter(c => c.parent_id === r.id).length + ' 个小类' : '') },
@@ -296,7 +295,7 @@ const Suppliers = simpleCrud({
   after: (m, rows) => { m.suppliers = rows; },
 });
 const StockItems = simpleCrud({
-  title: '库存品', desc: '库存品是实际占库存的东西；不同商品、不同规格可以绑定同一个库存品，按各自的扣减量扣。', url: '/api/stock-items',
+  title: '库存品', url: '/api/stock-items',
   fields: [{ prop: 'name', label: '名称' }, { prop: 'code', label: '编码' }, { prop: 'unit', label: '单位', default: '份' }, { prop: 'cost', label: '单位成本', type: 'money', default: '0' },
     { prop: 'supplier_id', label: '供应商', type: 'select', default: null, options: m => m.suppliers },
     { prop: 'alert_qty', label: '库存预警', type: 'qty', default: '', placeholder: '库存 ≤ 这个数时提醒补货，留空不提醒' }, { prop: 'active', label: '启用', type: 'bool' }],
@@ -326,7 +325,7 @@ const Stores = {
     </el-table>
   </div>
   <div class="panel">
-    <div class="toolbar"><b>区域与二维码</b><span class="muted">顾客扫区域二维码点单，订单自动带上门店和区域</span><span class="grow"></span><el-button type="primary" @click="editArea()">新增区域</el-button></div>
+    <div class="toolbar"><b>区域与二维码</b><span class="grow"></span><el-button type="primary" @click="editArea()">新增区域</el-button></div>
     <el-table :data="areas">
       <el-table-column label="区域" min-width="200"><template #default="{row}">
         <div class="c-main">{{row.name}}</div><div class="c-sub">{{row.store_name}}</div></template></el-table-column>
@@ -376,12 +375,12 @@ const Stores = {
       <el-form-item label="区域名称"><el-input v-model="aForm.name" placeholder="如：一病区、3 楼" /></el-form-item>
       <el-form-item label="排序"><el-input-number v-model="aForm.sort" /></el-form-item>
       <el-form-item label="启用"><el-switch v-model="aForm.active" /></el-form-item>
-      <el-form-item label="不限数量"><el-switch v-model="aForm.no_qty_limit" /><span class="hint" style="margin:0 0 0 8px">打开后这个区域点单不受起订量、限购量限制（如 ICU）</span></el-form-item>
+      <el-form-item label="不限数量"><el-switch v-model="aForm.no_qty_limit" /></el-form-item>
     </el-form>
     <template #footer><el-button @click="aDlg=false">取消</el-button><el-button type="primary" @click="saveArea">保存</el-button></template>
   </el-dialog>
   <el-dialog v-model="rDlg" :title="rArea.store_name + ' · ' + rArea.name + ' 点单规则'" width="820px" top="5vh">
-    <div class="hint" style="margin:0 0 12px">只影响顾客扫码点单。起订量、限购量留空 = 用商品自己的设置，填 0 = 本区域不限。
+    <div class="hint" style="margin:0 0 12px">留空用商品自己的设置，填 0 不限。
       <b v-if="rArea.no_qty_limit">这个区域已设为“不限数量”，下面的数量设置不生效。</b></div>
     <div class="toolbar" style="margin-bottom:8px">
       <el-input v-model="rKw" placeholder="搜索商品" clearable style="width:200px" />
@@ -406,7 +405,6 @@ const Stores = {
       <img :src="qImg" />
       <div class="muted" style="font-size:12px;word-break:break-all;margin-top:6px">{{qUrl}}</div>
       <el-alert v-if="qLocal" type="warning" :closable="false" style="margin-top:8px;text-align:left" title="这个二维码只能在本机或同一个局域网里扫开" description="正式张贴前，请先在“业务规则”里填好“顾客访问网址”（正式域名），再回来下载。" />
-      <div class="muted" style="font-size:12px;margin-top:6px">小程序上线前先用网页版点单；小程序发布后这里改为小程序码。</div>
       <el-button type="primary" style="margin-top:10px" @click="downloadQr">下载图片</el-button>
     </div>
   </el-dialog>
@@ -527,13 +525,12 @@ const Inventory = {
       <el-table-column label="当前库存" min-width="96" align="right" fixed="right"><template #default="{row}">
         <b class="money" :style="row.current <= 0 ? 'color:var(--danger)' : ''">{{fmtN(row.current)}}</b></template></el-table-column>
     </el-table>
-    <div class="muted" style="margin-top:10px;font-size:12px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。点数字查看流水。</div>
+    <div class="muted" style="margin-top:10px;font-size:12px">期初 = 开始日之前的累计；结余 = 期初 + 入库 − 出库 + 调入 − 调出 − 销售 + 退货回补 ± 盘点。</div>
     </div>
   </template>
 
     <dlg-page v-model="dDlg" :inline="docInline" :title="docInline ? '' : docTitle" :width="doc.kind==='in' ? '1180px' : '720px'" top="4vh">
-      <div v-if="view === 'stockIn'" class="toolbar"><div class="segs mini"><div class="seg" :class="{on: doc.kind === 'in'}" @click="openDoc('in')">入库</div><div class="seg" :class="{on: doc.kind === 'out'}" @click="openDoc('out')">出库</div></div>
-        <span class="muted" style="font-size:12px">{{ doc.kind === 'in' ? '采购到货登记入库' : '报损、领用、退供应商等' }}</span></div>
+      <div v-if="view === 'stockIn'" class="toolbar"><div class="segs mini"><div class="seg" :class="{on: doc.kind === 'in'}" @click="openDoc('in')">入库</div><div class="seg" :class="{on: doc.kind === 'out'}" @click="openDoc('out')">出库</div></div></div>
       <el-form label-width="80px" inline>
         <el-form-item v-if="doc.kind==='out' || doc.kind==='transfer'" label="调出"><el-select v-model="doc.from" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
         <el-form-item v-if="doc.kind!=='out'" :label="doc.kind==='transfer' ? '调入' : (doc.kind==='adjust' ? '盘点地点' : '入库到')"><el-select v-model="doc.to" style="width:170px"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select></el-form-item>
@@ -541,7 +538,7 @@ const Inventory = {
         <el-form-item v-if="doc.kind==='in' || (doc.kind==='out' && doc.reason==='退供应商')" label="供应商"><el-select v-model="doc.supplier_id" clearable filterable style="width:170px"><el-option v-for="s in meta.suppliers" :key="s.id" :label="s.name" :value="s.id" /></el-select></el-form-item>
         <el-form-item label="备注"><el-input v-model="doc.remark" style="width:170px" /></el-form-item>
       </el-form>
-      <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '填写实际盘点数量，留空表示不盘该项。' : (doc.kind==='in' ? '在数量列直接填数，留空或 0 表示不处理。批号、生产日期、有效期至选填；同一库存品有几个批次就点“+批次”分几行。' : '在数量列直接填数，留空或 0 表示不处理。出库、调拨会先出最早到期的批次。') }}</div>
+      <div class="muted" style="margin-bottom:6px">{{ doc.kind==='adjust' ? '留空表示不盘该项。' : '留空或 0 表示不处理。' }}</div>
       <div class="toolbar" style="margin-bottom:6px">
         <el-input ref="dqInput" v-model="dq" placeholder="搜索名称或编码，空格分隔多个词" clearable style="width:280px" @keyup.enter="dqEnter" />
         <el-checkbox v-model="dFilled">只看已填（{{ filledCount }}）</el-checkbox>
@@ -565,11 +562,9 @@ const Inventory = {
       <div v-if="doc.kind==='in' && docAmt" style="text-align:right;margin-top:8px">进货金额合计 <b class="money">¥{{yuan(docAmt)}}</b></div>
       <template #footer><el-button @click="docInline ? openDoc(doc.kind) : (dDlg = false)">{{ docInline ? '清空' : '取消' }}</el-button><el-button type="primary" :loading="saving" @click="submitDoc">提交</el-button></template>
     </dlg-page>
-    <div v-if="docInline" class="note">提交后库存立即变化；填错的单据到“单据与台账”里点“作废”，库存按原单反向冲回，单据保留可查。</div>
     <dlg-page v-model="rqDlg" :inline="view === 'requests'" title="门店要货申请" width="960px" top="5vh">
       <div class="toolbar">
         <el-radio-group v-model="rq.status" @change="loadReqs"><el-radio-button value="pending">待处理</el-radio-button><el-radio-button value="done">已调拨</el-radio-button><el-radio-button value="rejected">已驳回</el-radio-button><el-radio-button value="">全部</el-radio-button></el-radio-group>
-        <span class="muted" style="font-size:12px">门店在门店工作台“要货”里提交；点“处理”从仓库调拨，数量可以改。</span>
         <span class="grow"></span><el-button v-if="view === 'requests'" type="primary" @click="openDoc('transfer')">新建调拨单</el-button></div>
       <el-table :data="reqs" :max-height="view === 'requests' ? undefined : 540">
         <el-table-column label="要货单" min-width="180"><template #default="{row}"><div class="c-main">{{row.store_name}}</div><div class="c-sub">{{row.no}} · {{row.created_at}} · {{row.created_by_name}}</div></template></el-table-column>
@@ -590,14 +585,12 @@ const Inventory = {
         <el-table-column label="仓库现有" width="90" align="right"><template #default="{row}">{{ stockAt(ff.from, row.stock_item_id) }}</template></el-table-column>
         <el-table-column label="实发" width="120"><template #default="{row}"><el-input v-model="row.qty" size="small" /></template></el-table-column>
       </el-table>
-      <div class="muted" style="margin-top:6px">实发填 0 表示这项不发。提交后生成调拨单，库存立即变化，先出最早到期的批次。</div>
       <template #footer><el-button @click="ffDlg=false">取消</el-button><el-button type="primary" :loading="saving" @click="submitFulfill">确认调拨</el-button></template>
     </el-dialog>
     <dlg-page v-model="bDlg" :inline="view === 'batches'" title="批次 / 有效期" width="900px" top="6vh">
       <div class="toolbar">
         <el-select v-model="bq.location_id" placeholder="全部地点" clearable style="width:160px" @change="loadBatches"><el-option v-for="l in locations" :key="l.id" :label="l.name" :value="l.id" /></el-select>
         <el-checkbox v-model="bq.onlyNear">只看 {{expiryDays}} 天内到期</el-checkbox>
-        <span class="muted">有剩余的批次，最早到期的在前。临期天数在“业务规则”里改。</span>
       </div>
       <el-table :data="bq.onlyNear ? batches.filter(b => nearExp(b.expiry_date)) : batches" :max-height="view === 'batches' ? undefined : 520">
         <el-table-column prop="location_name" label="仓库 / 门店" width="140" />
@@ -642,7 +635,6 @@ const Inventory = {
           <el-tag v-if="row.voided" type="info" size="small">已作废</el-tag>
           <el-button v-else link type="danger" @click="voidDoc(row)">作废</el-button></template></el-table-column>
       </el-table>
-      <div class="muted" style="margin-top:6px">填错的单据点“作废”：库存按原单反向冲回，单据保留可查。盘点单作废只冲回当时的盈亏数量。</div>
     </dlg-page>
     <el-dialog v-model="mDlg" :title="mTitle" width="640px">
       <el-table :data="moves" border size="small" max-height="460">
@@ -1028,7 +1020,7 @@ const HeatMap = {
       </template>
       <div></div><div v-for="h in hours" :key="'x' + h" class="hx">{{ h % 2 === 0 ? h : '' }}</div>
     </div>
-    <div class="heat-lg"><span>少</span><i v-for="k in 5" :key="k" :style="{background: color(max * (k - .5) / 5)}"></i><span>多</span><span class="muted" style="margin-left:8px">按收款时间，格子越深单越多</span></div>
+    <div class="heat-lg"><span>少</span><i v-for="k in 5" :key="k" :style="{background: color(max * (k - .5) / 5)}"></i><span>多</span></div>
   </div>`,
   setup(props) {
     const days = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
@@ -1086,27 +1078,26 @@ const Revenue = {
     </div>
     <div class="dash-row" v-if="data.total">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">实收走势</div><span class="muted" style="font-size:12px">{{ {day: '每天', week: '每周', month: '每月'}[group] }}实收，悬停看金额</span></div>
+        <div class="panel-head"><div class="panel-title">实收走势</div></div>
         <div style="height:16px"></div>
         <bar-chart :items="series" :fmt="v => '¥' + yuan(v * 100)" :height="210" :labels="series.length <= 14" />
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">收款方式</div><span class="muted" style="font-size:12px">净收（已扣退款）</span></div>
+        <div class="panel-head"><div class="panel-title">收款方式</div></div>
         <div style="height:16px"></div>
         <div class="hbars">
           <div v-for="m in methodRows" :key="m.k" class="hbar"><div class="t"><span>{{m.label}}</span><b>¥{{yuan(m.v)}}</b></div><div class="b"><i :style="{width: m.pct + '%'}"></i></div></div>
         </div>
-        <div class="note" style="margin-top:16px">微信 / 支付宝目前按收银员选择的方式记账，未接入线上支付对账。</div>
       </div>
     </div>
     <div class="dash-row even" v-if="ins">
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">下单时段</div><span class="muted" style="font-size:12px">每个时段的收款单数</span></div>
+        <div class="panel-head"><div class="panel-title">下单时段</div></div>
         <div style="height:16px"></div>
         <bar-chart class="cyan" :items="hourItems" :fmt="v => v + ' 单'" :height="170" />
       </div>
       <div class="panel">
-        <div class="panel-head"><div class="panel-title">扫码点单区域排行</div><span class="muted" style="font-size:12px">按单数，金额为订单应收</span></div>
+        <div class="panel-head"><div class="panel-title">扫码点单区域排行</div></div>
         <div style="height:12px"></div>
         <el-table v-if="ins.areas.length" :data="ins.areas.slice(0, 8)">
           <el-table-column prop="name" label="区域" min-width="120" />
@@ -1129,7 +1120,6 @@ const Revenue = {
       <el-table-column label="成本" min-width="90" align="right"><template #default="{row}"><span class="money">{{yuan(row.cost)}}</span></template></el-table-column>
       <el-table-column label="毛利" min-width="100" align="right"><template #default="{row}"><span class="money">{{yuan(row.profit)}}</span></template></el-table-column>
     </el-table>
-    <div class="muted" style="margin-top:10px;font-size:12px">收款按收款时间、退款按退款时间计入；实收 = 收款 − 退款。</div>
     </div>
   </div>`,
   setup() {
@@ -1180,7 +1170,7 @@ const ProductSales = {
     </div>
 
     <template v-if="view === 'category'">
-      <div class="hint" style="margin:-6px 0 10px">大类包含它下面小类的商品；一个商品放在几个分类里，就在每个分类里各算一次。点一行查看这个分类里的商品。</div>
+      <div class="hint" style="margin:-6px 0 10px">大类包含它下面小类的商品；一个商品放在几个分类里，就在每个分类里各算一次。</div>
       <el-table :data="catRows" @row-click="openCat" row-class-name="clickable">
         <el-table-column label="分类" min-width="200"><template #default="{row}">
           <div class="c-main" :style="row.parent_id ? 'padding-left:18px;font-weight:400' : ''"><span v-if="row.parent_id" class="muted">└ </span>{{row.name}}</div></template></el-table-column>
@@ -1193,7 +1183,7 @@ const ProductSales = {
     </template>
 
     <template v-else>
-    <div class="hint" style="margin:-6px 0 10px">点一行，下面展开这个商品的逐单明细。<b v-if="catId">当前只看分类：{{(catOptions.find(c => c.id === catId) || {}).label}}</b></div>
+    <div v-if="catId" class="hint" style="margin:-6px 0 10px"><b>当前只看分类：{{(catOptions.find(c => c.id === catId) || {}).label}}</b></div>
     <el-table :data="rows" highlight-current-row @current-change="r => pick(r)" row-class-name="clickable">
       <el-table-column label="商品" min-width="200"><template #default="{row}"><div class="c-main">{{row.product_name}}</div><div class="c-sub" v-if="row.sku_name !== '默认'">{{row.sku_name}}</div></template></el-table-column>
       <el-table-column label="净件数" min-width="110" align="right"><template #default="{row}"><b>{{row.net_qty}}</b><div class="c-sub">卖 {{row.sold_qty}}<span v-if="row.refund_qty" style="color:var(--danger)"> · 退 {{row.refund_qty}}</span></div></template></el-table-column>
@@ -1262,7 +1252,6 @@ const ReceiptSettings = {
         <el-image v-if="f.footer_image" :src="f.footer_image" style="width:90px;height:90px;margin-right:10px" fit="contain" />
         <input type="file" accept="image/*" @change="upload" />
         <el-button v-if="f.footer_image" link @click="f.footer_image=''">移除</el-button>
-        <div class="muted" style="width:100%">例如微信二维码，方便顾客添加微信</div>
       </el-form-item>
       <el-form-item label="打印字段">
         <el-checkbox v-for="(t,k) in toggles" :key="k" v-model="f[k]">{{t}}</el-checkbox>
@@ -1274,7 +1263,7 @@ const ReceiptSettings = {
           <el-checkbox value="registrant">注册人</el-checkbox><el-checkbox value="production_address">生产地址</el-checkbox></el-checkbox-group>
       </el-form-item>
       <el-form-item label="打印份数"><el-input-number v-model="f.copies" :min="1" :max="3" /></el-form-item>
-      <div class="form-section">排版<small>字号：正常 / 加高（字变高）/ 加大（宽高都放大，一行字数减半）</small></div>
+      <div class="form-section">排版</div>
       <el-table :data="parts" size="small" border style="margin-bottom:14px">
         <el-table-column prop="label" label="部分" width="120" />
         <el-table-column label="字号" width="230"><template #default="{row}">
@@ -1288,7 +1277,7 @@ const ReceiptSettings = {
       <el-form-item label="行距"><el-radio-group v-model="f.line_spacing"><el-radio-button value="compact">紧凑</el-radio-button><el-radio-button value="normal">正常</el-radio-button><el-radio-button value="loose">宽松</el-radio-button></el-radio-group></el-form-item>
       <el-form-item label="底部图片大小"><el-slider v-model="f.image_width" :min="20" :max="100" :step="5" style="width:260px" :format-tooltip="v => v + '% 纸宽'" /></el-form-item>
       <el-form-item label="顶部留白"><el-input-number v-model="f.top_blank" :min="0" :max="10" /> <span class="muted">&nbsp;行</span></el-form-item>
-      <el-form-item label="底部走纸"><el-input-number v-model="f.bottom_blank" :min="0" :max="10" /> <span class="muted">&nbsp;行（方便撕纸）</span></el-form-item>
+      <el-form-item label="底部走纸"><el-input-number v-model="f.bottom_blank" :min="0" :max="10" /> <span class="muted">&nbsp;行</span></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button><el-button @click="testPrint">打印测试页</el-button></el-form-item>
     </el-form>
     <div><div class="muted" style="margin-bottom:6px">预览（示例订单）</div><div class="receipt-preview"><iframe :srcdoc="html"></iframe></div></div>
@@ -1361,7 +1350,7 @@ const Accounts = {
       <el-form-item label="类型"><el-radio-group v-model="rForm.is_admin"><el-radio :value="true">后台（可看所有门店、营收）</el-radio><el-radio :value="false">门店</el-radio></el-radio-group></el-form-item>
       <el-form-item label="权限"><el-checkbox-group v-model="rForm.permissions">
         <div v-for="p in perms" :key="p.key"><el-checkbox :value="p.key" :disabled="!rForm.is_admin && adminOnly.includes(p.key)">{{p.label}}</el-checkbox></div></el-checkbox-group></el-form-item>
-      <el-form-item label="最低折扣"><el-input-number v-model="rForm.min_rate" :min="0.1" :max="10" :step="0.5" :precision="1" /> <span class="muted">&nbsp;折（10 = 不能优惠，0.1 = 不限，可以打到 0 元）</span></el-form-item>
+      <el-form-item label="最低折扣"><el-input-number v-model="rForm.min_rate" :min="0.1" :max="10" :step="0.5" :precision="1" /> <span class="muted">&nbsp;折（10 不能优惠，0.1 不限）</span></el-form-item>
       <el-form-item label="单笔最多调低"><el-input v-model="rForm.max_adj" placeholder="留空不限" style="width:160px"><template #append>元</template></el-input></el-form-item>
     </el-form>
     <template #footer><el-button @click="rDlg=false">取消</el-button><el-button type="primary" @click="saveRole">保存</el-button></template>
@@ -1431,7 +1420,7 @@ const Rules = {
   template: `
   <div class="panel">
     <el-form :model="f" label-width="200px" style="max-width:640px">
-      <el-form-item label="扫码点单自动接单"><el-switch v-model="f.online_auto_accept" /><span class="muted" style="margin-left:8px">打开后顾客下单即接单，不用店员手动点；出小票按门店的自动出票设置</span></el-form-item>
+      <el-form-item label="扫码点单自动接单"><el-switch v-model="f.online_auto_accept" /></el-form-item>
       <el-form-item label="小程序订单扣库存时机"><el-radio-group v-model="f.online_deduct_on"><el-radio value="create">下单时</el-radio><el-radio value="accept">接单时</el-radio></el-radio-group></el-form-item>
       <el-form-item label="门店收银库存不够也能卖"><el-switch v-model="f.pos_allow_negative" /></el-form-item>
       <el-form-item label="小程序库存不够也能下单"><el-switch v-model="f.online_allow_negative" /></el-form-item>
@@ -1439,7 +1428,7 @@ const Rules = {
       <el-form-item label="位置叫法"><el-input v-model="f.location_label" placeholder="如：床号、桌号" /></el-form-item>
       <el-form-item label="小程序下单必须填位置"><el-switch v-model="f.online_location_required" /></el-form-item>
       <el-form-item label="退款期限">收款后 <el-input-number v-model="f.refund_days" :min="0" :max="3650" style="margin:0 8px" /> 天内门店可以退货退款<span class="muted" style="margin-left:8px">0 表示不限；管理员不受此限制</span></el-form-item>
-      <el-form-item label="临期提醒"><el-input-number v-model="f.expiry_alert_days" :min="0" :max="3650" /><span class="muted" style="margin-left:8px">天内到期（含已过期）的批次在经营概览和库存页提醒</span></el-form-item>
+      <el-form-item label="临期提醒"><el-input-number v-model="f.expiry_alert_days" :min="0" :max="3650" /><span style="margin-left:8px">天内到期</span></el-form-item>
       <el-form-item label="顾客访问网址"><el-input v-model="f.public_url" placeholder="如 https://shop.example.com，上线后填正式域名" />
         <div class="hint" style="margin-top:2px">区域二维码用这个网址生成。留空时用当前打开后台的地址，那样生成的码顾客在外面扫不开。</div></el-form-item>
       <el-form-item><el-button type="primary" @click="save">保存</el-button></el-form-item>
@@ -1462,7 +1451,7 @@ const Shifts = {
       <el-select v-model="q.store_id" placeholder="全部门店" clearable style="width:160px" @change="load"><el-option v-for="s in stores" :key="s.id" :label="s.name" :value="s.id" /></el-select>
       <el-date-picker v-model="q.range" type="daterange" value-format="YYYY-MM-DD" start-placeholder="开始" end-placeholder="结束" style="width:250px" @change="load" />
       <el-button @click="load">查询</el-button><el-button @click="exp">导出</el-button>
-      <span class="grow"></span><span class="muted">收银员在门店工作台“交班”里开班、交班；差额 = 实点现金 − 应有现金</span>
+      <span class="grow"></span>
     </div>
     <div class="stats" style="margin-bottom:14px">
       <div class="stat"><div class="k">班次</div><div class="v">{{rows.length}}</div><div class="s">当班中 {{rows.filter(r => r.status === 'open').length}}</div></div>
@@ -1519,7 +1508,7 @@ const Audit = {
       <el-select v-model="q.action" placeholder="全部操作" clearable style="width:140px" @change="search"><el-option v-for="a in actions" :key="a" :label="a" :value="a" /></el-select>
       <el-input v-model="q.keyword" placeholder="商品、单号、账号、操作人" clearable style="width:220px" @keyup.enter="search" @clear="search" />
       <el-button @click="search">查询</el-button>
-      <span class="grow"></span><span class="muted">改价、权限、账号、门店设置、业务规则、库存单据、作废、退款，只能查看不能修改</span>
+      <span class="grow"></span>
     </div>
     <el-table :data="rows" size="small" v-loading="loading">
       <el-table-column type="expand"><template #default="{row}"><div style="padding:4px 16px 10px 48px">
@@ -1572,14 +1561,14 @@ const Dashboard = {
         <div class="s">昨日 ¥{{yuan(y.net)}}<template v-if="cmp(t.net, y.net)"> · <span :class="cmp(t.net, y.net).cls + '-t'">{{cmp(t.net, y.net).text}}</span></template></div></div>
       <div class="stat t-cyan"><div class="k">今日单数</div><div class="v">{{t.orders || 0}} <small>单</small></div>
         <div class="s">门店收银 {{t.pos_orders || 0}} · 扫码点单 {{t.online_orders || 0}}</div></div>
-      <div class="stat t-red clickable" @click="go('orders')"><div class="k">待接单</div><div class="v" :style="pending ? 'color:var(--danger)' : ''">{{pending}} <small v-if="pending" style="color:var(--danger)">需处理</small></div>
+      <div class="stat t-red clickable" @click="go('orders')"><div class="k">待接单</div><div class="v" :style="pending ? 'color:var(--danger)' : ''">{{pending}}</div>
         <div class="s">各门店扫码点单 · 点击查看 ›</div></div>
       <div class="stat t-purple"><div class="k">本月实收</div><div class="v">¥{{yuan(m.net)}}</div>
         <div class="s">毛利 ¥{{yuan(m.profit)}}<template v-if="m.net > 0"> · 毛利率 {{(m.profit / m.net * 100).toFixed(1)}}%</template></div></div>
     </div>
     <div class="dash-row">
       <div class="panel">
-        <div class="panel-head"><div><div class="panel-title">营收趋势</div><div class="panel-desc">{{ {net: '每天实收（收款 − 退款）', orders: '每天收款单数', avg: '每天客单价（实收 ÷ 单数）', margin: '每天毛利率（毛利 ÷ 实收）'}[metric] }}，悬停看具体数值</div></div>
+        <div class="panel-head"><div class="panel-title">营收趋势</div>
           <div class="toolbar" style="margin:0">
             <div class="segs mini"><div v-for="x in [['net', '实收'], ['orders', '单数'], ['avg', '客单价'], ['margin', '毛利率']]" :key="x[0]" class="seg" :class="{on: metric === x[0]}" @click="metric = x[0]">{{x[1]}}</div></div>
             <div class="segs mini"><div v-for="n in [14, 30, 90]" :key="n" class="seg" :class="{on: days === n}" @click="days = n; loadTrend()">近 {{n}} 天</div></div>
@@ -1595,7 +1584,7 @@ const Dashboard = {
     </div>
     <div class="dash-row">
       <div class="panel">
-        <div class="panel-title">下单时段</div><div class="panel-desc">按收款时间，格子越深单越多（近 {{days}} 天）</div>
+        <div class="panel-title">下单时段</div>
         <heat-map v-if="heat" :heat="heat" />
       </div>
       <div class="panel">
@@ -1606,7 +1595,7 @@ const Dashboard = {
     </div>
     <div class="dash-row">
       <div class="panel">
-        <div class="panel-title">今日各门店</div><div class="panel-desc">按收款时间统计，退款已扣除</div>
+        <div class="panel-title">今日各门店</div>
         <el-table v-if="byStore.length" :data="byStore">
           <el-table-column prop="store_name" label="门店" min-width="160" />
           <el-table-column prop="orders" label="单数" width="80" align="right" />
@@ -1628,8 +1617,7 @@ const Dashboard = {
     </div>
     <div class="dash-row even" v-if="alerts !== null || expiring !== null">
       <div v-if="alerts !== null" class="panel">
-        <div class="panel-head"><div><div class="panel-title">库存预警 <span v-if="alerts.length" style="color:var(--danger)">{{alerts.length}}</span></div>
-          <div class="panel-desc">库存 ≤ 预警量的库存品；预警量在“库存品”里设置</div></div><span class="link-more" @click="go('inventory')">库存总览 ›</span></div>
+        <div class="panel-head"><div><div class="panel-title">库存预警 <span v-if="alerts.length" style="color:var(--danger)">{{alerts.length}}</span></div></div><span class="link-more" @click="go('inventory')">库存总览 ›</span></div>
         <el-table v-if="alerts.length" :data="alerts.slice(0, 8)">
           <el-table-column prop="location_name" label="仓库 / 门店" min-width="110" />
           <el-table-column prop="name" label="库存品" min-width="150" />
@@ -1640,8 +1628,7 @@ const Dashboard = {
         <el-empty v-if="!alerts.length" :image-size="50" description="没有低于预警量的库存品" />
       </div>
       <div v-if="expiring !== null" class="panel">
-        <div class="panel-head"><div><div class="panel-title">临期提醒 <span v-if="expiring.length" style="color:var(--danger)">{{expiring.length}}</span></div>
-          <div class="panel-desc">快到期或已过期、还有剩余的批次；天数在“业务规则”里设置</div></div><span class="link-more" @click="go('batches')">批次 / 有效期 ›</span></div>
+        <div class="panel-head"><div><div class="panel-title">临期提醒 <span v-if="expiring.length" style="color:var(--danger)">{{expiring.length}}</span></div></div><span class="link-more" @click="go('batches')">批次 / 有效期 ›</span></div>
         <el-table v-if="expiring.length" :data="expiring.slice(0, 8)">
           <el-table-column prop="name" label="库存品" min-width="150" />
           <el-table-column prop="batch_no" label="批号" width="100" />
@@ -1758,8 +1745,8 @@ const App = {
     </div>
     <div class="main">
       <div class="topbar">
-        <div v-if="tab === 'dashboard'" class="title hello">{{greet}}，{{user.display_name || user.username}}<small>{{dateText}} · 以下是各门店今天的经营情况</small></div>
-        <div v-else class="title">{{cur[1]}}<small>{{cur[6]}}</small></div>
+        <div v-if="tab === 'dashboard'" class="title hello">{{greet}}，{{user.display_name || user.username}}<small>{{dateText}}</small></div>
+        <div v-else class="title">{{cur[1]}}</div>
         <div class="who"><a class="pill" href="/web/store/"><span class="ico" v-html="icon('cart')"></span>门店工作台</a>
           <el-dropdown @command="c => c === 'pw' ? changePw() : logout()">
             <span class="me"><span class="avatar">{{(user.display_name || user.username).slice(0,1)}}</span><span><small>{{user.role_name}}</small>{{user.display_name || user.username}}</span></span>
