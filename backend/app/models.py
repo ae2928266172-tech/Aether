@@ -374,6 +374,7 @@ class Order(Base, TimestampMixin):
     """订单。门店收银单和小程序订单都在这里，用 source 区分。
 
     status：pending 待接单 → accepted 已接单 → completed 已完成；cancelled 已取消
+           扫码点单开通在线付款后，下单先是 awaiting_pay 待付款（门店看不到），付成功才进入 pending / accepted
     pay_status：unpaid 未收款 / paid 已收款 / partial_refunded 部分退款 / refunded 已全额退款
     """
     __tablename__ = "orders"
@@ -407,6 +408,9 @@ class Order(Base, TimestampMixin):
     print_count: Mapped[int] = mapped_column(Integer, default=0)
     request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)
     collect_request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 收款请求号：网络重试时直接返回已收款结果
+    # 门店看到这单的先后号（新订单提醒按它取）。待付款的单付成功才编号，所以晚付的单不会被提醒漏掉
+    seq: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    pay_deadline: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)  # 待付款的最晚付款时间
     items: Mapped[list["OrderItem"]] = relationship(lazy="selectin", order_by="OrderItem.id")
     payments: Mapped[list["Payment"]] = relationship(lazy="selectin", order_by="Payment.id")
     store: Mapped[Store] = relationship(lazy="joined")

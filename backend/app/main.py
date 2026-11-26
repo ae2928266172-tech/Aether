@@ -21,10 +21,31 @@ from .seed import init_db
 WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")
 
 
+def expire_unpaid_once():
+    from .services.pay import online
+    with dbmod.SessionLocal() as db:
+        return online.expire(db)
+
+
+async def expire_unpaid_loop():
+    """每分钟取消一次超时未付款的扫码订单（回补库存）。"""
+    import asyncio
+    import logging
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(expire_unpaid_once)
+        except Exception:
+            logging.getLogger("shouyin").exception("取消超时未付款订单失败")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    import asyncio
     init_db(dbmod.engine, dbmod.SessionLocal)
+    task = asyncio.create_task(expire_unpaid_loop())
     yield
+    task.cancel()
 
 
 app = FastAPI(title="收银系统 API", version="0.1.0", lifespan=lifespan)

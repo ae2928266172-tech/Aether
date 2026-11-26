@@ -10,7 +10,7 @@ from ..models import Order, PayTxn, Store, User
 from ..security import check_store_access, current_user, require
 from ..serialize import order_out
 from ..services import pay
-from ..services.pay import pos, service
+from ..services.pay import online, pos, service  # noqa: F401  online、pos 注册付款成功后的处理
 from ..settings_store import get_setting
 
 router = APIRouter(prefix="/api/pay", tags=["在线收款"])
