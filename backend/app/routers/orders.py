@@ -7,10 +7,11 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from ..db import get_db, now
-from ..models import Order, Refund, Store, User
+from ..models import Order, Payment, PayRefundTxn, Refund, Store, User
 from ..security import check_store_access, current_user, has_perm, require
 from ..serialize import order_out, refund_out
 from ..services import orders as svc
+from ..services.pay import service as pay_service
 from ..services.receipt import build_receipt
 
 router = APIRouter(prefix="/api", tags=["收银与订单"])
@@ -289,9 +290,17 @@ class RefundIn(BaseModel):
 
 @router.post("/orders/{oid}/refund")
 def refund(oid: int, body: RefundIn, db: Session = Depends(get_db), user: User = Depends(require("refund"))):
-    rf = svc.once(db, lambda: svc.refund(
-        db, _load(db, oid, user, lock=True), user, [l.model_dump() for l in body.lines], body.restock, body.method,
-        body.reason, body.amount, body.request_id))
+    def run():
+        o = _load(db, oid, user, lock=True)
+        rf = svc.refund(db, o, user, [l.model_dump() for l in body.lines], body.restock, body.method,
+                        body.reason, body.amount, body.request_id)
+        # 当初是微信 / 支付宝在线收的，选同一方式退款就原路退回（重发的请求不再退第二次）
+        method = db.scalar(select(Payment.method).where(Payment.refund_id == rf.id).limit(1))
+        if method in pay_service.PROVIDERS and not db.scalar(
+                select(PayRefundTxn.id).where(PayRefundTxn.refund_id == rf.id).limit(1)):
+            pay_service.refund_order(db, o, method, rf.amount, body.reason, user, rf.id)
+        return rf
+    rf = svc.once(db, run)
     o = _load(db, oid, user)
     db.refresh(o)
     return {"refund": refund_out(rf), "order": order_out(o)}

@@ -104,7 +104,7 @@ def order_out(o: Order, detail: bool = True) -> dict:
                        "added_at": dt(i.added_at), "medical_info": i.medical_info or {}} for i in o.items]
         d["payments"] = [{"id": p.id, "kind": p.kind, "method": p.method, "method_text": PAY_METHODS[p.method],
                           "amount": p.amount, "received": p.received, "change": p.change,
-                          "created_at": dt(p.created_at)} for p in o.payments]
+                          "online": p.pay_txn_id is not None, "created_at": dt(p.created_at)} for p in o.payments]
     return d
 
 

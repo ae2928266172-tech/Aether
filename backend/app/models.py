@@ -454,7 +454,7 @@ class OrderItem(Base):
 class Payment(Base):
     """收款 / 退款记录。method：cash 现金、wechat 微信、alipay 支付宝、other 其他。
 
-    注意：这里只是“店员确认已收款”的记账，不代表接入了在线支付。
+    pay_txn_id 为空的是店员确认后记账；不为空的是微信支付 / 支付宝在线收款，钱以支付平台为准。
     """
     __tablename__ = "payments"
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -468,6 +468,7 @@ class Payment(Base):
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     refund_id: Mapped[int | None] = mapped_column(ForeignKey("refunds.id"), nullable=True)
     exchange_id: Mapped[int | None] = mapped_column(ForeignKey("exchanges.id"), nullable=True)  # 换货补差 / 退差
+    pay_txn_id: Mapped[int | None] = mapped_column(ForeignKey("pay_txns.id"), nullable=True)  # 在线收款的交易
 
 
 class Refund(Base):
@@ -591,6 +592,9 @@ class PayTxn(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
     paid_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    request_id: Mapped[str | None] = mapped_column(String(64), unique=True, nullable=True)  # 收银端请求号，防重复发起
+    # 付款成功后要做的事：收银时是 {"kind": "pos", 门店、商品、折扣……}，付成功再开单扣库存
+    context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
 
 class PayRefundTxn(Base):

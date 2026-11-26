@@ -39,11 +39,12 @@ def _gw(provider: str, scene: str):
 
 
 def _new_txn(db: Session, provider: str, scene: str, order: Order | None, amount: int, subject: str,
-             user: User | None) -> PayTxn:
+             user: User | None, request_id: str | None = None, context: dict | None = None) -> PayTxn:
     if amount <= 0:
         raise HTTPException(400, "收款金额必须大于 0")
     txn = PayTxn(out_no=new_no("P"), provider=provider, scene=scene, order_id=order.id if order else None,
-                 amount=amount, subject=subject[:100], status="pending", created_by=user.id if user else None)
+                 amount=amount, subject=subject[:100], status="pending", created_by=user.id if user else None,
+                 request_id=request_id, context=context)
     db.add(txn)
     db.commit()  # 先落库再调支付平台
     return txn
@@ -71,14 +72,14 @@ def apply_result(db: Session, txn: PayTxn, r: TradeResult) -> PayTxn:
 
 
 def micropay(db: Session, order: Order | None, amount: int, auth_code: str, subject: str, user: User | None,
-             client_ip: str = "") -> PayTxn:
+             client_ip: str = "", request_id: str | None = None, context: dict | None = None) -> PayTxn:
     """扫顾客付款码。返回的交易可能是 pending（顾客在输密码），要接着 refresh。"""
     auth_code = (auth_code or "").strip()
     provider = detect_provider(auth_code)
     if not provider:
         raise HTTPException(400, "无法识别的付款码，请让顾客刷新后重扫")
     gw = _gw(provider, "micropay")
-    txn = _new_txn(db, provider, "micropay", order, amount, subject, user)
+    txn = _new_txn(db, provider, "micropay", order, amount, subject, user, request_id, context)
     try:
         r = gw.micropay(txn.out_no, amount, auth_code, subject, client_ip)
     except PayError as e:
@@ -92,10 +93,10 @@ def micropay(db: Session, order: Order | None, amount: int, auth_code: str, subj
 
 
 def precreate(db: Session, provider: str, order: Order | None, amount: int, subject: str, notify_url: str,
-              user: User | None) -> tuple[PayTxn, str]:
+              user: User | None, request_id: str | None = None, context: dict | None = None) -> tuple[PayTxn, str]:
     """出收款码，返回（交易，二维码内容）。"""
     gw = _gw(provider, "native")
-    txn = _new_txn(db, provider, "native", order, amount, subject, user)
+    txn = _new_txn(db, provider, "native", order, amount, subject, user, request_id, context)
     try:
         code_url = gw.precreate(txn.out_no, amount, subject, notify_url)
     except PayError as e:
@@ -154,8 +155,13 @@ def refundable(db: Session, txn: PayTxn) -> int:
 
 
 def refund(db: Session, txn: PayTxn, amount: int, reason: str, user: User | None,
-           refund_id: int | None = None) -> PayRefundTxn:
-    """原路退款。失败抛错，交给上层决定（例如改成现金退）。"""
+           refund_id: int | None = None, inline: bool = False) -> PayRefundTxn:
+    """原路退款。
+
+    inline=False：单独一笔退款，调支付平台前先提交退款记录。
+    inline=True：和退货退款单在同一个事务里，不提前提交；支付平台明确拒绝时抛错，整笔退货一起撤销，
+    店员可以改用现金退。结果不明（网络断）时记成“退款中”，照常提交，之后用同一退款单号重发是安全的。
+    """
     if amount <= 0:
         raise HTTPException(400, "退款金额必须大于 0")
     if amount > refundable(db, txn):
@@ -166,22 +172,44 @@ def refund(db: Session, txn: PayTxn, amount: int, reason: str, user: User | None
     rt = PayRefundTxn(out_refund_no=new_no("R"), txn_id=txn.id, refund_id=refund_id, amount=amount,
                       created_by=user.id if user else None)
     db.add(rt)
-    db.commit()
+    db.flush() if inline else db.commit()
     try:
         r = gw.refund(txn.out_no, rt.out_refund_no, amount, txn.amount, reason or "退货退款")
     except PayError as e:
-        # 不知道退没退成，保持“退款中”，之后用同一个退款单号重发是安全的
         rt.message = str(e)[:200]
-        db.commit()
+        if not inline:
+            db.commit()
         return rt
+    if r.status == "failed" and inline:
+        raise HTTPException(502, f"{PROVIDERS[txn.provider]}原路退款失败：{r.message}。可以改用现金退款")
     rt.status, rt.refund_no, rt.message = r.status, r.refund_no, r.message[:200]
     if r.status == "success":
         rt.finished_at = now()
         txn.refunded = (txn.refunded or 0) + amount
     elif r.status == "failed":
         rt.finished_at = now()
-    db.commit()
+    if not inline:
+        db.commit()
     return rt
+
+
+def refund_order(db: Session, order: Order, method: str, amount: int, reason: str, user: User | None,
+                 refund_id: int | None) -> list[PayRefundTxn]:
+    """退货退款选了微信 / 支付宝、且这单当初是在线收的：从这单的在线交易里原路退。
+    这单没有该方式的在线交易（例如以前是记账收的），返回空列表，照旧记账。"""
+    txns = list(db.scalars(select(PayTxn).where(PayTxn.order_id == order.id, PayTxn.provider == method,
+                                                PayTxn.status == PAID).order_by(PayTxn.id)))
+    if not txns:
+        return []
+    left, out = amount, []
+    for t in txns:
+        n = min(left, refundable(db, t))
+        if n > 0:
+            out.append(refund(db, t, n, reason, user, refund_id, inline=True))
+            left -= n
+    if left > 0:
+        raise HTTPException(400, f"原路可退金额不足，还差 {left / 100:.2f} 元，请改用其它方式退款")
+    return out
 
 
 def txn_out(t: PayTxn) -> dict:

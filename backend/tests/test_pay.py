@@ -37,10 +37,10 @@ PLATFORM, PLATFORM_PRIV, PLATFORM_PUB = keypair()
 @pytest.fixture(autouse=True)
 def _reset_pay():
     pay.reset()
-    service.PAID_HOOKS.clear()
+    hooks = list(service.PAID_HOOKS)
     yield
     pay.reset()
-    service.PAID_HOOKS.clear()
+    service.PAID_HOOKS[:] = hooks
 
 
 def test_detect_provider():
