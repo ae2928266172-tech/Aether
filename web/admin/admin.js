@@ -1170,7 +1170,6 @@ const ProductSales = {
     </div>
 
     <template v-if="view === 'category'">
-      <div class="hint" style="margin:-6px 0 10px">大类包含它下面小类的商品；一个商品放在几个分类里，就在每个分类里各算一次。</div>
       <el-table :data="catRows" @row-click="openCat" row-class-name="clickable">
         <el-table-column label="分类" min-width="200"><template #default="{row}">
           <div class="c-main" :style="row.parent_id ? 'padding-left:18px;font-weight:400' : ''"><span v-if="row.parent_id" class="muted">└ </span>{{row.name}}</div></template></el-table-column>

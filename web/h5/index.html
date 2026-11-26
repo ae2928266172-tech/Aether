@@ -263,7 +263,6 @@
           <div class="field"><label>联系电话</label><input v-model="phone" type="tel" inputmode="tel" maxlength="20" placeholder="选填"></div>
           <div class="field"><label>备注</label><textarea v-model="remark" rows="1" placeholder="选填"></textarea></div>
         </div>
-        <div class="note">提交后由门店接单并配送，付款方式请听从门店工作人员安排。</div>
         <button class="btn block" :disabled="busy" @click="submit">{{busy ? '正在提交…' : '提交订单'}}</button>
       </div>
     </div></div></transition>

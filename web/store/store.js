@@ -759,7 +759,6 @@ const Orders = {
         <el-form-item label="退回库存"><el-checkbox v-model="rf.restock">退回本店库存</el-checkbox></el-form-item>
         <el-form-item label="原因"><el-input v-model="rf.reason" /></el-form-item>
       </el-form>
-      <div class="muted">退款只记账，需线下把钱退给顾客。</div>
       <template #footer><el-button link type="primary" style="float:left" @click="refundAll">全部退</el-button><el-button @click="rDlg=false">取消</el-button><el-button type="warning" :loading="rBusy" @click="doRefund">确认退款</el-button></template>
     </el-dialog>
   </div>`,
